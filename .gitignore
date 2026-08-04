@@ -1,0 +1,11 @@
+build/
+cmake-build-*/
+out/
+.vs/
+.idea/
+*.user
+*.o
+*.obj
+*.exe
+*.pdb
+compile_commands.json
