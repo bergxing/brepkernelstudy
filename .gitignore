@@ -9,4 +9,5 @@ out/
 *.exe
 *.pdb
 *.log
+*_out.txt
 compile_commands.json

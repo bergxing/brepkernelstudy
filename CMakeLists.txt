@@ -6,29 +6,29 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-include(FetchContent)
+# ---------------------------------------------------------------------------
+# Third-party dependencies via git submodules (third_party/*)
+#   git submodule update --init --recursive
+# ---------------------------------------------------------------------------
+set(BREP_EIGEN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen)
+set(BREP_SPDLOG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog)
 
-FetchContent_Declare(
-  eigen
-  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-  GIT_TAG 3.4.0
-  GIT_SHALLOW TRUE
-)
-set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
-set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+if(NOT EXISTS "${BREP_EIGEN_DIR}/Eigen/Core")
+  message(FATAL_ERROR
+    "Eigen submodule missing at third_party/eigen. "
+    "Run: git submodule update --init --recursive")
+endif()
+if(NOT EXISTS "${BREP_SPDLOG_DIR}/include/spdlog/spdlog.h")
+  message(FATAL_ERROR
+    "spdlog submodule missing at third_party/spdlog. "
+    "Run: git submodule update --init --recursive")
+endif()
 
-FetchContent_Declare(
-  spdlog
-  GIT_REPOSITORY https://github.com/gabime/spdlog.git
-  GIT_TAG v1.14.1
-  GIT_SHALLOW TRUE
-)
-
-FetchContent_MakeAvailable(eigen)
-FetchContent_GetProperties(spdlog)
-if(NOT spdlog_POPULATED)
-  FetchContent_Populate(spdlog)
+# Eigen: header-only interface target (avoid configuring Eigen's own tests/docs).
+if(NOT TARGET Eigen3::Eigen)
+  add_library(Eigen3::Eigen INTERFACE IMPORTED GLOBAL)
+  set_target_properties(Eigen3::Eigen PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${BREP_EIGEN_DIR}")
 endif()
 
 add_library(brep
@@ -42,7 +42,7 @@ add_library(brep
 )
 target_include_directories(brep
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-  PRIVATE ${spdlog_SOURCE_DIR}/include
+  PRIVATE ${BREP_SPDLOG_DIR}/include
 )
 target_link_libraries(brep PUBLIC Eigen3::Eigen)
 
