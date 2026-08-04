@@ -5,8 +5,8 @@
 namespace brep {
 
 struct BoxSpec {
-  Vec3 min{0, 0, 0};
-  Vec3 max{1, 1, 1};
+  Point3d min{0, 0, 0};
+  Point3d max{1, 1, 1};
   double tolerance{1e-7};
   std::string name{"box"};
 };

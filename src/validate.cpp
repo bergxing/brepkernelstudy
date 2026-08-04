@@ -1,5 +1,7 @@
 #include "brep/validate.hpp"
 
+#include "brep/log.hpp"
+
 #include <algorithm>
 #include <string>
 #include <unordered_set>
@@ -8,9 +10,11 @@ namespace brep {
 
 ValidationReport validate_body(const Body& body) {
   ValidationReport report;
+  BREP_INFO("validate_body '{}'", body.name);
 
   if (body.shells.empty()) {
     report.error(body.name.empty() ? "Body" : body.name, "no shells");
+    BREP_ERROR("validate_body '{}': no shells", body.name);
     return report;
   }
 
@@ -112,8 +116,8 @@ ValidationReport validate_body(const Body& body) {
         loop->for_each_coedge([&](const CoEdge& c) {
           if (!c.edge || !c.edge->curve || !c.edge->v0 || !c.edge->v1) return;
           const Edge& e = *c.edge;
-          const Vec3 p0 = e.curve->eval(e.t0);
-          const Vec3 p1 = e.curve->eval(e.t1);
+          const Point3d p0 = e.curve->eval(e.t0);
+          const Point3d p1 = e.curve->eval(e.t1);
           const double tol =
               std::max(e.tolerance, std::max(e.v0->tolerance, e.v1->tolerance));
           if (p0.distance_to(e.v0->position()) > tol * 10) {
@@ -129,6 +133,13 @@ ValidationReport validate_body(const Body& body) {
     }
   }
 
+  if (report.ok()) {
+    BREP_INFO("validate_body '{}': OK ({} issues)", body.name,
+              report.issues.size());
+  } else {
+    BREP_ERROR("validate_body '{}': FAILED ({} issues)", body.name,
+               report.issues.size());
+  }
   return report;
 }
 

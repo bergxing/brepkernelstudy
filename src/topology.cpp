@@ -1,11 +1,14 @@
 #include "brep/topology.hpp"
 
+#include "brep/log.hpp"
+
 #include <stdexcept>
 
 namespace brep {
 
-const Vec3& Vertex::position() const {
+const Point3d& Vertex::position() const {
   if (!point) {
+    BREP_ERROR("Vertex id={} has no Point geometry", id);
     throw std::logic_error("Vertex has no Point geometry");
   }
   return point->xyz();
@@ -34,11 +37,12 @@ Loop* Face::outer_loop() const noexcept {
   return loops.empty() ? nullptr : loops.front();
 }
 
-Vec3 Face::normal_at(double u, double v) const {
+Vector3d Face::normal_at(double u, double v) const {
   if (!surface) {
+    BREP_ERROR("Face '{}' has no Surface geometry", name);
     throw std::logic_error("Face has no Surface geometry");
   }
-  Vec3 n = surface->normal(u, v);
+  Vector3d n = surface->normal(u, v);
   return sense == Orientation::Forward ? n : -n;
 }
 

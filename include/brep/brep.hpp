@@ -3,6 +3,7 @@
 #include "brep/builder.hpp"
 #include "brep/dump.hpp"
 #include "brep/geometry.hpp"
+#include "brep/log.hpp"
 #include "brep/math.hpp"
 #include "brep/model.hpp"
 #include "brep/topology.hpp"

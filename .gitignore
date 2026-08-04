@@ -8,4 +8,5 @@ out/
 *.obj
 *.exe
 *.pdb
+*.log
 compile_commands.json

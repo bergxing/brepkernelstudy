@@ -22,13 +22,13 @@ class Model {
   Model& operator=(Model&&) noexcept = default;
 
   // --- geometry factories --------------------------------------------------
-  Point* make_point(Vec3 xyz, std::string name = {});
-  LineCurve* make_line(Vec3 a, Vec3 b, std::string name = {});
-  CircleCurve* make_circle(Vec3 center, Vec3 normal, double radius,
+  Point* make_point(Point3d xyz, std::string name = {});
+  LineCurve* make_line(Point3d a, Point3d b, std::string name = {});
+  CircleCurve* make_circle(Point3d center, Vector3d normal, double radius,
                            std::string name = {});
-  LineCurve2d* make_line2d(Vec2 a, Vec2 b);
-  PlaneSurface* make_plane(Vec3 origin, Vec3 normal, std::string name = {});
-  PlaneSurface* make_plane(Vec3 origin, Vec3 u_axis, Vec3 v_axis,
+  LineCurve2d* make_line2d(Point2d a, Point2d b);
+  PlaneSurface* make_plane(Point3d origin, Vector3d normal, std::string name = {});
+  PlaneSurface* make_plane(Point3d origin, Vector3d u_axis, Vector3d v_axis,
                            std::string name = {});
 
   // --- topology factories --------------------------------------------------

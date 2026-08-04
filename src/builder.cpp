@@ -1,5 +1,7 @@
 #include "brep/builder.hpp"
 
+#include "brep/log.hpp"
+
 #include <array>
 #include <stdexcept>
 #include <string>
@@ -12,11 +14,11 @@ constexpr int vid(int ix, int iy, int iz) noexcept {
   return ix | (iy << 1) | (iz << 2);
 }
 
-Vec3 corner(const BoxSpec& s, int ix, int iy, int iz) {
+Point3d corner(const BoxSpec& s, int ix, int iy, int iz) {
   return {
-      ix ? s.max.x : s.min.x,
-      iy ? s.max.y : s.min.y,
-      iz ? s.max.z : s.min.z,
+      ix ? s.max.x() : s.min.x(),
+      iy ? s.max.y() : s.min.y(),
+      iz ? s.max.z() : s.min.z(),
   };
 }
 
@@ -26,17 +28,16 @@ struct EdgeDef {
   const char* name;
 };
 
-// 12 box edges (vertex indices use bit packing x|y<<1|z<<2)
 constexpr EdgeDef kEdges[12] = {
-    {vid(0, 0, 0), vid(1, 0, 0), "e00"},  // bottom rectangle
+    {vid(0, 0, 0), vid(1, 0, 0), "e00"},
     {vid(1, 0, 0), vid(1, 1, 0), "e01"},
     {vid(1, 1, 0), vid(0, 1, 0), "e02"},
     {vid(0, 1, 0), vid(0, 0, 0), "e03"},
-    {vid(0, 0, 1), vid(1, 0, 1), "e10"},  // top rectangle
+    {vid(0, 0, 1), vid(1, 0, 1), "e10"},
     {vid(1, 0, 1), vid(1, 1, 1), "e11"},
     {vid(1, 1, 1), vid(0, 1, 1), "e12"},
     {vid(0, 1, 1), vid(0, 0, 1), "e13"},
-    {vid(0, 0, 0), vid(0, 0, 1), "ez0"},  // verticals
+    {vid(0, 0, 0), vid(0, 0, 1), "ez0"},
     {vid(1, 0, 0), vid(1, 0, 1), "ez1"},
     {vid(1, 1, 0), vid(1, 1, 1), "ez2"},
     {vid(0, 1, 0), vid(0, 1, 1), "ez3"},
@@ -44,25 +45,29 @@ constexpr EdgeDef kEdges[12] = {
 
 struct FaceBuild {
   const char* name;
-  Vec3 origin;
-  Vec3 u_axis;
-  Vec3 v_axis;  // plane normal = cross(u, v), chosen outward
+  Point3d origin;
+  Vector3d u_axis;
+  Vector3d v_axis;
   std::array<int, 4> edge_idx;
-  std::array<bool, 4> forward;  // true => CoEdge sense matches Edge v0->v1
-  std::array<Vec2, 5> uv;       // 4 corners + close
+  std::array<bool, 4> forward;
+  std::array<Point2d, 5> uv;
 };
 
 }  // namespace
 
 Body* make_box(Model& model, const BoxSpec& spec) {
-  if (!(spec.max.x > spec.min.x && spec.max.y > spec.min.y &&
-        spec.max.z > spec.min.z)) {
+  if (!(spec.max.x() > spec.min.x() && spec.max.y() > spec.min.y() &&
+        spec.max.z() > spec.min.z())) {
+    BREP_ERROR("make_box: invalid extents min={} max={}", spec.min, spec.max);
     throw std::invalid_argument("make_box: max must be strictly greater than min");
   }
 
-  const double dx = spec.max.x - spec.min.x;
-  const double dy = spec.max.y - spec.min.y;
-  const double dz = spec.max.z - spec.min.z;
+  BREP_INFO("make_box '{}' min={} max={} tol={:.3g}", spec.name, spec.min,
+            spec.max, spec.tolerance);
+
+  const double dx = spec.max.x() - spec.min.x();
+  const double dy = spec.max.y() - spec.min.y();
+  const double dz = spec.max.z() - spec.min.z();
   const double tol = spec.tolerance;
 
   std::array<Vertex*, 8> V{};
@@ -83,57 +88,55 @@ Body* make_box(Model& model, const BoxSpec& spec) {
     E[i] = model.make_edge(curve, V[d.a], V[d.b], 0.0, curve->length(), tol, d.name);
   }
 
-  // Each loop is CCW when viewed from outside along the outward normal.
   const FaceBuild faces[6] = {
-      // z=min, outward -Z; u=+X, v=-Y => cross = -Z
       {"f_zmin",
-       {spec.min.x, spec.min.y, spec.min.z},
+       {spec.min.x(), spec.min.y(), spec.min.z()},
        {1, 0, 0},
        {0, -1, 0},
        {0, 1, 2, 3},
        {true, true, true, true},
-       {Vec2{0, 0}, Vec2{dx, 0}, Vec2{dx, -dy}, Vec2{0, -dy}, Vec2{0, 0}}},
-      // z=max, outward +Z
+       {Point2d{0, 0}, Point2d{dx, 0}, Point2d{dx, -dy}, Point2d{0, -dy},
+        Point2d{0, 0}}},
       {"f_zmax",
-       {spec.min.x, spec.min.y, spec.max.z},
+       {spec.min.x(), spec.min.y(), spec.max.z()},
        {1, 0, 0},
        {0, 1, 0},
        {4, 5, 6, 7},
        {true, true, true, true},
-       {Vec2{0, 0}, Vec2{dx, 0}, Vec2{dx, dy}, Vec2{0, dy}, Vec2{0, 0}}},
-      // y=min, outward -Y; u=+X, v=+Z => cross = -Y
+       {Point2d{0, 0}, Point2d{dx, 0}, Point2d{dx, dy}, Point2d{0, dy},
+        Point2d{0, 0}}},
       {"f_ymin",
-       {spec.min.x, spec.min.y, spec.min.z},
+       {spec.min.x(), spec.min.y(), spec.min.z()},
        {1, 0, 0},
        {0, 0, 1},
        {0, 9, 4, 8},
        {true, true, false, false},
-       {Vec2{0, 0}, Vec2{dx, 0}, Vec2{dx, dz}, Vec2{0, dz}, Vec2{0, 0}}},
-      // y=max, outward +Y; u=-X, v=+Z => cross = +Y
+       {Point2d{0, 0}, Point2d{dx, 0}, Point2d{dx, dz}, Point2d{0, dz},
+        Point2d{0, 0}}},
       {"f_ymax",
-       {spec.max.x, spec.max.y, spec.min.z},
+       {spec.max.x(), spec.max.y(), spec.min.z()},
        {-1, 0, 0},
        {0, 0, 1},
        {2, 11, 6, 10},
        {true, true, false, false},
-       {Vec2{0, 0}, Vec2{dx, 0}, Vec2{dx, dz}, Vec2{0, dz}, Vec2{0, 0}}},
-      // x=min, outward -X; u=+Z, v=+Y => cross = -X
-      // loop: (0,0,0)->(0,0,1)->(0,1,1)->(0,1,0)
+       {Point2d{0, 0}, Point2d{dx, 0}, Point2d{dx, dz}, Point2d{0, dz},
+        Point2d{0, 0}}},
       {"f_xmin",
-       {spec.min.x, spec.min.y, spec.min.z},
+       {spec.min.x(), spec.min.y(), spec.min.z()},
        {0, 0, 1},
        {0, 1, 0},
        {8, 7, 11, 3},
        {true, false, false, true},
-       {Vec2{0, 0}, Vec2{dz, 0}, Vec2{dz, dy}, Vec2{0, dy}, Vec2{0, 0}}},
-      // x=max, outward +X; u=+Y, v=+Z => cross = +X
+       {Point2d{0, 0}, Point2d{dz, 0}, Point2d{dz, dy}, Point2d{0, dy},
+        Point2d{0, 0}}},
       {"f_xmax",
-       {spec.max.x, spec.min.y, spec.min.z},
+       {spec.max.x(), spec.min.y(), spec.min.z()},
        {0, 1, 0},
        {0, 0, 1},
        {1, 10, 5, 9},
        {true, true, false, false},
-       {Vec2{0, 0}, Vec2{dy, 0}, Vec2{dy, dz}, Vec2{0, dz}, Vec2{0, 0}}},
+       {Point2d{0, 0}, Point2d{dy, 0}, Point2d{dy, dz}, Point2d{0, dz},
+        Point2d{0, 0}}},
   };
 
   Body* body = model.make_body(BodyType::Solid, spec.name);
@@ -163,12 +166,16 @@ Body* make_box(Model& model, const BoxSpec& spec) {
 
   for (int i = 0; i < 12; ++i) {
     if (by_edge[static_cast<std::size_t>(i)].size() != 2) {
-      throw std::runtime_error("make_box: each edge must be shared by exactly two faces");
+      BREP_ERROR("make_box: edge[{}] radial degree={}", i,
+                 by_edge[static_cast<std::size_t>(i)].size());
+      throw std::runtime_error(
+          "make_box: each edge must be shared by exactly two faces");
     }
     Model::pair_partners(by_edge[static_cast<std::size_t>(i)][0],
                          by_edge[static_cast<std::size_t>(i)][1]);
   }
 
+  BREP_INFO("make_box '{}' done: 8 verts, 12 edges, 6 faces", spec.name);
   return body;
 }
 
