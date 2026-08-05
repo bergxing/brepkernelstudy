@@ -19,6 +19,27 @@ struct Camera {
     if (pitch_deg < -89.0f) pitch_deg = -89.0f;
   }
 
+  void pan(float dx, float dy) {
+    const float yaw = yaw_deg * 0.01745329252f;
+    const float pitch = pitch_deg * 0.01745329252f;
+    const float cp = std::cos(pitch);
+    Vector3d forward{
+        cp * std::cos(yaw),
+        std::sin(pitch),
+        cp * std::sin(yaw),
+    };
+    Vector3d world_up{0, 1, 0};
+    Vector3d right = forward.cross(world_up);
+    if (right.norm() < 1e-6) {
+      world_up = Vector3d{0, 0, 1};
+      right = forward.cross(world_up);
+    }
+    right = right.normalized();
+    Vector3d up = right.cross(forward).normalized();
+    const float scale = distance * 0.0025f;
+    target = target + right * double(-dx * scale) + up * double(dy * scale);
+  }
+
   void zoom(float delta) {
     distance *= (delta > 0.0f) ? 0.9f : 1.1f;
     if (distance < 0.3f) distance = 0.3f;
@@ -37,7 +58,7 @@ struct Camera {
   }
 
   // Column-major 4x4 matrices for Vulkan (same as OpenGL-style GLM layout).
-  [[nodiscard]] void view_matrix(float out[16]) const {
+  void view_matrix(float out[16]) const {
     const Point3d e = eye();
     Vector3d f = (target - e).normalized();
     Vector3d up{0, 1, 0};
@@ -67,8 +88,8 @@ struct Camera {
     out[15] = 1.0f;
   }
 
-  [[nodiscard]] static void perspective(float fovy_deg, float aspect, float znear,
-                                        float zfar, float out[16]) {
+  static void perspective(float fovy_deg, float aspect, float znear, float zfar,
+                          float out[16]) {
     const float f = 1.0f / std::tan(fovy_deg * 0.01745329252f * 0.5f);
     for (int i = 0; i < 16; ++i) out[i] = 0.0f;
     out[0] = f / aspect;

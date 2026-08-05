@@ -18,18 +18,30 @@ class VulkanWindow final : public QVulkanWindow {
   [[nodiscard]] const Camera& camera() const noexcept { return camera_; }
 
   QVulkanWindowRenderer* createRenderer() override;
+  bool eventFilter(QObject* watched, QEvent* event) override;
 
  protected:
   void mousePressEvent(QMouseEvent* event) override;
+  void mouseReleaseEvent(QMouseEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
+  void keyPressEvent(QKeyEvent* event) override;
 
  private:
+  enum class DragMode { None, Orbit, Pan };
+
+  void pointer_press(QPointF pos, Qt::MouseButton button);
+  void pointer_move(QPointF pos, Qt::MouseButtons buttons);
+  void pointer_release();
+  void pointer_wheel(int angle_delta_y);
+  void apply_key_orbit(int key);
+
   Camera camera_{};
   TriangleMesh pending_triangles_{};
   EdgeMesh pending_edges_{};
   bool has_pending_meshes_{false};
-  QPoint last_pos_{};
+  QPointF last_pos_{};
+  DragMode drag_mode_{DragMode::None};
   VulkanRenderer* renderer_{nullptr};
 };
 

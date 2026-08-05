@@ -43,9 +43,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
   QWidget* container = QWidget::createWindowContainer(vulkan_window_, this);
   container->setFocusPolicy(Qt::StrongFocus);
+  container->setMouseTracking(true);
+  // Embedded QVulkanWindow often does not receive mouse events on Windows;
+  // also listen on the container so orbit/pan/zoom always work.
+  container->installEventFilter(vulkan_window_);
+  container->setFocus();
   setCentralWidget(container);
   statusBar()->showMessage(
-      QStringLiteral("Left-drag: orbit | Wheel: zoom | Vulkan via QVulkanWindow"));
+      QStringLiteral(
+          "Left-drag: rotate | Right/Middle-drag: pan | Wheel: zoom | Arrows: rotate"));
 }
 
 }  // namespace brep::viewer
