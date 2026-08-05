@@ -4,3 +4,12 @@
 [submodule "third_party/spdlog"]
 	path = third_party/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "third_party/Vulkan-Headers"]
+	path = third_party/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "third_party/volk"]
+	path = third_party/volk
+	url = https://github.com/zeux/volk.git
+[submodule "third_party/vcpkg"]
+	path = third_party/vcpkg
+	url = https://github.com/microsoft/vcpkg.git

@@ -1,4 +1,5 @@
 build/
+build_tools/
 cmake-build-*/
 out/
 .vs/
@@ -11,3 +12,11 @@ out/
 *.log
 *_out.txt
 compile_commands.json
+
+# vcpkg local build artifacts (keep the submodule itself)
+third_party/vcpkg/buildtrees/
+third_party/vcpkg/packages/
+third_party/vcpkg/downloads/
+third_party/vcpkg/installed/
+third_party/vcpkg/vcpkg.exe
+vcpkg_installed/
