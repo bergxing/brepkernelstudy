@@ -11,7 +11,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #   git submodule update --init --recursive
 #
 # Qt is NOT vendored (too large). Use a local Qt install, e.g. C:/Qt6.
-#   cmake -S . -B build -DBREP_QT_ROOT=C:/Qt6
+# IDE: open this folder in CLion and select preset "clion-mingw"
+#   (MinGW from Qt — no Visual Studio required).
 # ---------------------------------------------------------------------------
 set(BREP_EIGEN_DIR          ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen)
 set(BREP_SPDLOG_DIR         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog)
@@ -71,8 +72,9 @@ add_library(brep
   src/mesh.cpp
 )
 target_include_directories(brep
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-  PRIVATE ${BREP_SPDLOG_DIR}/include
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${BREP_SPDLOG_DIR}/include   # fmt via spdlog (public log API)
 )
 target_link_libraries(brep PUBLIC Eigen3::Eigen)
 
@@ -91,7 +93,7 @@ add_test(NAME box_demo COMMAND box_demo)
 add_test(NAME smoke COMMAND smoke)
 
 # ---------------------------------------------------------------------------
-# Local Qt6 discovery (default: C:/Qt6/<ver>/msvc2022_64)
+# Local Qt6 discovery (kit matches the active compiler: MinGW vs MSVC)
 # ---------------------------------------------------------------------------
 set(BREP_QT_ROOT "C:/Qt6" CACHE PATH "Qt install root (contains <version>/<kit>)")
 
@@ -117,8 +119,14 @@ function(brep_detect_qt_prefix out_var)
     return()
   endif()
 
-  # Prefer MSVC 2022 kit, then 2019, then MinGW.
-  set(_kits msvc2022_64 msvc2019_64 mingw_64)
+  # Match Qt ABI to the compiler. CLion/MinGW → mingw_64; MSVC → msvc*_64.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+     OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC))
+    set(_kits mingw_64 msvc2022_64 msvc2019_64)
+  else()
+    set(_kits msvc2022_64 msvc2019_64 mingw_64)
+  endif()
+
   if(EXISTS "${BREP_QT_ROOT}")
     file(GLOB _qt_versions LIST_DIRECTORIES true "${BREP_QT_ROOT}/*")
     list(SORT _qt_versions ORDER DESCENDING)
@@ -154,7 +162,8 @@ if(BREP_BUILD_VIEWER)
   else()
     message(WARNING
       "BREP_BUILD_VIEWER=ON but Qt6 not found.\n"
-      "Set BREP_QT_ROOT to your Qt install (e.g. -DBREP_QT_ROOT=C:/Qt6),\n"
-      "or pass -DCMAKE_PREFIX_PATH=C:/Qt6/6.7.3/msvc2022_64")
+      "Set BREP_QT_ROOT (e.g. -DBREP_QT_ROOT=C:/Qt6),\n"
+      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.7.3/mingw_64  (CLion/MinGW)\n"
+      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.7.3/msvc2022_64 (MSVC)")
   endif()
 endif()

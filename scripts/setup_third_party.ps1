@@ -7,6 +7,7 @@
 #   third_party/volk             git submodule
 #
 # Qt is a LOCAL install (not vendored). Default search root: C:\Qt6
+# Recommended IDE: CLion + MinGW (no Visual Studio required).
 #
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File .\scripts\setup_third_party.ps1
@@ -22,49 +23,65 @@ Write-Host "==> Generate viewer SPIR-V (Python emitter, no glslc required)"
 python (Join-Path $Root "scripts\gen_spv.py")
 
 $QtRoot = if ($env:BREP_QT_ROOT) { $env:BREP_QT_ROOT } else { "C:\Qt6" }
-$QtPrefix = $null
-foreach ($kit in @("msvc2022_64", "msvc2019_64", "mingw_64")) {
-  $candidates = Get-ChildItem -Path $QtRoot -Directory -ErrorAction SilentlyContinue |
-    Sort-Object Name -Descending |
-    ForEach-Object { Join-Path $_.FullName $kit }
-  foreach ($c in $candidates) {
-    if (Test-Path (Join-Path $c "lib\cmake\Qt6\Qt6Config.cmake")) {
-      $QtPrefix = $c
-      break
-    }
-  }
-  if ($QtPrefix) { break }
+$MingwBin = Join-Path $QtRoot "Tools\mingw1120_64\bin"
+if (-not (Test-Path (Join-Path $MingwBin "g++.exe"))) {
+  # Fallback: first Tools\mingw*\bin that has g++.exe
+  $MingwBin = Get-ChildItem -Path (Join-Path $QtRoot "Tools") -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "mingw*" } |
+    ForEach-Object { Join-Path $_.FullName "bin" } |
+    Where-Object { Test-Path (Join-Path $_ "g++.exe") } |
+    Select-Object -First 1
 }
 
-if (-not $QtPrefix) {
-  Write-Host @"
-WARNING: Qt6 not found under $QtRoot
-Install Qt 6 (MSVC 64-bit) or set BREP_QT_ROOT / CMAKE_PREFIX_PATH.
-"@
+function Find-QtKit([string]$Kit) {
+  Get-ChildItem -Path $QtRoot -Directory -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending |
+    ForEach-Object { Join-Path $_.FullName $Kit } |
+    Where-Object { Test-Path (Join-Path $_ "lib\cmake\Qt6\Qt6Config.cmake") } |
+    Select-Object -First 1
+}
+
+$QtMingw = Find-QtKit "mingw_64"
+$QtMsvc = Find-QtKit "msvc2022_64"
+if (-not $QtMsvc) { $QtMsvc = Find-QtKit "msvc2019_64" }
+
+if ($QtMingw) {
+  Write-Host "==> Detected Qt MinGW prefix: $QtMingw"
 } else {
-  Write-Host "==> Detected Qt prefix: $QtPrefix"
+  Write-Host "WARNING: Qt mingw_64 kit not found under $QtRoot"
+}
+if ($MingwBin) {
+  Write-Host "==> Detected MinGW toolchain: $MingwBin"
+} else {
+  Write-Host "WARNING: MinGW g++ not found under $QtRoot\Tools"
 }
 
 Write-Host @"
 
 Done.
 
-Configure / build viewer (local Qt):
+=== CLion (recommended, no Visual Studio) ===
 
-  cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-    -DBREP_QT_ROOT="$QtRoot"
+1. File → Open → this repo folder
+2. CMake settings → select preset: clion-mingw
+3. Build target: brep_viewer  (or box_demo / smoke)
+4. Run. If Qt DLLs are missing, add to Run Configuration → Environment:
 
-  cmake --build build --config Release --target brep_viewer
-  .\build\Release\brep_viewer.exe
+   PATH=$MingwBin;$QtMingw\bin;%PATH%
 
-Or pin the kit explicitly:
+Command-line equivalent (CLion uses Ninja; or use MinGW Makefiles):
 
-  cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-    -DCMAKE_PREFIX_PATH="C:\Qt6\6.7.3\msvc2022_64"
+  cmake --preset mingw-makefiles
+  cmake --build --preset mingw-makefiles --target brep_viewer
+  .\build-mingw\apps\viewer\brep_viewer.exe
+
+=== Optional: MSVC (only if you already have it) ===
+
+  cmake -S . -B build -G Ninja -DBREP_QT_ROOT="$QtRoot" -DCMAKE_PREFIX_PATH="$QtMsvc"
 
 Notes:
   - Vulkan headers come from third_party/Vulkan-Headers (+ volk)
   - Runtime still needs a Vulkan-capable GPU driver (vulkan-1.dll)
-  - Qt is used from the local install under C:\Qt6 (not a project submodule)
+  - Qt kit must match the compiler (mingw_64 with g++, msvc*_64 with cl)
 
 "@

@@ -1,4 +1,5 @@
 build/
+build-mingw/
 build_tools/
 cmake-build-*/
 out/

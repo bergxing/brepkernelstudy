@@ -2,7 +2,9 @@
 
 #include "brep/math.hpp"
 
-#include <format>
+// Prefer fmt (bundled with spdlog) over std::format so MinGW/GCC 11 (Qt kit) works.
+#include <spdlog/fmt/fmt.h>
+
 #include <string_view>
 #include <utility>
 
@@ -18,27 +20,26 @@ void init_logging(std::string_view log_file = {},
 void log_message(LogLevel level, std::string_view message);
 
 template <class... Args>
-void log_format(LogLevel level, std::format_string<Args...> fmt, Args&&... args) {
-  log_message(level, std::format(fmt, std::forward<Args>(args)...));
+void log_format(LogLevel level, fmt::format_string<Args...> fmt, Args&&... args) {
+  log_message(level, fmt::format(fmt, std::forward<Args>(args)...));
 }
 
 }  // namespace brep
 
-// std::formatter for Point3d / Vector3d (C++20 format used by log_format)
 template <>
-struct std::formatter<brep::Point3d> {
+struct fmt::formatter<brep::Point3d> {
   constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
   auto format(const brep::Point3d& p, format_context& ctx) const {
-    return std::format_to(ctx.out(), "({:.6g}, {:.6g}, {:.6g})", p.x(), p.y(),
+    return fmt::format_to(ctx.out(), "({:.6g}, {:.6g}, {:.6g})", p.x(), p.y(),
                           p.z());
   }
 };
 
 template <>
-struct std::formatter<brep::Vector3d> {
+struct fmt::formatter<brep::Vector3d> {
   constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
   auto format(const brep::Vector3d& v, format_context& ctx) const {
-    return std::format_to(ctx.out(), "({:.6g}, {:.6g}, {:.6g})", v.x(), v.y(),
+    return fmt::format_to(ctx.out(), "({:.6g}, {:.6g}, {:.6g})", v.x(), v.y(),
                           v.z());
   }
 };
