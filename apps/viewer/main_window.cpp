@@ -15,18 +15,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   setWindowTitle(QStringLiteral("B-Rep Kernel Viewer"));
   resize(1100, 720);
 
-  auto* inst = new QVulkanInstance(this);
-  inst->setLayers({QByteArrayLiteral("VK_LAYER_KHRONOS_validation")});
-  if (!inst->create()) {
+  vulkan_instance_ = std::make_unique<QVulkanInstance>();
+  vulkan_instance_->setLayers({QByteArrayLiteral("VK_LAYER_KHRONOS_validation")});
+  if (!vulkan_instance_->create()) {
     // Validation layer may be absent; retry without it.
-    inst->setLayers({});
-    if (!inst->create()) {
+    vulkan_instance_->setLayers({});
+    if (!vulkan_instance_->create()) {
       throw std::runtime_error("Failed to create QVulkanInstance");
     }
   }
 
   vulkan_window_ = new VulkanWindow();
-  vulkan_window_->setVulkanInstance(inst);
+  vulkan_window_->setVulkanInstance(vulkan_instance_.get());
 
   // Build demo body and tessellate.
   {

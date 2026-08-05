@@ -364,7 +364,8 @@ void VulkanRenderer::releaseResources() {
     dev_->vkDestroyDescriptorSetLayout(device, desc_layout_, nullptr);
 
   tri_pipeline_ = line_pipeline_ = VK_NULL_HANDLE;
-  pipeline_layout_ = pipeline_cache_ = VK_NULL_HANDLE;
+  pipeline_layout_ = VK_NULL_HANDLE;
+  pipeline_cache_ = VK_NULL_HANDLE;
   desc_pool_ = VK_NULL_HANDLE;
   desc_layout_ = VK_NULL_HANDLE;
   desc_set_ = VK_NULL_HANDLE;

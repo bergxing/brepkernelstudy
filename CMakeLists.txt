@@ -9,9 +9,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ---------------------------------------------------------------------------
 # Third-party via git submodules (third_party/*)
 #   git submodule update --init --recursive
-# Qt is provided by the in-repo vcpkg submodule + vcpkg.json (manifest mode):
-#   .\third_party\vcpkg\bootstrap-vcpkg.bat
-#   cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=third_party/vcpkg/scripts/buildsystems/vcpkg.cmake
+#
+# Qt is NOT vendored (too large). Use a local Qt install, e.g. C:/Qt6.
+#   cmake -S . -B build -DBREP_QT_ROOT=C:/Qt6
 # ---------------------------------------------------------------------------
 set(BREP_EIGEN_DIR          ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen)
 set(BREP_SPDLOG_DIR         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog)
@@ -91,20 +91,70 @@ add_test(NAME box_demo COMMAND box_demo)
 add_test(NAME smoke COMMAND smoke)
 
 # ---------------------------------------------------------------------------
-# Optional Qt6 + Vulkan viewer (requires vcpkg toolchain + qtbase[vulkan])
+# Local Qt6 discovery (default: C:/Qt6/<ver>/msvc2022_64)
+# ---------------------------------------------------------------------------
+set(BREP_QT_ROOT "C:/Qt6" CACHE PATH "Qt install root (contains <version>/<kit>)")
+
+function(brep_detect_qt_prefix out_var)
+  if(DEFINED ENV{CMAKE_PREFIX_PATH})
+    foreach(p IN LISTS ENV{CMAKE_PREFIX_PATH})
+      if(EXISTS "${p}/lib/cmake/Qt6/Qt6Config.cmake")
+        set(${out_var} "${p}" PARENT_SCOPE)
+        return()
+      endif()
+    endforeach()
+  endif()
+
+  foreach(p IN LISTS CMAKE_PREFIX_PATH)
+    if(EXISTS "${p}/lib/cmake/Qt6/Qt6Config.cmake")
+      set(${out_var} "${p}" PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+
+  if(EXISTS "${BREP_QT_ROOT}/lib/cmake/Qt6/Qt6Config.cmake")
+    set(${out_var} "${BREP_QT_ROOT}" PARENT_SCOPE)
+    return()
+  endif()
+
+  # Prefer MSVC 2022 kit, then 2019, then MinGW.
+  set(_kits msvc2022_64 msvc2019_64 mingw_64)
+  if(EXISTS "${BREP_QT_ROOT}")
+    file(GLOB _qt_versions LIST_DIRECTORIES true "${BREP_QT_ROOT}/*")
+    list(SORT _qt_versions ORDER DESCENDING)
+    foreach(ver_dir IN LISTS _qt_versions)
+      foreach(kit IN LISTS _kits)
+        set(candidate "${ver_dir}/${kit}")
+        if(EXISTS "${candidate}/lib/cmake/Qt6/Qt6Config.cmake")
+          set(${out_var} "${candidate}" PARENT_SCOPE)
+          return()
+        endif()
+      endforeach()
+    endforeach()
+  endif()
+
+  set(${out_var} "" PARENT_SCOPE)
+endfunction()
+
+# ---------------------------------------------------------------------------
+# Optional Qt6 + Vulkan viewer (local Qt install)
 # ---------------------------------------------------------------------------
 option(BREP_BUILD_VIEWER "Build Qt/Vulkan B-Rep viewer" ON)
 if(BREP_BUILD_VIEWER)
+  brep_detect_qt_prefix(_brep_qt_prefix)
+  if(_brep_qt_prefix)
+    list(PREPEND CMAKE_PREFIX_PATH "${_brep_qt_prefix}")
+    message(STATUS "Using Qt prefix: ${_brep_qt_prefix}")
+  endif()
+
   find_package(Qt6 QUIET COMPONENTS Widgets Gui)
   if(Qt6_FOUND)
-    message(STATUS "Qt6 found: building brep_viewer")
+    message(STATUS "Qt6 ${Qt6_VERSION} found: building brep_viewer")
     add_subdirectory(apps/viewer)
   else()
     message(WARNING
-      "BREP_BUILD_VIEWER=ON but Qt6 not found. "
-      "Configure with the in-repo vcpkg toolchain:\n"
-      "  .\\third_party\\vcpkg\\bootstrap-vcpkg.bat\n"
-      "  cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="
-      "${CMAKE_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake")
+      "BREP_BUILD_VIEWER=ON but Qt6 not found.\n"
+      "Set BREP_QT_ROOT to your Qt install (e.g. -DBREP_QT_ROOT=C:/Qt6),\n"
+      "or pass -DCMAKE_PREFIX_PATH=C:/Qt6/6.7.3/msvc2022_64")
   endif()
 endif()

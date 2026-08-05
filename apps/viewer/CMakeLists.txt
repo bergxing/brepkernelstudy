@@ -1,11 +1,13 @@
 set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
+
+# Prefer checked-in SPIR-V (apps/viewer/spv). Optional glslc rebuild:
+#   cmake -DBREP_COMPILE_SHADERS=ON ...
+option(BREP_COMPILE_SHADERS "Compile GLSL with glslc instead of prebuilt SPIR-V" OFF)
 find_program(GLSLC_EXECUTABLE
   NAMES glslc glslc.exe
-  HINTS
-    "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/shaderc"
-    ENV VULKAN_SDK
+  HINTS ENV VULKAN_SDK
   PATH_SUFFIXES Bin bin
 )
 
@@ -23,7 +25,8 @@ set(VIEWER_SPV_OUTPUTS)
 foreach(shader IN LISTS VIEWER_SHADERS)
   get_filename_component(shader_name ${shader} NAME)
   set(spv_out ${VIEWER_SPV_DIR}/${shader_name}.spv)
-  if(GLSLC_EXECUTABLE)
+  set(prebuilt ${CMAKE_CURRENT_SOURCE_DIR}/spv/${shader_name}.spv)
+  if(BREP_COMPILE_SHADERS AND GLSLC_EXECUTABLE)
     add_custom_command(
       OUTPUT ${spv_out}
       COMMAND ${GLSLC_EXECUTABLE} -O -o ${spv_out}
@@ -33,11 +36,11 @@ foreach(shader IN LISTS VIEWER_SHADERS)
       VERBATIM
     )
   else()
-    # Fallback: use prebuilt SPIR-V checked into the repo.
-    set(prebuilt ${CMAKE_CURRENT_SOURCE_DIR}/spv/${shader_name}.spv)
     if(NOT EXISTS ${prebuilt})
       message(FATAL_ERROR
-        "glslc not found and missing prebuilt shader: ${prebuilt}")
+        "Missing prebuilt shader: ${prebuilt}\n"
+        "Run: python scripts/gen_spv.py\n"
+        "Or enable -DBREP_COMPILE_SHADERS=ON with a working glslc")
     endif()
     add_custom_command(
       OUTPUT ${spv_out}
