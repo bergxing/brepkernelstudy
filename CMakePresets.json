@@ -11,7 +11,7 @@
       "displayName": "CLion / MinGW Debug (no Visual Studio)",
       "description": "Use Qt 6.8.3 MinGW 13.1 toolchain + mingw_64 Qt. Open in CLion and select this preset.",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/cmake-build-debug",
+      "binaryDir": "${sourceDir}/cmake-build-mingw-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_C_COMPILER": "C:/Qt6/Tools/mingw1310_64/bin/gcc.exe",
@@ -28,7 +28,7 @@
       "name": "clion-mingw-release",
       "displayName": "CLion / MinGW Release (no Visual Studio)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/cmake-build-release",
+      "binaryDir": "${sourceDir}/cmake-build-mingw-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_COMPILER": "C:/Qt6/Tools/mingw1310_64/bin/gcc.exe",
