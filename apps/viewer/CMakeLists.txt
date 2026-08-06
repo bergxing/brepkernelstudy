@@ -79,3 +79,54 @@ target_link_libraries(brep_viewer PRIVATE
 set_target_properties(brep_viewer PROPERTIES
   WIN32_EXECUTABLE FALSE
 )
+
+# ---------------------------------------------------------------------------
+# Windows: deploy Qt (+ MinGW runtime) next to the exe so CLion Run works
+# without manually editing PATH. 0xC0000135 = missing DLL.
+# ---------------------------------------------------------------------------
+if(WIN32)
+  # CLion's bundled MinGW is ABI-incompatible with Qt's mingw_64 kit.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+     CMAKE_CXX_COMPILER MATCHES "CLion|JetBrains")
+    message(WARNING
+      "Compiler is CLion's bundled MinGW (${CMAKE_CXX_COMPILER}), but Qt "
+      "mingw_64 expects Qt's MinGW (e.g. C:/Qt6/Tools/mingw1310_64).\n"
+      "In CLion: use CMake preset 'clion-mingw' and disable the default "
+      "Debug profile (Settings → Build → CMake).")
+  endif()
+
+  get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
+  find_program(WINDEPLOYQT_EXECUTABLE
+    NAMES windeployqt windeployqt.exe
+    HINTS "${_qt_bin_dir}"
+    NO_DEFAULT_PATH
+  )
+  if(WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET brep_viewer POST_BUILD
+      COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+              --no-translations
+              --no-system-d3d-compiler
+              "$<TARGET_FILE:brep_viewer>"
+      COMMENT "windeployqt brep_viewer"
+      VERBATIM
+    )
+  else()
+    message(WARNING "windeployqt not found under ${_qt_bin_dir}")
+  endif()
+
+  # MinGW runtime DLLs (same toolchain that compiled the binary).
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    get_filename_component(_mingw_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    foreach(_dll IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+      if(EXISTS "${_mingw_bin_dir}/${_dll}")
+        add_custom_command(TARGET brep_viewer POST_BUILD
+          COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                  "${_mingw_bin_dir}/${_dll}"
+                  "$<TARGET_FILE_DIR:brep_viewer>/${_dll}"
+          COMMENT "Copy ${_dll}"
+          VERBATIM
+        )
+      endif()
+    endforeach()
+  endif()
+endif()

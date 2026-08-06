@@ -72,9 +72,14 @@ Done.
 === CLion (recommended, no Visual Studio) ===
 
 1. File → Open → this repo folder
-2. CMake settings → select preset: clion-mingw
-3. Build target: brep_viewer  (or box_demo / smoke)
-4. Run. If Qt DLLs are missing, add to Run Configuration → Environment:
+2. Settings → Build → CMake:
+   - Enable ONLY preset "clion-mingw"
+   - Disable/delete the default "Debug" profile (it uses CLion's MinGW,
+     which is ABI-incompatible with Qt mingw_64 → crash 0xC0000135)
+3. Build target: brep_viewer
+4. Run configuration should use cmake-build-mingw-debug (not cmake-build-debug)
+
+If DLLs are still missing at runtime, set Environment:
 
    PATH=$MingwBin;$QtMingw\bin;%PATH%
 
