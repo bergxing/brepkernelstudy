@@ -18,15 +18,21 @@ set(BREP_EIGEN_DIR          ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen)
 set(BREP_SPDLOG_DIR         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog)
 set(BREP_VULKAN_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/Vulkan-Headers)
 set(BREP_VOLK_DIR           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/volk)
+set(BREP_ENTT_DIR           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/entt)
 
 foreach(path_var IN ITEMS
-    BREP_EIGEN_DIR BREP_SPDLOG_DIR BREP_VULKAN_HEADERS_DIR BREP_VOLK_DIR)
+    BREP_EIGEN_DIR BREP_SPDLOG_DIR BREP_VULKAN_HEADERS_DIR BREP_VOLK_DIR
+    BREP_ENTT_DIR)
   if(NOT EXISTS "${${path_var}}")
     message(FATAL_ERROR
       "Missing submodule: ${${path_var}}. "
       "Run: git submodule update --init --recursive")
   endif()
 endforeach()
+
+if(NOT EXISTS "${BREP_ENTT_DIR}/single_include/entt/entt.hpp")
+  message(FATAL_ERROR "EnTT submodule incomplete at third_party/entt")
+endif()
 
 if(NOT EXISTS "${BREP_EIGEN_DIR}/Eigen/Core")
   message(FATAL_ERROR "Eigen submodule incomplete at third_party/eigen")
@@ -50,6 +56,13 @@ if(NOT TARGET Vulkan::Headers)
   add_library(Vulkan::Headers INTERFACE IMPORTED GLOBAL)
   set_target_properties(Vulkan::Headers PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${BREP_VULKAN_HEADERS_DIR}/include")
+endif()
+
+# EnTT ECS (header-only)
+if(NOT TARGET EnTT::EnTT)
+  add_library(EnTT::EnTT INTERFACE IMPORTED GLOBAL)
+  set_target_properties(EnTT::EnTT PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${BREP_ENTT_DIR}/single_include")
 endif()
 
 # volk meta-loader (vendored Vulkan-Headers; loads vulkan-1.dll at runtime)

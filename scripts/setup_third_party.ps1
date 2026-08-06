@@ -5,6 +5,7 @@
 #   third_party/spdlog           git submodule
 #   third_party/Vulkan-Headers   git submodule
 #   third_party/volk             git submodule
+#   third_party/entt             git submodule (ECS for viewer)
 #
 # Qt is a LOCAL install (not vendored). Default search root: C:\Qt6
 # Recommended IDE: CLion + MinGW (no Visual Studio required).

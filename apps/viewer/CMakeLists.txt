@@ -60,6 +60,8 @@ qt_add_executable(brep_viewer
   main_window.cpp
   vulkan_window.cpp
   vulkan_renderer.cpp
+  ecs/world.cpp
+  ecs/systems.cpp
   ${VIEWER_SPV_OUTPUTS}
 )
 add_dependencies(brep_viewer brep_viewer_shaders)
@@ -85,6 +87,7 @@ target_compile_definitions(brep_viewer PRIVATE
 # Qt Gui links the platform Vulkan loader; headers come from the Vulkan-Headers submodule.
 target_link_libraries(brep_viewer PRIVATE
   brep
+  EnTT::EnTT
   Qt6::Widgets
   Qt6::Gui
   Vulkan::Headers

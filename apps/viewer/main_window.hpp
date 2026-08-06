@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ecs/world.hpp"
 #include "vulkan_window.hpp"
 
 #include <QMainWindow>
@@ -15,6 +16,7 @@ class MainWindow final : public QMainWindow {
   explicit MainWindow(QWidget* parent = nullptr);
 
  private:
+  ecs::World world_;
   std::unique_ptr<QVulkanInstance> vulkan_instance_;
   VulkanWindow* vulkan_window_{nullptr};
 };

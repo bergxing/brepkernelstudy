@@ -1,5 +1,7 @@
 #include "vulkan_window.hpp"
 
+#include "ecs/systems.hpp"
+
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -11,108 +13,71 @@ VulkanWindow::VulkanWindow(QWindow* parent) : QVulkanWindow(parent) {
   setKeyboardGrabEnabled(false);
 }
 
-void VulkanWindow::set_meshes(TriangleMesh triangles, EdgeMesh edges) {
-  pending_triangles_ = std::move(triangles);
-  pending_edges_ = std::move(edges);
-  has_pending_meshes_ = true;
-  if (renderer_) {
-    renderer_->set_meshes(pending_triangles_, pending_edges_);
+Camera& VulkanWindow::camera() {
+  if (world_) {
+    if (Camera* cam = world_->main_camera()) return *cam;
   }
+  return fallback_camera_;
 }
 
-void VulkanWindow::set_material(Material material) {
-  pending_material_ = std::move(material);
-  has_pending_material_ = true;
-  if (renderer_) {
-    renderer_->set_material(pending_material_);
+const Camera& VulkanWindow::camera() const {
+  if (world_) {
+    if (const Camera* cam = world_->main_camera()) return *cam;
   }
+  return fallback_camera_;
+}
+
+void VulkanWindow::sync_renderer() {
+  if (!world_ || !renderer_) return;
+  ecs::render_sync(world_->registry(), *renderer_);
 }
 
 QVulkanWindowRenderer* VulkanWindow::createRenderer() {
   renderer_ = new VulkanRenderer(this);
-  if (has_pending_material_) {
-    renderer_->set_material(pending_material_);
-  }
-  if (has_pending_meshes_) {
-    renderer_->set_meshes(pending_triangles_, pending_edges_);
-  }
+  sync_renderer();
   return renderer_;
 }
 
 void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
-  last_pos_ = pos;
-  if (button == Qt::LeftButton) {
-    drag_mode_ = DragMode::Orbit;
+  if (!world_) return;
+  const int mode = ecs::input_on_press(world_->registry(), float(pos.x()),
+                                       float(pos.y()), int(button));
+  if (mode == static_cast<int>(ecs::InputState::DragMode::Orbit)) {
     setCursor(Qt::ClosedHandCursor);
-  } else if (button == Qt::RightButton || button == Qt::MiddleButton) {
-    drag_mode_ = DragMode::Pan;
+  } else if (mode == static_cast<int>(ecs::InputState::DragMode::Pan)) {
     setCursor(Qt::SizeAllCursor);
-  } else {
-    drag_mode_ = DragMode::None;
   }
 }
 
 void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
-  if (drag_mode_ == DragMode::None) return;
-
-  // Re-derive mode from buttons in case press was missed on one delivery path.
-  if (buttons & Qt::LeftButton) {
-    drag_mode_ = DragMode::Orbit;
-  } else if (buttons & (Qt::RightButton | Qt::MiddleButton)) {
-    drag_mode_ = DragMode::Pan;
-  } else {
-    return;
+  if (!world_) return;
+  ecs::input_on_move(world_->registry(), float(pos.x()), float(pos.y()),
+                     int(buttons));
+  if (ecs::consume_camera_dirty(world_->registry())) {
+    requestUpdate();
   }
-
-  const QPointF delta = pos - last_pos_;
-  if (qFuzzyIsNull(delta.x()) && qFuzzyIsNull(delta.y())) return;
-
-  if (drag_mode_ == DragMode::Orbit) {
-    camera_.orbit(float(delta.x()), float(delta.y()));
-  } else {
-    camera_.pan(float(delta.x()), float(delta.y()));
-  }
-  last_pos_ = pos;
-  requestUpdate();
 }
 
 void VulkanWindow::pointer_release() {
-  drag_mode_ = DragMode::None;
+  if (!world_) return;
+  ecs::input_on_release(world_->registry());
   unsetCursor();
 }
 
 void VulkanWindow::pointer_wheel(int angle_delta_y) {
-  if (angle_delta_y == 0) return;
-  camera_.zoom(angle_delta_y > 0 ? 1.0f : -1.0f);
-  requestUpdate();
+  if (!world_) return;
+  ecs::input_on_wheel(world_->registry(), angle_delta_y);
+  if (ecs::consume_camera_dirty(world_->registry())) {
+    requestUpdate();
+  }
 }
 
-void VulkanWindow::apply_key_orbit(int key) {
-  constexpr float step = 8.0f;
-  switch (key) {
-    case Qt::Key_Left:
-      camera_.orbit(-step, 0.0f);
-      break;
-    case Qt::Key_Right:
-      camera_.orbit(step, 0.0f);
-      break;
-    case Qt::Key_Up:
-      camera_.orbit(0.0f, -step);
-      break;
-    case Qt::Key_Down:
-      camera_.orbit(0.0f, step);
-      break;
-    case Qt::Key_Plus:
-    case Qt::Key_Equal:
-      camera_.zoom(1.0f);
-      break;
-    case Qt::Key_Minus:
-      camera_.zoom(-1.0f);
-      break;
-    default:
-      return;
+void VulkanWindow::apply_key(int key) {
+  if (!world_) return;
+  ecs::input_on_key(world_->registry(), key);
+  if (ecs::consume_camera_dirty(world_->registry())) {
+    requestUpdate();
   }
-  requestUpdate();
 }
 
 void VulkanWindow::mousePressEvent(QMouseEvent* event) {
@@ -136,7 +101,7 @@ void VulkanWindow::wheelEvent(QWheelEvent* event) {
 }
 
 void VulkanWindow::keyPressEvent(QKeyEvent* event) {
-  apply_key_orbit(event->key());
+  apply_key(event->key());
   event->accept();
 }
 
@@ -164,7 +129,7 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
     }
     case QEvent::KeyPress: {
       auto* e = static_cast<QKeyEvent*>(event);
-      apply_key_orbit(e->key());
+      apply_key(e->key());
       return true;
     }
     default:

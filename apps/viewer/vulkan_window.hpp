@@ -1,8 +1,6 @@
 #pragma once
 
-#include "brep/material.hpp"
-#include "brep/mesh.hpp"
-#include "camera.hpp"
+#include "ecs/world.hpp"
 #include "vulkan_renderer.hpp"
 
 #include <QVulkanWindow>
@@ -14,10 +12,11 @@ class VulkanWindow final : public QVulkanWindow {
  public:
   explicit VulkanWindow(QWindow* parent = nullptr);
 
-  void set_meshes(TriangleMesh triangles, EdgeMesh edges);
-  void set_material(Material material);
-  [[nodiscard]] Camera& camera() noexcept { return camera_; }
-  [[nodiscard]] const Camera& camera() const noexcept { return camera_; }
+  void set_world(ecs::World* world) noexcept { world_ = world; }
+  [[nodiscard]] ecs::World* world() noexcept { return world_; }
+
+  [[nodiscard]] Camera& camera();
+  [[nodiscard]] const Camera& camera() const;
 
   QVulkanWindowRenderer* createRenderer() override;
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -30,22 +29,15 @@ class VulkanWindow final : public QVulkanWindow {
   void keyPressEvent(QKeyEvent* event) override;
 
  private:
-  enum class DragMode { None, Orbit, Pan };
-
   void pointer_press(QPointF pos, Qt::MouseButton button);
   void pointer_move(QPointF pos, Qt::MouseButtons buttons);
   void pointer_release();
   void pointer_wheel(int angle_delta_y);
-  void apply_key_orbit(int key);
+  void apply_key(int key);
+  void sync_renderer();
 
-  Camera camera_{};
-  TriangleMesh pending_triangles_{};
-  EdgeMesh pending_edges_{};
-  Material pending_material_{};
-  bool has_pending_meshes_{false};
-  bool has_pending_material_{false};
-  QPointF last_pos_{};
-  DragMode drag_mode_{DragMode::None};
+  ecs::World* world_{nullptr};
+  Camera fallback_camera_{};
   VulkanRenderer* renderer_{nullptr};
 };
 

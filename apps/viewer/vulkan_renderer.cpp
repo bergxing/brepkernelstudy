@@ -1,5 +1,7 @@
 #include "vulkan_renderer.hpp"
 
+#include "ecs/systems.hpp"
+#include "ecs/world.hpp"
 #include "vulkan_window.hpp"
 
 #include "brep/log.hpp"
@@ -617,6 +619,11 @@ void VulkanRenderer::releaseResources() {
 }
 
 void VulkanRenderer::startNextFrame() {
+  // Keep ECS → GPU sync current (mesh/material dirtied by systems).
+  if (window_ && window_->world()) {
+    ecs::render_sync(window_->world()->registry(), *this);
+  }
+
   if (!dev_ || !pipeline_layout_ || (!tri_pipeline_ && !line_pipeline_)) {
     window_->frameReady();
     window_->requestUpdate();

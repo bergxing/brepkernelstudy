@@ -1,8 +1,6 @@
 #include "main_window.hpp"
 
-#include "brep/brep.hpp"
-#include "brep/material.hpp"
-#include "brep/mesh.hpp"
+#include "brep/log.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -21,7 +19,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   resize(1100, 720);
 
   vulkan_instance_ = std::make_unique<QVulkanInstance>();
-  // Don't require validation layers (often missing); keep startup reliable.
   vulkan_instance_->setApiVersion(QVersionNumber(1, 2, 0));
   if (!vulkan_instance_->create()) {
     vulkan_instance_->setApiVersion(QVersionNumber(1, 0, 0));
@@ -33,40 +30,25 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   vulkan_window_ = new VulkanWindow();
   vulkan_window_->setVulkanInstance(vulkan_instance_.get());
   vulkan_window_->setSampleCount(1);
+  vulkan_window_->set_world(&world_);
 
-  // Build demo body and tessellate.
-  {
-    using namespace brep;
-    static Model model;
-    Body* body = make_box(model, BoxSpec{
-        .min = Point3d{0, 0, 0},
-        .max = Point3d{2, 1, 3},
-        .name = "demo_box",
-    });
-    vulkan_window_->set_meshes(tessellate_body(*body), extract_edges(*body));
-    vulkan_window_->camera().target = Point3d{1.0, 0.5, 1.5};
-
-    // Wood albedo: prefer build-dir assets, then source assets next to exe.
-    QString wood_path = QStringLiteral(BREP_VIEWER_ASSETS_DIR "/wood.png");
-    if (!QFileInfo::exists(wood_path)) {
-      wood_path = QDir(QCoreApplication::applicationDirPath())
-                      .filePath(QStringLiteral("assets/wood.png"));
-    }
-    vulkan_window_->set_material(
-        make_wood_material(wood_path.toStdString()));
+  QString wood_path = QStringLiteral(BREP_VIEWER_ASSETS_DIR "/wood.png");
+  if (!QFileInfo::exists(wood_path)) {
+    wood_path = QDir(QCoreApplication::applicationDirPath())
+                    .filePath(QStringLiteral("assets/wood.png"));
   }
+  world_.create_demo_box_scene(wood_path.toStdString());
+  BREP_INFO("ECS scene ready: camera + demo_box (wood)");
 
   QWidget* container = QWidget::createWindowContainer(vulkan_window_, this);
   container->setFocusPolicy(Qt::StrongFocus);
   container->setMouseTracking(true);
-  // Embedded QVulkanWindow often does not receive mouse events on Windows;
-  // also listen on the container so orbit/pan/zoom always work.
   container->installEventFilter(vulkan_window_);
   container->setFocus();
   setCentralWidget(container);
   statusBar()->showMessage(
       QStringLiteral(
-          "Wood material | Left-drag: rotate | Right/Middle-drag: pan | Wheel: zoom"));
+          "ECS | Wood | Left-drag: rotate | Right/Middle-drag: pan | Wheel: zoom"));
 }
 
 }  // namespace brep::viewer
