@@ -4,6 +4,7 @@
 #include "brep/mesh.hpp"
 
 #include <QStatusBar>
+#include <QVersionNumber>
 #include <QVulkanInstance>
 #include <QWidget>
 
@@ -16,10 +17,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   resize(1100, 720);
 
   vulkan_instance_ = std::make_unique<QVulkanInstance>();
-  vulkan_instance_->setLayers({QByteArrayLiteral("VK_LAYER_KHRONOS_validation")});
+  // Don't require validation layers (often missing); keep startup reliable.
+  vulkan_instance_->setApiVersion(QVersionNumber(1, 2, 0));
   if (!vulkan_instance_->create()) {
-    // Validation layer may be absent; retry without it.
-    vulkan_instance_->setLayers({});
+    vulkan_instance_->setApiVersion(QVersionNumber(1, 0, 0));
     if (!vulkan_instance_->create()) {
       throw std::runtime_error("Failed to create QVulkanInstance");
     }
@@ -27,6 +28,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
   vulkan_window_ = new VulkanWindow();
   vulkan_window_->setVulkanInstance(vulkan_instance_.get());
+  vulkan_window_->setSampleCount(1);
 
   // Build demo body and tessellate.
   {

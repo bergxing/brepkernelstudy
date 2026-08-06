@@ -2,6 +2,8 @@
 
 #include "vulkan_window.hpp"
 
+#include "brep/log.hpp"
+
 #include <QFile>
 #include <QVulkanDeviceFunctions>
 
@@ -99,20 +101,36 @@ VkShaderModule VulkanRenderer::load_shader(const QString& file_name) {
 }
 
 void VulkanRenderer::initResources() {
-  dev_ = window_->vulkanInstance()->deviceFunctions(window_->device());
-  const VkDevice device = window_->device();
+  try {
+    dev_ = window_->vulkanInstance()->deviceFunctions(window_->device());
+    if (!dev_) {
+      throw std::runtime_error("QVulkanDeviceFunctions is null");
+    }
+    const VkDevice device = window_->device();
+    if (device == VK_NULL_HANDLE) {
+      throw std::runtime_error("VkDevice is null");
+    }
 
-  VkPipelineCacheCreateInfo pc{};
-  pc.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-  dev_->vkCreatePipelineCache(device, &pc, nullptr, &pipeline_cache_);
+    VkPipelineCacheCreateInfo pc{};
+    pc.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    if (dev_->vkCreatePipelineCache(device, &pc, nullptr, &pipeline_cache_) !=
+        VK_SUCCESS) {
+      throw std::runtime_error("vkCreatePipelineCache failed");
+    }
 
-  ubo_ = create_buffer(sizeof(Ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    ubo_ = create_buffer(sizeof(Ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-  create_descriptors();
-  create_pipelines();
-  upload_meshes();
+    create_descriptors();
+    create_pipelines();
+    upload_meshes();
+    BREP_INFO("VulkanRenderer::initResources OK (spv={})",
+              QStringLiteral(BREP_VIEWER_SPV_DIR).toStdString());
+  } catch (const std::exception& ex) {
+    // Exceptions must not escape Qt Vulkan callbacks (→ 0xC000041D).
+    BREP_ERROR("VulkanRenderer::initResources failed: {}", ex.what());
+  }
 }
 
 void VulkanRenderer::create_descriptors() {
@@ -372,8 +390,20 @@ void VulkanRenderer::releaseResources() {
 }
 
 void VulkanRenderer::startNextFrame() {
+  if (!dev_ || !pipeline_layout_ || (!tri_pipeline_ && !line_pipeline_)) {
+    // initResources failed; keep presenting clear frames.
+    window_->frameReady();
+    window_->requestUpdate();
+    return;
+  }
+
   if (meshes_dirty_) {
-    upload_meshes();
+    try {
+      upload_meshes();
+    } catch (const std::exception& ex) {
+      BREP_ERROR("upload_meshes failed: {}", ex.what());
+      meshes_dirty_ = false;
+    }
   }
 
   const QSize sz = window_->swapChainImageSize();
