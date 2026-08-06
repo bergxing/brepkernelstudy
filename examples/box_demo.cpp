@@ -10,13 +10,23 @@ int main() {
     init_logging("brep_demo.log", LogLevel::Debug);
     BREP_INFO("box_demo starting");
 
-    Model model;
-    Body* box = make_box(model, BoxSpec{
+    auto doc = Document::create("box_demo");
+    Part& part = doc->add_part("MainPart");
+    Body* box = part.add_box(BoxSpec{
         .min = Point3d{0, 0, 0},
         .max = Point3d{2, 1, 3},
         .tolerance = 1e-7,
         .name = "demo_box",
     });
+
+    BREP_INFO("hierarchy Document({}) -> Part({}) -> Body({})",
+              doc->guid.to_string(), part.guid.to_string(),
+              box->guid.to_string());
+
+    if (doc->registry().find(box->guid) != box) {
+      BREP_ERROR("Body Guid not registered on Document");
+      return 3;
+    }
 
     dump_body(std::cout, *box);
 

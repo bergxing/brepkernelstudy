@@ -19,16 +19,23 @@ set(BREP_SPDLOG_DIR         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog)
 set(BREP_VULKAN_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/Vulkan-Headers)
 set(BREP_VOLK_DIR           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/volk)
 set(BREP_ENTT_DIR           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/entt)
+set(BREP_BOOST_UUID_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost_uuid)
 
 foreach(path_var IN ITEMS
     BREP_EIGEN_DIR BREP_SPDLOG_DIR BREP_VULKAN_HEADERS_DIR BREP_VOLK_DIR
-    BREP_ENTT_DIR)
+    BREP_ENTT_DIR BREP_BOOST_UUID_DIR)
   if(NOT EXISTS "${${path_var}}")
     message(FATAL_ERROR
-      "Missing submodule: ${${path_var}}. "
-      "Run: git submodule update --init --recursive")
+      "Missing dependency: ${${path_var}}. "
+      "Run: git submodule update --init --recursive "
+      "(and ensure third_party/boost_uuid is present)")
   endif()
 endforeach()
+
+if(NOT EXISTS "${BREP_BOOST_UUID_DIR}/boost/uuid/uuid.hpp")
+  message(FATAL_ERROR
+    "Boost.Uuid headers missing at ${BREP_BOOST_UUID_DIR}/boost/uuid")
+endif()
 
 if(NOT EXISTS "${BREP_ENTT_DIR}/single_include/entt/entt.hpp")
   message(FATAL_ERROR "EnTT submodule incomplete at third_party/entt")
@@ -65,6 +72,10 @@ if(NOT TARGET EnTT::EnTT)
     INTERFACE_INCLUDE_DIRECTORIES "${BREP_ENTT_DIR}/single_include")
 endif()
 
+# Minimal Boost.Uuid (+deps), header-only — see third_party/boost_uuid/README.md
+add_library(brep_boost_uuid INTERFACE)
+target_include_directories(brep_boost_uuid INTERFACE "${BREP_BOOST_UUID_DIR}")
+
 # volk meta-loader (vendored Vulkan-Headers; loads vulkan-1.dll at runtime)
 set(VOLK_PULL_IN_VULKAN ON CACHE BOOL "" FORCE)
 set(VULKAN_HEADERS_INSTALL_DIR "${BREP_VULKAN_HEADERS_DIR}" CACHE PATH "" FORCE)
@@ -83,13 +94,17 @@ add_library(brep
   src/dump.cpp
   src/log.cpp
   src/mesh.cpp
+  src/guid.cpp
+  src/object_registry.cpp
+  src/part.cpp
+  src/document.cpp
 )
 target_include_directories(brep
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${BREP_SPDLOG_DIR}/include   # fmt via spdlog (public log API)
 )
-target_link_libraries(brep PUBLIC Eigen3::Eigen)
+target_link_libraries(brep PUBLIC Eigen3::Eigen brep_boost_uuid)
 
 if(MSVC)
   target_compile_options(brep PUBLIC /utf-8)

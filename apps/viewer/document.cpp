@@ -7,7 +7,11 @@ namespace brep::viewer {
 void DocumentSession::new_document(ecs::World& world,
                                    const std::string& wood_albedo_path) {
   world.create_demo_box_scene(wood_albedo_path);
-  title_ = QStringLiteral("Untitled");
+  if (const auto* doc = world.document()) {
+    title_ = QString::fromStdString(doc->name);
+  } else {
+    title_ = QStringLiteral("Untitled");
+  }
   path_.clear();
   dirty_ = false;
 }

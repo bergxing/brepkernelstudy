@@ -1,13 +1,18 @@
 #pragma once
 
 #include "brep/builder.hpp"
+#include "brep/document.hpp"
 #include "brep/dump.hpp"
 #include "brep/geometry.hpp"
+#include "brep/guid.hpp"
+#include "brep/iobject.hpp"
 #include "brep/log.hpp"
 #include "brep/material.hpp"
 #include "brep/math.hpp"
 #include "brep/mesh.hpp"
 #include "brep/model.hpp"
+#include "brep/object_registry.hpp"
+#include "brep/part.hpp"
 #include "brep/topology.hpp"
 #include "brep/types.hpp"
 #include "brep/validate.hpp"

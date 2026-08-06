@@ -1,6 +1,7 @@
 #pragma once
 
 #include "brep/geometry.hpp"
+#include "brep/iobject.hpp"
 #include "brep/types.hpp"
 
 #include <cstddef>
@@ -115,10 +116,17 @@ class Shell : public Named {
   [[nodiscard]] std::size_t face_count() const noexcept { return faces.size(); }
 };
 
-class Body : public Named {
+/// Topological root (solid/sheet/wire). IObject for document Guid identity;
+/// `id` remains the session-local topology handle.
+class Body final : public IObject {
  public:
+  Id id{0};
   BodyType type{BodyType::Solid};
   std::vector<Shell*> shells;
+
+  [[nodiscard]] ObjectKind kind() const noexcept override {
+    return ObjectKind::Body;
+  }
 
   [[nodiscard]] Shell* outer_shell() const noexcept {
     return shells.empty() ? nullptr : shells.front();

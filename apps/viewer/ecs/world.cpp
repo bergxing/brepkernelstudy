@@ -8,6 +8,18 @@ World::World() {
   registry_.ctx().emplace<InputState>();
 }
 
+brep::Model* World::model() noexcept {
+  if (!document_) return nullptr;
+  if (auto* part = document_->main_part()) return &part->model();
+  return nullptr;
+}
+
+const brep::Model* World::model() const noexcept {
+  if (!document_) return nullptr;
+  if (const auto* part = document_->main_part()) return &part->model();
+  return nullptr;
+}
+
 void World::clear_scene() {
   registry_.clear();
   if (!registry_.ctx().contains<InputState>()) {
@@ -15,7 +27,7 @@ void World::clear_scene() {
   } else {
     registry_.ctx().get<InputState>() = InputState{};
   }
-  model_ = brep::Model{};
+  document_.reset();
 }
 
 entt::entity World::create_camera(Camera camera) {
@@ -45,19 +57,26 @@ void World::create_demo_box_scene(const std::string& wood_albedo_path) {
 
   clear_scene();
 
-  Camera cam;
-  cam.target = Point3d{1.0, 0.5, 1.5};
-  create_camera(cam);
-
-  Body* body = make_box(model_, BoxSpec{
+  document_ = Document::create("Untitled");
+  Part& part = document_->add_part("MainPart");
+  Body* body = part.add_box(BoxSpec{
       .min = Point3d{0, 0, 0},
       .max = Point3d{2, 1, 3},
       .name = "demo_box",
   });
 
+  Camera cam;
+  cam.target = Point3d{1.0, 0.5, 1.5};
+  create_camera(cam);
+
   create_renderable("demo_box", tessellate_body(*body), extract_edges(*body),
                     make_wood_material(wood_albedo_path),
                     Point3d{0, 0, 0});
+
+  BREP_INFO(
+      "demo scene: Document={} Part={} Body={} (guid={})",
+      document_->guid.to_string(), part.guid.to_string(), body->name,
+      body->guid.to_string());
 }
 
 Camera* World::main_camera() noexcept {

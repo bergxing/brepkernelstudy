@@ -131,10 +131,14 @@ Shell* Model::make_shell(bool closed, std::string name) {
 }
 
 Body* Model::make_body(BodyType type, std::string name) {
-  Body* b = emplace(bodies_);
-  b->type = type;
-  b->name = std::move(name);
-  BREP_INFO("make_body id={} name='{}'", b->id, b->name);
+  auto owned = std::make_unique<Body>();
+  owned->id = next_id();
+  owned->type = type;
+  owned->name = std::move(name);
+  Body* b = owned.get();
+  bodies_.push_back(std::move(owned));
+  BREP_INFO("make_body id={} guid={} name='{}'", b->id, b->guid.to_string(),
+            b->name);
   return b;
 }
 
