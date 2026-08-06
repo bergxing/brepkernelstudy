@@ -11,6 +11,7 @@
 #include <QStatusBar>
 #include <QVersionNumber>
 #include <QVulkanInstance>
+#include <QWheelEvent>
 #include <QWidget>
 
 #include <stdexcept>
@@ -51,15 +52,23 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   setCentralWidget(viewport_container_);
 
   // Native Vulkan HWND covers sibling widgets; use a frameless tool window overlay.
+  // WindowDoesNotAcceptFocus keeps wheel/keyboard on the viewport after cube clicks.
   view_cube_ = new ViewCubeWidget(this);
-  view_cube_->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
+  view_cube_->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
+                             Qt::WindowDoesNotAcceptFocus);
   view_cube_->setAttribute(Qt::WA_ShowWithoutActivating);
   view_cube_->set_camera(world_.main_camera());
   view_cube_->set_redraw_callback([this] {
     if (vulkan_window_) vulkan_window_->requestUpdate();
+    if (viewport_container_) {
+      viewport_container_->setFocus(Qt::OtherFocusReason);
+    }
   });
   place_view_cube();
   view_cube_->show();
+
+  // Forward wheel events that land on the main window chrome toward the viewport.
+  installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
       "ECS | Axes + ViewCube | Left-drag: rotate | Right/Middle: pan | Wheel: "
@@ -96,6 +105,28 @@ void MainWindow::place_view_cube() {
       QPoint(viewport_container_->width() - view_cube_->width() - margin,
              margin));
   view_cube_->move(global);
+}
+
+void MainWindow::forward_wheel(QWheelEvent* event) {
+  if (!vulkan_window_) return;
+  int dy = event->angleDelta().y();
+  if (dy == 0) dy = event->pixelDelta().y();
+  if (dy != 0) vulkan_window_->handle_wheel(dy);
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  if (event->type() == QEvent::Wheel && watched == this) {
+    auto* we = static_cast<QWheelEvent*>(event);
+    if (viewport_container_) {
+      const QPoint local =
+          viewport_container_->mapFromGlobal(we->globalPosition().toPoint());
+      if (viewport_container_->rect().contains(local)) {
+        forward_wheel(we);
+        return true;
+      }
+    }
+  }
+  return QMainWindow::eventFilter(watched, event);
 }
 
 }  // namespace brep::viewer

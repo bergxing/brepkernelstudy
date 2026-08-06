@@ -20,9 +20,11 @@ class MainWindow final : public QMainWindow {
   void resizeEvent(QResizeEvent* event) override;
   void moveEvent(QMoveEvent* event) override;
   void changeEvent(QEvent* event) override;
+  bool eventFilter(QObject* watched, QEvent* event) override;
 
  private:
   void place_view_cube();
+  void forward_wheel(QWheelEvent* event);
 
   ecs::World world_;
   std::unique_ptr<QVulkanInstance> vulkan_instance_;

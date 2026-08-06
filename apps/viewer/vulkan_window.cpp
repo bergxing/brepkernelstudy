@@ -96,7 +96,10 @@ void VulkanWindow::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void VulkanWindow::wheelEvent(QWheelEvent* event) {
-  pointer_wheel(event->angleDelta().y());
+  int dy = event->angleDelta().y();
+  // Precision touchpads often report pixelDelta with angleDelta == 0.
+  if (dy == 0) dy = event->pixelDelta().y();
+  if (dy != 0) pointer_wheel(dy);
   event->accept();
 }
 
@@ -124,7 +127,9 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
     }
     case QEvent::Wheel: {
       auto* e = static_cast<QWheelEvent*>(event);
-      pointer_wheel(e->angleDelta().y());
+      int dy = e->angleDelta().y();
+      if (dy == 0) dy = e->pixelDelta().y();
+      if (dy != 0) pointer_wheel(dy);
       return true;
     }
     case QEvent::KeyPress: {

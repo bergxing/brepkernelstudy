@@ -45,7 +45,9 @@ struct Camera {
 
   void zoom(float delta) {
     distance *= (delta > 0.0f) ? 0.9f : 1.1f;
-    if (distance < 0.3f) distance = 0.3f;
+    // Stay outside the demo-box half-diagonal (~1.87). Camera inside a
+    // solid looks like a near-plane "hole" cut through the mesh.
+    if (distance < 2.0f) distance = 2.0f;
     if (distance > 200.0f) distance = 200.0f;
   }
 

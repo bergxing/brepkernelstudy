@@ -697,13 +697,15 @@ void VulkanRenderer::startNextFrame() {
   float view[16];
   float proj[16];
   cam.view_matrix(view);
+  // Near/far track the eye distance so zooming in does not near-clip the model.
+  const float znear = std::clamp(cam.distance * 0.01f, 0.001f, 0.5f);
+  const float zfar = std::max(200.0f, cam.distance * 100.0f);
   if (cam.ortho) {
-    // Fit a reasonable world slab around the look-at distance.
-    const float half_h = std::max(0.5f, cam.distance * 0.35f);
+    const float half_h = std::max(0.05f, cam.distance * 0.35f);
     const float half_w = half_h * aspect;
-    Camera::ortho_matrix(half_w, half_h, -500.0f, 500.0f, proj);
+    Camera::ortho_matrix(half_w, half_h, znear, zfar, proj);
   } else {
-    Camera::perspective(45.0f, aspect, 0.05f, 500.0f, proj);
+    Camera::perspective(45.0f, aspect, znear, zfar, proj);
   }
   Camera::multiply(proj, view, ubo.mvp);
   ubo.light_dir[0] = -0.4f;
