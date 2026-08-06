@@ -163,7 +163,7 @@ if(BREP_BUILD_VIEWER)
     message(WARNING
       "BREP_BUILD_VIEWER=ON but Qt6 not found.\n"
       "Set BREP_QT_ROOT (e.g. -DBREP_QT_ROOT=C:/Qt6),\n"
-      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.7.3/mingw_64  (CLion/MinGW)\n"
-      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.7.3/msvc2022_64 (MSVC)")
+      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.8.3/mingw_64  (CLion/MinGW)\n"
+      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.8.3/msvc2022_64 (MSVC)")
   endif()
 endif()

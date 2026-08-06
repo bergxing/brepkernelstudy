@@ -23,11 +23,20 @@ Write-Host "==> Generate viewer SPIR-V (Python emitter, no glslc required)"
 python (Join-Path $Root "scripts\gen_spv.py")
 
 $QtRoot = if ($env:BREP_QT_ROOT) { $env:BREP_QT_ROOT } else { "C:\Qt6" }
-$MingwBin = Join-Path $QtRoot "Tools\mingw1120_64\bin"
-if (-not (Test-Path (Join-Path $MingwBin "g++.exe"))) {
-  # Fallback: first Tools\mingw*\bin that has g++.exe
+
+# Prefer newer MinGW shipped with recent Qt installers (13.1, then 11.2, …).
+$MingwBin = $null
+foreach ($name in @("mingw1310_64", "mingw1120_64")) {
+  $candidate = Join-Path $QtRoot "Tools\$name\bin"
+  if (Test-Path (Join-Path $candidate "g++.exe")) {
+    $MingwBin = $candidate
+    break
+  }
+}
+if (-not $MingwBin) {
   $MingwBin = Get-ChildItem -Path (Join-Path $QtRoot "Tools") -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like "mingw*" } |
+    Where-Object { $_.Name -like "mingw*" -and $_.Name -notlike "llvm-*" } |
+    Sort-Object Name -Descending |
     ForEach-Object { Join-Path $_.FullName "bin" } |
     Where-Object { Test-Path (Join-Path $_ "g++.exe") } |
     Select-Object -First 1
