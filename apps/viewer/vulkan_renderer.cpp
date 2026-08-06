@@ -329,6 +329,9 @@ void VulkanRenderer::initResources() {
     ubo_ = create_buffer(sizeof(Ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    axis_ubo_ = create_buffer(sizeof(Ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     create_albedo_texture();
     create_descriptors();
@@ -362,43 +365,55 @@ void VulkanRenderer::create_descriptors() {
   lci.pBindings = bindings;
   dev_->vkCreateDescriptorSetLayout(device, &lci, nullptr, &desc_layout_);
 
+  // Two sets: scene UBO + axis/gizmo UBO. They cannot share one buffer —
+  // both draws are recorded into the same command buffer, and the GPU reads
+  // UBO contents at submit time (last CPU write would otherwise win).
   VkDescriptorPoolSize pool_sizes[2]{};
   pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  pool_sizes[0].descriptorCount = 1;
+  pool_sizes[0].descriptorCount = 2;
   pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  pool_sizes[1].descriptorCount = 1;
+  pool_sizes[1].descriptorCount = 2;
 
   VkDescriptorPoolCreateInfo pci{};
   pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  pci.maxSets = 1;
+  pci.maxSets = 2;
   pci.poolSizeCount = 2;
   pci.pPoolSizes = pool_sizes;
   dev_->vkCreateDescriptorPool(device, &pci, nullptr, &desc_pool_);
 
+  VkDescriptorSetLayout layouts[2] = {desc_layout_, desc_layout_};
   VkDescriptorSetAllocateInfo ai{};
   ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
   ai.descriptorPool = desc_pool_;
-  ai.descriptorSetCount = 1;
-  ai.pSetLayouts = &desc_layout_;
-  dev_->vkAllocateDescriptorSets(device, &ai, &desc_set_);
-
-  VkDescriptorBufferInfo bi{};
-  bi.buffer = ubo_.buffer;
-  bi.offset = 0;
-  bi.range = sizeof(Ubo);
+  ai.descriptorSetCount = 2;
+  ai.pSetLayouts = layouts;
+  VkDescriptorSet sets[2]{};
+  dev_->vkAllocateDescriptorSets(device, &ai, sets);
+  desc_set_ = sets[0];
+  axis_desc_set_ = sets[1];
 
   VkDescriptorImageInfo ii{};
   ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   ii.imageView = albedo_.view;
   ii.sampler = albedo_.sampler;
 
-  VkWriteDescriptorSet writes[2]{};
+  VkDescriptorBufferInfo scene_bi{};
+  scene_bi.buffer = ubo_.buffer;
+  scene_bi.offset = 0;
+  scene_bi.range = sizeof(Ubo);
+
+  VkDescriptorBufferInfo axis_bi{};
+  axis_bi.buffer = axis_ubo_.buffer;
+  axis_bi.offset = 0;
+  axis_bi.range = sizeof(Ubo);
+
+  VkWriteDescriptorSet writes[4]{};
   writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   writes[0].dstSet = desc_set_;
   writes[0].dstBinding = 0;
   writes[0].descriptorCount = 1;
   writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  writes[0].pBufferInfo = &bi;
+  writes[0].pBufferInfo = &scene_bi;
 
   writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   writes[1].dstSet = desc_set_;
@@ -407,7 +422,21 @@ void VulkanRenderer::create_descriptors() {
   writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   writes[1].pImageInfo = &ii;
 
-  dev_->vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+  writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writes[2].dstSet = axis_desc_set_;
+  writes[2].dstBinding = 0;
+  writes[2].descriptorCount = 1;
+  writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  writes[2].pBufferInfo = &axis_bi;
+
+  writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writes[3].dstSet = axis_desc_set_;
+  writes[3].dstBinding = 1;
+  writes[3].descriptorCount = 1;
+  writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  writes[3].pImageInfo = &ii;
+
+  dev_->vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
 }
 
 void VulkanRenderer::create_pipelines() {
@@ -639,6 +668,7 @@ void VulkanRenderer::releaseResources() {
   destroy_buffer(line_vb_);
   destroy_buffer(axis_vb_);
   destroy_buffer(ubo_);
+  destroy_buffer(axis_ubo_);
   destroy_texture(albedo_);
 
   if (tri_pipeline_)
@@ -661,7 +691,7 @@ void VulkanRenderer::releaseResources() {
   pipeline_cache_ = VK_NULL_HANDLE;
   desc_pool_ = VK_NULL_HANDLE;
   desc_layout_ = VK_NULL_HANDLE;
-  desc_set_ = VK_NULL_HANDLE;
+  desc_set_ = axis_desc_set_ = VK_NULL_HANDLE;
   axis_vertex_count_ = 0;
 }
 
@@ -770,16 +800,22 @@ void VulkanRenderer::startNextFrame() {
     dev_->vkCmdDraw(cmd, line_vertex_count_, 1, 0, 0);
   }
 
-  // Screen-space orientation triad (bottom-left), independent of scene entities.
-  if (axis_vertex_count_ > 0 && axis_pipeline_) {
+  // Screen-space orientation triad (bottom-left). Uses a separate UBO so it
+  // cannot overwrite the scene MVP that the mesh/edge draws will read.
+  if (axis_vertex_count_ > 0 && axis_pipeline_ && axis_desc_set_) {
+    Ubo axis_ubo{};
+    Camera::identity(axis_ubo.model);
     float orient_view[16];
     float gizmo_proj[16];
     cam.orientation_view_matrix(orient_view);
     Camera::ortho_matrix(1.35f, 1.35f, 0.1f, 10.0f, gizmo_proj);
-    Camera::multiply(gizmo_proj, orient_view, ubo.mvp);
-    dev_->vkMapMemory(window_->device(), ubo_.memory, 0, sizeof(Ubo), 0, &data);
-    std::memcpy(data, &ubo, sizeof(Ubo));
-    dev_->vkUnmapMemory(window_->device(), ubo_.memory);
+    Camera::multiply(gizmo_proj, orient_view, axis_ubo.mvp);
+
+    void* axis_data = nullptr;
+    dev_->vkMapMemory(window_->device(), axis_ubo_.memory, 0, sizeof(Ubo), 0,
+                      &axis_data);
+    std::memcpy(axis_data, &axis_ubo, sizeof(Ubo));
+    dev_->vkUnmapMemory(window_->device(), axis_ubo_.memory);
 
     constexpr float gizmo = 112.0f;
     constexpr float margin = 14.0f;
@@ -799,6 +835,9 @@ void VulkanRenderer::startNextFrame() {
     gizmo_sc.extent.height = uint32_t(gizmo);
     dev_->vkCmdSetScissor(cmd, 0, 1, &gizmo_sc);
 
+    dev_->vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  pipeline_layout_, 0, 1, &axis_desc_set_, 0,
+                                  nullptr);
     dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);
     VkDeviceSize offset = 0;
     dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &axis_vb_.buffer, &offset);

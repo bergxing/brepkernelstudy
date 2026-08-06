@@ -81,12 +81,14 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   GpuBuffer tri_ib_{};
   GpuBuffer line_vb_{};
   GpuBuffer axis_vb_{};
-  GpuBuffer ubo_{};
+  GpuBuffer ubo_{};       // scene MVP (mesh + edges)
+  GpuBuffer axis_ubo_{};  // screen-space gizmo MVP (must be separate!)
   GpuTexture albedo_{};
 
   VkDescriptorPool desc_pool_{VK_NULL_HANDLE};
   VkDescriptorSetLayout desc_layout_{VK_NULL_HANDLE};
   VkDescriptorSet desc_set_{VK_NULL_HANDLE};
+  VkDescriptorSet axis_desc_set_{VK_NULL_HANDLE};
 
   VkPipelineLayout pipeline_layout_{VK_NULL_HANDLE};
   VkPipeline tri_pipeline_{VK_NULL_HANDLE};
