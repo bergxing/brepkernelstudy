@@ -24,7 +24,7 @@ class MainWindow final : public QMainWindow {
 
  private:
   void place_view_cube();
-  void forward_wheel(QWheelEvent* event);
+  void apply_wheel_zoom(int dy);
 
   ecs::World world_;
   std::unique_ptr<QVulkanInstance> vulkan_instance_;

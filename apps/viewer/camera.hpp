@@ -11,10 +11,12 @@ struct Camera {
   float yaw_deg{-35.0f};
   float pitch_deg{-25.0f};
   float distance{6.0f};
+  float fov_deg{45.0f};
+  float ortho_half_h{2.1f};  // world units (vertical half-extent)
   Point3d target{1.0, 0.5, 1.5};
   bool ortho{false};
 
-  /// When true, eye/up come from framed_forward_/framed_up_ (CAD snaps).
+  /// When true, eye/up come from framed_forward / framed_up (CAD snaps).
   bool framed{false};
   Vector3d framed_forward{0, 0, -1};  // eye → target
   Vector3d framed_up{0, 1, 0};
@@ -39,16 +41,28 @@ struct Camera {
     }
     right = right.normalized();
     up = right.cross(forward).normalized();
-    const float scale = distance * 0.0025f;
+    const float scale =
+        (ortho ? ortho_half_h : distance * std::tan(fov_deg * 0.008726646f)) *
+        0.005f;
     target = target + right * double(-dx * scale) + up * double(dy * scale);
   }
 
+  /// Zoom in (delta>0) / out (delta<0). Ortho scales frustum; perspective
+  /// scales FOV first (avoids dollying into the solid), then gently dollies.
   void zoom(float delta) {
-    distance *= (delta > 0.0f) ? 0.9f : 1.1f;
-    // Stay outside the demo-box half-diagonal (~1.87). Camera inside a
-    // solid looks like a near-plane "hole" cut through the mesh.
-    if (distance < 2.0f) distance = 2.0f;
-    if (distance > 200.0f) distance = 200.0f;
+    const bool zoom_in = delta > 0.0f;
+    if (ortho) {
+      ortho_half_h *= zoom_in ? 0.9f : 1.1f;
+      if (ortho_half_h < 0.05f) ortho_half_h = 0.05f;
+      if (ortho_half_h > 100.0f) ortho_half_h = 100.0f;
+    } else {
+      fov_deg *= zoom_in ? 0.9f : 1.1f;
+      if (fov_deg < 10.0f) fov_deg = 10.0f;
+      if (fov_deg > 75.0f) fov_deg = 75.0f;
+      distance *= zoom_in ? 0.92f : 1.08f;
+      if (distance < 2.5f) distance = 2.5f;
+      if (distance > 200.0f) distance = 200.0f;
+    }
   }
 
   void set_yaw_pitch(float yaw, float pitch) {
@@ -62,12 +76,12 @@ struct Camera {
   /// Snap to a CAD orthographic view (Z-up naming: Top = look from +Z).
   void set_standard_view(char face) {
     switch (face) {
-      case 'r':  // RIGHT +X: X out, Y up, Z left on screen
-        frame_view({-1, 0, 0}, {0, 1, 0}, /*ortho=*/true);
+      case 'r':
+        frame_view({-1, 0, 0}, {0, 1, 0}, true);
         yaw_deg = 0.0f;
         pitch_deg = 0.0f;
         break;
-      case 'l':  // LEFT -X
+      case 'l':
         frame_view({1, 0, 0}, {0, 1, 0}, true);
         yaw_deg = 180.0f;
         pitch_deg = 0.0f;
@@ -77,25 +91,26 @@ struct Camera {
         yaw_deg = 90.0f;
         pitch_deg = 0.0f;
         break;
-      case 'b':  // BOTTOM -Z: X right, Y down? use Y up flipped via up=-Y → X left
-        // Look from -Z: X right, Y up, Z into screen
+      case 'b':
         frame_view({0, 0, 1}, {0, 1, 0}, true);
         yaw_deg = -90.0f;
         pitch_deg = 0.0f;
         break;
-      case 'f':  // FRONT +Y: X right, Z up, Y out
+      case 'f':
         frame_view({0, -1, 0}, {0, 0, -1}, true);
         yaw_deg = 90.0f;
         pitch_deg = 89.0f;
         break;
-      case 'k':  // BACK -Y
+      case 'k':
         frame_view({0, 1, 0}, {0, 0, -1}, true);
         yaw_deg = -90.0f;
         pitch_deg = -89.0f;
         break;
-      case 'h':  // home / iso perspective
+      case 'h':
         framed = false;
         ortho = false;
+        fov_deg = 45.0f;
+        distance = 6.0f;
         set_yaw_pitch(-35.0f, -25.0f);
         break;
       default:
@@ -118,7 +133,6 @@ struct Camera {
     };
   }
 
-  // Column-major 4x4 matrices for Vulkan (same as OpenGL-style GLM layout).
   void view_matrix(float out[16]) const {
     const Point3d e = eye();
     Vector3d f =
@@ -150,7 +164,6 @@ struct Camera {
     out[15] = 1.0f;
   }
 
-  /// Orientation-only view (target at origin) for the screen-space axis gizmo.
   void orientation_view_matrix(float out[16]) const {
     Vector3d f =
         framed ? framed_forward.normalized() : orbit_forward().normalized();
@@ -193,7 +206,6 @@ struct Camera {
     out[14] = (zfar * znear) / (znear - zfar);
   }
 
-  /// Orthographic projection with Vulkan Y flip (top maps to smaller NDC y).
   static void ortho_matrix(float half_w, float half_h, float znear, float zfar,
                            float out[16]) {
     for (int i = 0; i < 16; ++i) out[i] = 0.0f;
@@ -228,6 +240,10 @@ struct Camera {
     ortho = use_ortho;
     framed_forward = forward.normalized();
     framed_up = up.normalized();
+    if (use_ortho) {
+      // Keep a sensible on-screen size when entering ortho.
+      ortho_half_h = std::max(0.5f, distance * 0.35f);
+    }
   }
 
   void exit_framed_to_orbit() {
@@ -244,7 +260,6 @@ struct Camera {
     const float yaw = yaw_deg * 0.01745329252f;
     const float pitch = pitch_deg * 0.01745329252f;
     const float cp = std::cos(pitch);
-    // Direction from eye to target = -offset direction
     return Vector3d{
         -cp * std::cos(yaw),
         -std::sin(pitch),

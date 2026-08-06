@@ -2,6 +2,7 @@
 
 #include "brep/log.hpp"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QEvent>
@@ -17,6 +18,16 @@
 #include <stdexcept>
 
 namespace brep::viewer {
+namespace {
+
+int wheel_delta_y(const QWheelEvent* event) {
+  // Prefer angleDelta (mouse wheel notches). Fall back to pixelDelta (touchpad).
+  if (event->angleDelta().y() != 0) return event->angleDelta().y();
+  if (event->pixelDelta().y() != 0) return event->pixelDelta().y();
+  return 0;
+}
+
+}  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   setWindowTitle(QStringLiteral("B-Rep Kernel Viewer"));
@@ -51,8 +62,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   viewport_container_->setFocus();
   setCentralWidget(viewport_container_);
 
-  // Native Vulkan HWND covers sibling widgets; use a frameless tool window overlay.
-  // WindowDoesNotAcceptFocus keeps wheel/keyboard on the viewport after cube clicks.
   view_cube_ = new ViewCubeWidget(this);
   view_cube_->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
                              Qt::WindowDoesNotAcceptFocus);
@@ -67,8 +76,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   place_view_cube();
   view_cube_->show();
 
-  // Forward wheel events that land on the main window chrome toward the viewport.
-  installEventFilter(this);
+  // Catch wheel at the application level — QVulkanWindow / createWindowContainer
+  // often drops wheel events before they reach the QWindow on Windows.
+  qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
       "ECS | Axes + ViewCube | Left-drag: rotate | Right/Middle: pan | Wheel: "
@@ -107,23 +117,45 @@ void MainWindow::place_view_cube() {
   view_cube_->move(global);
 }
 
-void MainWindow::forward_wheel(QWheelEvent* event) {
-  if (!vulkan_window_) return;
-  int dy = event->angleDelta().y();
-  if (dy == 0) dy = event->pixelDelta().y();
-  if (dy != 0) vulkan_window_->handle_wheel(dy);
+void MainWindow::apply_wheel_zoom(int dy) {
+  if (!vulkan_window_ || dy == 0) return;
+  BREP_INFO("wheel zoom delta={}", dy);
+  vulkan_window_->handle_wheel(dy);
+  if (Camera* cam = world_.main_camera()) {
+    statusBar()->showMessage(
+        QStringLiteral("Zoom | dist=%1  fov=%2°  orthoHalf=%3  mode=%4")
+            .arg(cam->distance, 0, 'f', 2)
+            .arg(cam->fov_deg, 0, 'f', 1)
+            .arg(cam->ortho_half_h, 0, 'f', 2)
+            .arg(cam->ortho ? QStringLiteral("ortho")
+                            : QStringLiteral("persp")));
+  }
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
-  if (event->type() == QEvent::Wheel && watched == this) {
+  if (event->type() == QEvent::Wheel && vulkan_window_ && viewport_container_) {
     auto* we = static_cast<QWheelEvent*>(event);
-    if (viewport_container_) {
-      const QPoint local =
-          viewport_container_->mapFromGlobal(we->globalPosition().toPoint());
-      if (viewport_container_->rect().contains(local)) {
-        forward_wheel(we);
-        return true;
+    const QPoint global = we->globalPosition().toPoint();
+
+    const QRect viewport_global(
+        viewport_container_->mapToGlobal(QPoint(0, 0)),
+        viewport_container_->size());
+    if (!viewport_global.contains(global)) {
+      return QMainWindow::eventFilter(watched, event);
+    }
+
+    // Let the ViewCube keep its own wheel (none today) / click area alone.
+    if (view_cube_ && view_cube_->isVisible()) {
+      const QRect cube_global(view_cube_->pos(), view_cube_->size());
+      if (cube_global.contains(global)) {
+        return QMainWindow::eventFilter(watched, event);
       }
+    }
+
+    const int dy = wheel_delta_y(we);
+    if (dy != 0) {
+      apply_wheel_zoom(dy);
+      return true;  // consume — avoid double-handling by QWindow/container
     }
   }
   return QMainWindow::eventFilter(watched, event);
