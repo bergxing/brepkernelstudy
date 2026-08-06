@@ -45,6 +45,8 @@ class ViewCubeWidget final : public QWidget {
   FaceId hover_{FaceId::None};
   float last_yaw_{0.0f};
   float last_pitch_{0.0f};
+  bool last_framed_{false};
+  bool last_ortho_{false};
 };
 
 }  // namespace brep::viewer

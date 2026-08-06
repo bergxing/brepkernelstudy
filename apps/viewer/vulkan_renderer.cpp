@@ -548,7 +548,8 @@ void VulkanRenderer::upload_axes() {
   destroy_buffer(axis_vb_);
   axis_vertex_count_ = 0;
 
-  constexpr float L = 2.5f;
+  // Unit triad for the screen-space corner gizmo (not world-anchored).
+  constexpr float L = 1.0f;
   const AxisVertexGpu axes[] = {
       {{0, 0, 0}, {1.0f, 0.15f, 0.15f}}, {{L, 0, 0}, {1.0f, 0.15f, 0.15f}},  // X
       {{0, 0, 0}, {0.2f, 0.9f, 0.25f}},  {{0, L, 0}, {0.2f, 0.9f, 0.25f}},   // Y
@@ -687,13 +688,23 @@ void VulkanRenderer::startNextFrame() {
   }
 
   const QSize sz = window_->swapChainImageSize();
+  const Camera& cam = window_->camera();
+  const float aspect =
+      float(sz.width()) / float(std::max(1, sz.height()));
+
   Ubo ubo{};
   Camera::identity(ubo.model);
   float view[16];
   float proj[16];
-  window_->camera().view_matrix(view);
-  Camera::perspective(45.0f, float(sz.width()) / float(std::max(1, sz.height())),
-                      0.05f, 500.0f, proj);
+  cam.view_matrix(view);
+  if (cam.ortho) {
+    // Fit a reasonable world slab around the look-at distance.
+    const float half_h = std::max(0.5f, cam.distance * 0.35f);
+    const float half_w = half_h * aspect;
+    Camera::ortho_matrix(half_w, half_h, -500.0f, 500.0f, proj);
+  } else {
+    Camera::perspective(45.0f, aspect, 0.05f, 500.0f, proj);
+  }
   Camera::multiply(proj, view, ubo.mvp);
   ubo.light_dir[0] = -0.4f;
   ubo.light_dir[1] = -1.0f;
@@ -756,7 +767,35 @@ void VulkanRenderer::startNextFrame() {
     dev_->vkCmdDraw(cmd, line_vertex_count_, 1, 0, 0);
   }
 
+  // Screen-space orientation triad (bottom-left), independent of scene entities.
   if (axis_vertex_count_ > 0 && axis_pipeline_) {
+    float orient_view[16];
+    float gizmo_proj[16];
+    cam.orientation_view_matrix(orient_view);
+    Camera::ortho_matrix(1.35f, 1.35f, 0.1f, 10.0f, gizmo_proj);
+    Camera::multiply(gizmo_proj, orient_view, ubo.mvp);
+    dev_->vkMapMemory(window_->device(), ubo_.memory, 0, sizeof(Ubo), 0, &data);
+    std::memcpy(data, &ubo, sizeof(Ubo));
+    dev_->vkUnmapMemory(window_->device(), ubo_.memory);
+
+    constexpr float gizmo = 112.0f;
+    constexpr float margin = 14.0f;
+    VkViewport gizmo_vp{};
+    gizmo_vp.x = margin;
+    gizmo_vp.y = float(sz.height()) - gizmo - margin;
+    gizmo_vp.width = gizmo;
+    gizmo_vp.height = gizmo;
+    gizmo_vp.minDepth = 0.0f;
+    gizmo_vp.maxDepth = 1.0f;
+    dev_->vkCmdSetViewport(cmd, 0, 1, &gizmo_vp);
+
+    VkRect2D gizmo_sc{};
+    gizmo_sc.offset.x = int32_t(margin);
+    gizmo_sc.offset.y = int32_t(float(sz.height()) - gizmo - margin);
+    gizmo_sc.extent.width = uint32_t(gizmo);
+    gizmo_sc.extent.height = uint32_t(gizmo);
+    dev_->vkCmdSetScissor(cmd, 0, 1, &gizmo_sc);
+
     dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);
     VkDeviceSize offset = 0;
     dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &axis_vb_.buffer, &offset);

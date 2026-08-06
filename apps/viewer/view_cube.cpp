@@ -12,8 +12,6 @@
 namespace brep::viewer {
 namespace {
 
-constexpr float kDeg = 0.01745329252f;
-
 struct ProjFace {
   ViewCubeWidget::FaceId id;
   char code;
@@ -31,15 +29,18 @@ ViewCubeWidget::ViewCubeWidget(QWidget* parent) : QWidget(parent) {
   setAttribute(Qt::WA_TransparentForMouseEvents, false);
   setMouseTracking(true);
   setCursor(Qt::ArrowCursor);
-  setToolTip(QStringLiteral("Click a face to snap the view"));
+  setToolTip(QStringLiteral("Click a face for an orthographic snap"));
 
-  // Keep the cube in sync while the user orbits the 3D camera.
   auto* timer = new QTimer(this);
   connect(timer, &QTimer::timeout, this, [this] {
     if (!camera_) return;
-    if (camera_->yaw_deg != last_yaw_ || camera_->pitch_deg != last_pitch_) {
+    if (camera_->yaw_deg != last_yaw_ || camera_->pitch_deg != last_pitch_ ||
+        camera_->framed != last_framed_ ||
+        camera_->ortho != last_ortho_) {
       last_yaw_ = camera_->yaw_deg;
       last_pitch_ = camera_->pitch_deg;
+      last_framed_ = camera_->framed;
+      last_ortho_ = camera_->ortho;
       update();
     }
   });
@@ -48,39 +49,39 @@ ViewCubeWidget::ViewCubeWidget(QWidget* parent) : QWidget(parent) {
 
 void ViewCubeWidget::project_point(float x, float y, float z, float& sx,
                                    float& sy, float& depth) const {
-  const float yaw = (camera_ ? camera_->yaw_deg : -35.0f) * kDeg;
-  const float pitch = (camera_ ? camera_->pitch_deg : -25.0f) * kDeg;
-  const float cy = std::cos(yaw);
-  const float syw = std::sin(yaw);
-  const float cp = std::cos(pitch);
-  const float sp = std::sin(pitch);
+  float view[16];
+  if (camera_) {
+    camera_->view_matrix(view);
+  } else {
+    Camera tmp;
+    tmp.view_matrix(view);
+  }
 
-  // Same basis as Camera::eye / view: rotate world into camera-facing space.
-  const float x1 = x * cy + z * syw;
-  const float z1 = -x * syw + z * cy;
-  const float y2 = y * cp - z1 * sp;
-  const float z2 = y * sp + z1 * cp;
+  // Orientation only (ignore camera translation) so the cube stays centered.
+  const float rx = view[0] * x + view[4] * y + view[8] * z;
+  const float ry = view[1] * x + view[5] * y + view[9] * z;
+  const float rz = view[2] * x + view[6] * y + view[10] * z;
 
-  const float scale = 38.0f;
-  sx = width() * 0.5f + x1 * scale;
-  sy = height() * 0.5f - y2 * scale;
-  depth = z2;
+  constexpr float scale = 38.0f;
+  sx = width() * 0.5f + rx * scale;
+  sy = height() * 0.5f - ry * scale;
+  depth = -rz;
 }
 
 ViewCubeWidget::FaceId ViewCubeWidget::hit_test(const QPoint& pos) const {
+  // Z-up CAD naming: TOP = +Z face (X right, Y up, Z toward camera).
   static const FaceGeom faces[] = {
       {FaceId::Right, 'r', "RIGHT", 1, 0, 0, QColor(210, 90, 90)},
       {FaceId::Left, 'l', "LEFT", -1, 0, 0, QColor(210, 90, 90)},
-      {FaceId::Top, 't', "TOP", 0, 1, 0, QColor(90, 190, 110)},
-      {FaceId::Bottom, 'b', "BOTTOM", 0, -1, 0, QColor(90, 190, 110)},
-      {FaceId::Front, 'f', "FRONT", 0, 0, 1, QColor(90, 140, 220)},
-      {FaceId::Back, 'k', "BACK", 0, 0, -1, QColor(90, 140, 220)},
+      {FaceId::Top, 't', "TOP", 0, 0, 1, QColor(90, 190, 110)},
+      {FaceId::Bottom, 'b', "BOTTOM", 0, 0, -1, QColor(90, 190, 110)},
+      {FaceId::Front, 'f', "FRONT", 0, 1, 0, QColor(90, 140, 220)},
+      {FaceId::Back, 'k', "BACK", 0, -1, 0, QColor(90, 140, 220)},
   };
 
   FaceId best = FaceId::None;
   float best_depth = -1e9f;
   for (const FaceGeom& f : faces) {
-    // Face quad corners in world (unit cube).
     float u[3]{0, 0, 0};
     float v[3]{0, 0, 0};
     if (f.nx != 0) {
@@ -95,7 +96,6 @@ ViewCubeWidget::FaceId ViewCubeWidget::hit_test(const QPoint& pos) const {
     }
 
     QPolygonF poly;
-    float depth_sum = 0.0f;
     for (int i = 0; i < 4; ++i) {
       const float su = (i == 0 || i == 3) ? -1.0f : 1.0f;
       const float sv = (i < 2) ? -1.0f : 1.0f;
@@ -105,23 +105,18 @@ ViewCubeWidget::FaceId ViewCubeWidget::hit_test(const QPoint& pos) const {
       float sx, sy, d;
       project_point(px * 0.7f, py * 0.7f, pz * 0.7f, sx, sy, d);
       poly << QPointF(sx, sy);
-      depth_sum += d;
     }
-    const float depth = depth_sum * 0.25f;
-    // Face visible if its outward normal points toward camera (approx via depth
-    // of face center vs origin).
     float cx, cy, cd;
     project_point(f.nx * 0.7f, f.ny * 0.7f, f.nz * 0.7f, cx, cy, cd);
     float ox, oy, od;
     project_point(0, 0, 0, ox, oy, od);
-    if (cd < od) continue;  // facing away
+    if (cd < od) continue;
     if (poly.containsPoint(pos, Qt::OddEvenFill) && cd > best_depth) {
       best_depth = cd;
       best = f.id;
     }
   }
 
-  // Home button (small circle bottom-center of widget).
   const QPointF home_c(width() * 0.5, height() - 14.0);
   if (QLineF(home_c, pos).length() <= 10.0) return FaceId::Home;
   return best;
@@ -131,7 +126,6 @@ void ViewCubeWidget::paintEvent(QPaintEvent*) {
   QPainter p(this);
   p.setRenderHint(QPainter::Antialiasing, true);
 
-  // Soft plate behind the cube.
   p.setPen(Qt::NoPen);
   p.setBrush(QColor(20, 22, 26, 160));
   p.drawRoundedRect(rect().adjusted(2, 2, -2, -2), 12, 12);
@@ -139,10 +133,10 @@ void ViewCubeWidget::paintEvent(QPaintEvent*) {
   static const FaceGeom faces[] = {
       {FaceId::Right, 'r', "RIGHT", 1, 0, 0, QColor(196, 86, 86)},
       {FaceId::Left, 'l', "LEFT", -1, 0, 0, QColor(176, 76, 76)},
-      {FaceId::Top, 't', "TOP", 0, 1, 0, QColor(86, 170, 104)},
-      {FaceId::Bottom, 'b', "BOTTOM", 0, -1, 0, QColor(70, 150, 90)},
-      {FaceId::Front, 'f', "FRONT", 0, 0, 1, QColor(86, 130, 200)},
-      {FaceId::Back, 'k', "BACK", 0, 0, -1, QColor(70, 110, 180)},
+      {FaceId::Top, 't', "TOP", 0, 0, 1, QColor(86, 170, 104)},
+      {FaceId::Bottom, 'b', "BOTTOM", 0, 0, -1, QColor(70, 150, 90)},
+      {FaceId::Front, 'f', "FRONT", 0, 1, 0, QColor(86, 130, 200)},
+      {FaceId::Back, 'k', "BACK", 0, -1, 0, QColor(70, 110, 180)},
   };
 
   std::vector<ProjFace> projected;
@@ -206,7 +200,6 @@ void ViewCubeWidget::paintEvent(QPaintEvent*) {
                QString::fromUtf8(pf.label));
   }
 
-  // World-axis triad near the cube (screen-space from projected unit axes).
   struct Axis {
     float x, y, z;
     QColor color;
@@ -228,7 +221,6 @@ void ViewCubeWidget::paintEvent(QPaintEvent*) {
     p.drawText(QPointF(sx + 3, sy - 2), QString::fromUtf8(a.label));
   }
 
-  // Home chip.
   const bool home_hover = hover_ == FaceId::Home;
   p.setBrush(home_hover ? QColor(240, 200, 80) : QColor(200, 200, 200));
   p.setPen(QPen(QColor(40, 40, 40), 1));

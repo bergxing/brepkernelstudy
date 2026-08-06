@@ -2,6 +2,7 @@
 
 #include "brep/math.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace brep::viewer {
@@ -11,8 +12,16 @@ struct Camera {
   float pitch_deg{-25.0f};
   float distance{6.0f};
   Point3d target{1.0, 0.5, 1.5};
+  bool ortho{false};
+
+  /// When true, eye/up come from framed_forward_/framed_up_ (CAD snaps).
+  bool framed{false};
+  Vector3d framed_forward{0, 0, -1};  // eye → target
+  Vector3d framed_up{0, 1, 0};
 
   void orbit(float dx, float dy) {
+    exit_framed_to_orbit();
+    ortho = false;
     yaw_deg += dx * 0.35f;
     pitch_deg += dy * 0.35f;
     if (pitch_deg > 89.0f) pitch_deg = 89.0f;
@@ -20,22 +29,16 @@ struct Camera {
   }
 
   void pan(float dx, float dy) {
-    const float yaw = yaw_deg * 0.01745329252f;
-    const float pitch = pitch_deg * 0.01745329252f;
-    const float cp = std::cos(pitch);
-    Vector3d forward{
-        cp * std::cos(yaw),
-        std::sin(pitch),
-        cp * std::sin(yaw),
-    };
-    Vector3d world_up{0, 1, 0};
-    Vector3d right = forward.cross(world_up);
+    const Point3d e = eye();
+    Vector3d forward = (target - e).normalized();
+    Vector3d up = framed ? framed_up.normalized() : Vector3d{0, 1, 0};
+    Vector3d right = forward.cross(up);
     if (right.norm() < 1e-6) {
-      world_up = Vector3d{0, 0, 1};
-      right = forward.cross(world_up);
+      up = Vector3d{0, 0, 1};
+      right = forward.cross(up);
     }
     right = right.normalized();
-    Vector3d up = right.cross(forward).normalized();
+    up = right.cross(forward).normalized();
     const float scale = distance * 0.0025f;
     target = target + right * double(-dx * scale) + up * double(dy * scale);
   }
@@ -47,34 +50,50 @@ struct Camera {
   }
 
   void set_yaw_pitch(float yaw, float pitch) {
+    framed = false;
     yaw_deg = yaw;
     pitch_deg = pitch;
     if (pitch_deg > 89.0f) pitch_deg = 89.0f;
     if (pitch_deg < -89.0f) pitch_deg = -89.0f;
   }
 
-  /// Snap to a CAD-style orthographic-ish view (keeps current target/distance).
+  /// Snap to a CAD orthographic view (Z-up naming: Top = look from +Z).
   void set_standard_view(char face) {
     switch (face) {
-      case 'r':  // +X
-        set_yaw_pitch(0.0f, 0.0f);
+      case 'r':  // RIGHT +X: X out, Y up, Z left on screen
+        frame_view({-1, 0, 0}, {0, 1, 0}, /*ortho=*/true);
+        yaw_deg = 0.0f;
+        pitch_deg = 0.0f;
         break;
-      case 'l':  // -X
-        set_yaw_pitch(180.0f, 0.0f);
+      case 'l':  // LEFT -X
+        frame_view({1, 0, 0}, {0, 1, 0}, true);
+        yaw_deg = 180.0f;
+        pitch_deg = 0.0f;
         break;
-      case 't':  // +Y
-        set_yaw_pitch(yaw_deg, 89.0f);
+      case 't':  // TOP +Z: X right, Y up, Z out of screen
+        frame_view({0, 0, -1}, {0, 1, 0}, true);
+        yaw_deg = 90.0f;
+        pitch_deg = 0.0f;
         break;
-      case 'b':  // -Y
-        set_yaw_pitch(yaw_deg, -89.0f);
+      case 'b':  // BOTTOM -Z: X right, Y down? use Y up flipped via up=-Y → X left
+        // Look from -Z: X right, Y up, Z into screen
+        frame_view({0, 0, 1}, {0, 1, 0}, true);
+        yaw_deg = -90.0f;
+        pitch_deg = 0.0f;
         break;
-      case 'f':  // +Z
-        set_yaw_pitch(90.0f, 0.0f);
+      case 'f':  // FRONT +Y: X right, Z up, Y out
+        frame_view({0, -1, 0}, {0, 0, -1}, true);
+        yaw_deg = 90.0f;
+        pitch_deg = 89.0f;
         break;
-      case 'k':  // -Z (bacK)
-        set_yaw_pitch(-90.0f, 0.0f);
+      case 'k':  // BACK -Y
+        frame_view({0, 1, 0}, {0, 0, -1}, true);
+        yaw_deg = -90.0f;
+        pitch_deg = -89.0f;
         break;
-      case 'h':  // home / iso
+      case 'h':  // home / iso perspective
+        framed = false;
+        ortho = false;
         set_yaw_pitch(-35.0f, -25.0f);
         break;
       default:
@@ -83,6 +102,10 @@ struct Camera {
   }
 
   [[nodiscard]] Point3d eye() const {
+    if (framed) {
+      const Vector3d f = framed_forward.normalized();
+      return target - f * double(distance);
+    }
     const float yaw = yaw_deg * 0.01745329252f;
     const float pitch = pitch_deg * 0.01745329252f;
     const float cp = std::cos(pitch);
@@ -96,16 +119,49 @@ struct Camera {
   // Column-major 4x4 matrices for Vulkan (same as OpenGL-style GLM layout).
   void view_matrix(float out[16]) const {
     const Point3d e = eye();
-    Vector3d f = (target - e).normalized();
-    Vector3d up{0, 1, 0};
-    Vector3d s = f.cross(up).normalized();
+    Vector3d f =
+        framed ? framed_forward.normalized() : (target - e).normalized();
+    Vector3d up = framed ? framed_up.normalized() : Vector3d{0, 1, 0};
+    Vector3d s = f.cross(up);
     if (s.norm() < 1e-6) {
-      up = Vector3d{0, 0, 1};
-      s = f.cross(up).normalized();
+      up = std::fabs(f.y()) > 0.9 ? Vector3d{0, 0, -1} : Vector3d{0, 1, 0};
+      s = f.cross(up);
     }
+    s = s.normalized();
     Vector3d u = s.cross(f);
 
-    // view = lookAt
+    out[0] = static_cast<float>(s.x());
+    out[1] = static_cast<float>(u.x());
+    out[2] = static_cast<float>(-f.x());
+    out[3] = 0.0f;
+    out[4] = static_cast<float>(s.y());
+    out[5] = static_cast<float>(u.y());
+    out[6] = static_cast<float>(-f.y());
+    out[7] = 0.0f;
+    out[8] = static_cast<float>(s.z());
+    out[9] = static_cast<float>(u.z());
+    out[10] = static_cast<float>(-f.z());
+    out[11] = 0.0f;
+    out[12] = static_cast<float>(-s.dot(Vector3d{e.x(), e.y(), e.z()}));
+    out[13] = static_cast<float>(-u.dot(Vector3d{e.x(), e.y(), e.z()}));
+    out[14] = static_cast<float>(f.dot(Vector3d{e.x(), e.y(), e.z()}));
+    out[15] = 1.0f;
+  }
+
+  /// Orientation-only view (target at origin) for the screen-space axis gizmo.
+  void orientation_view_matrix(float out[16]) const {
+    Vector3d f =
+        framed ? framed_forward.normalized() : orbit_forward().normalized();
+    Vector3d up = framed ? framed_up.normalized() : Vector3d{0, 1, 0};
+    Vector3d s = f.cross(up);
+    if (s.norm() < 1e-6) {
+      up = std::fabs(f.y()) > 0.9 ? Vector3d{0, 0, -1} : Vector3d{0, 1, 0};
+      s = f.cross(up);
+    }
+    s = s.normalized();
+    Vector3d u = s.cross(f);
+    const Point3d e = Point3d{0, 0, 0} - f * 3.0;
+
     out[0] = static_cast<float>(s.x());
     out[1] = static_cast<float>(u.x());
     out[2] = static_cast<float>(-f.x());
@@ -135,6 +191,17 @@ struct Camera {
     out[14] = (zfar * znear) / (znear - zfar);
   }
 
+  /// Orthographic projection with Vulkan Y flip (top maps to smaller NDC y).
+  static void ortho_matrix(float half_w, float half_h, float znear, float zfar,
+                           float out[16]) {
+    for (int i = 0; i < 16; ++i) out[i] = 0.0f;
+    out[0] = 1.0f / half_w;
+    out[5] = -1.0f / half_h;  // Vulkan Y flip
+    out[10] = 1.0f / (znear - zfar);
+    out[14] = znear / (znear - zfar);
+    out[15] = 1.0f;
+  }
+
   static void multiply(const float a[16], const float b[16], float out[16]) {
     float r[16];
     for (int c = 0; c < 4; ++c) {
@@ -151,6 +218,36 @@ struct Camera {
   static void identity(float out[16]) {
     for (int i = 0; i < 16; ++i) out[i] = 0.0f;
     out[0] = out[5] = out[10] = out[15] = 1.0f;
+  }
+
+ private:
+  void frame_view(Vector3d forward, Vector3d up, bool use_ortho) {
+    framed = true;
+    ortho = use_ortho;
+    framed_forward = forward.normalized();
+    framed_up = up.normalized();
+  }
+
+  void exit_framed_to_orbit() {
+    if (!framed) return;
+    const Point3d e = eye();
+    const Vector3d d = (e - target).normalized();
+    pitch_deg = static_cast<float>(std::asin(std::clamp(d.y(), -1.0, 1.0)) *
+                                   57.29577951308232);
+    yaw_deg = static_cast<float>(std::atan2(d.z(), d.x()) * 57.29577951308232);
+    framed = false;
+  }
+
+  [[nodiscard]] Vector3d orbit_forward() const {
+    const float yaw = yaw_deg * 0.01745329252f;
+    const float pitch = pitch_deg * 0.01745329252f;
+    const float cp = std::cos(pitch);
+    // Direction from eye to target = -offset direction
+    return Vector3d{
+        -cp * std::cos(yaw),
+        -std::sin(pitch),
+        -cp * std::sin(yaw),
+    };
   }
 };
 
