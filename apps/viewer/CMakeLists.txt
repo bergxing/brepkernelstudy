@@ -88,11 +88,17 @@ if(WIN32)
   # CLion's bundled MinGW is ABI-incompatible with Qt's mingw_64 kit.
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
      CMAKE_CXX_COMPILER MATCHES "CLion|JetBrains")
-    message(WARNING
-      "Compiler is CLion's bundled MinGW (${CMAKE_CXX_COMPILER}), but Qt "
-      "mingw_64 expects Qt's MinGW (e.g. C:/Qt6/Tools/mingw1310_64).\n"
-      "In CLion: use CMake preset 'clion-mingw' and disable the default "
-      "Debug profile (Settings → Build → CMake).")
+    message(FATAL_ERROR
+      "Refusing to build brep_viewer with CLion's bundled MinGW:\n"
+      "  ${CMAKE_CXX_COMPILER}\n"
+      "Qt mingw_64 requires Qt's MinGW, e.g.:\n"
+      "  C:/Qt6/Tools/mingw1310_64/bin/g++.exe\n\n"
+      "Fix in CLion:\n"
+      "  1. Settings → Build, Execution, Deployment → CMake\n"
+      "  2. Delete or disable the profile named 'Debug'\n"
+      "  3. Add/enable profile from preset: clion-mingw\n"
+      "  4. Generation path should be cmake-build-mingw-debug\n"
+      "  5. Reload CMake, then build brep_viewer")
   endif()
 
   get_filename_component(_qt_bin_dir "${Qt6_DIR}/../../../bin" ABSOLUTE)
