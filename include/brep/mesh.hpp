@@ -11,6 +11,7 @@ namespace brep {
 struct MeshVertex {
   Point3d position;
   Vector3d normal;
+  Point2d uv{};
 };
 
 struct TriangleMesh {
@@ -24,6 +25,7 @@ struct EdgeMesh {
 };
 
 /// Tessellate planar faces (current kernel: PlaneSurface + polygonal outer loop).
+/// Generates per-face UVs in [0,1] from plane parameterization.
 [[nodiscard]] TriangleMesh tessellate_body(const Body& body);
 
 /// Extract unique topological edges as line segments.

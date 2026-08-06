@@ -1,8 +1,12 @@
 #include "main_window.hpp"
 
 #include "brep/brep.hpp"
+#include "brep/material.hpp"
 #include "brep/mesh.hpp"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QStatusBar>
 #include <QVersionNumber>
 #include <QVulkanInstance>
@@ -41,6 +45,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     });
     vulkan_window_->set_meshes(tessellate_body(*body), extract_edges(*body));
     vulkan_window_->camera().target = Point3d{1.0, 0.5, 1.5};
+
+    // Wood albedo: prefer build-dir assets, then source assets next to exe.
+    QString wood_path = QStringLiteral(BREP_VIEWER_ASSETS_DIR "/wood.png");
+    if (!QFileInfo::exists(wood_path)) {
+      wood_path = QDir(QCoreApplication::applicationDirPath())
+                      .filePath(QStringLiteral("assets/wood.png"));
+    }
+    vulkan_window_->set_material(
+        make_wood_material(wood_path.toStdString()));
   }
 
   QWidget* container = QWidget::createWindowContainer(vulkan_window_, this);
@@ -53,7 +66,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   setCentralWidget(container);
   statusBar()->showMessage(
       QStringLiteral(
-          "Left-drag: rotate | Right/Middle-drag: pan | Wheel: zoom | Arrows: rotate"));
+          "Wood material | Left-drag: rotate | Right/Middle-drag: pan | Wheel: zoom"));
 }
 
 }  // namespace brep::viewer

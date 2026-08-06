@@ -64,9 +64,23 @@ qt_add_executable(brep_viewer
 )
 add_dependencies(brep_viewer brep_viewer_shaders)
 
+set(VIEWER_ASSETS_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets)
+file(MAKE_DIRECTORY ${VIEWER_ASSETS_DIR})
+add_custom_command(TARGET brep_viewer POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets
+          ${VIEWER_ASSETS_DIR}
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets
+          $<TARGET_FILE_DIR:brep_viewer>/assets
+  COMMENT "Copy viewer material assets"
+  VERBATIM
+)
+
 target_include_directories(brep_viewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(brep_viewer PRIVATE
   BREP_VIEWER_SPV_DIR="${VIEWER_SPV_DIR}"
+  BREP_VIEWER_ASSETS_DIR="${VIEWER_ASSETS_DIR}"
 )
 # Qt Gui links the platform Vulkan loader; headers come from the Vulkan-Headers submodule.
 target_link_libraries(brep_viewer PRIVATE

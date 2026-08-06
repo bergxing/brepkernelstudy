@@ -5,10 +5,13 @@
 #include "brep/log.hpp"
 
 #include <QFile>
+#include <QImage>
 #include <QVulkanDeviceFunctions>
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace brep::viewer {
 namespace {
@@ -16,6 +19,7 @@ namespace {
 struct TriVertexGpu {
   float pos[3];
   float nrm[3];
+  float uv[2];
 };
 
 }  // namespace
@@ -26,6 +30,11 @@ void VulkanRenderer::set_meshes(TriangleMesh triangles, EdgeMesh edges) {
   triangles_ = std::move(triangles);
   edges_ = std::move(edges);
   meshes_dirty_ = true;
+}
+
+void VulkanRenderer::set_material(Material material) {
+  material_ = std::move(material);
+  material_dirty_ = true;
 }
 
 uint32_t VulkanRenderer::find_memory_type(uint32_t type_bits,
@@ -50,7 +59,7 @@ VulkanRenderer::GpuBuffer VulkanRenderer::create_buffer(
 
   VkBufferCreateInfo bi{};
   bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  bi.size = size;
+  bi.size = std::max<VkDeviceSize>(size, 1);
   bi.usage = usage;
   bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
   if (dev_->vkCreateBuffer(device, &bi, nullptr, &out.buffer) != VK_SUCCESS) {
@@ -82,6 +91,19 @@ void VulkanRenderer::destroy_buffer(GpuBuffer& b) {
   b = {};
 }
 
+void VulkanRenderer::destroy_texture(GpuTexture& tex) {
+  const VkDevice device = window_->device();
+  if (!dev_ || device == VK_NULL_HANDLE) {
+    tex = {};
+    return;
+  }
+  if (tex.sampler) dev_->vkDestroySampler(device, tex.sampler, nullptr);
+  if (tex.view) dev_->vkDestroyImageView(device, tex.view, nullptr);
+  if (tex.image) dev_->vkDestroyImage(device, tex.image, nullptr);
+  if (tex.memory) dev_->vkFreeMemory(device, tex.memory, nullptr);
+  tex = {};
+}
+
 VkShaderModule VulkanRenderer::load_shader(const QString& file_name) {
   QFile file(file_name);
   if (!file.open(QIODevice::ReadOnly)) {
@@ -98,6 +120,185 @@ VkShaderModule VulkanRenderer::load_shader(const QString& file_name) {
     throw std::runtime_error("vkCreateShaderModule failed");
   }
   return module;
+}
+
+VkCommandBuffer VulkanRenderer::begin_one_shot_commands() {
+  VkCommandBufferAllocateInfo ai{};
+  ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  ai.commandPool = window_->graphicsCommandPool();
+  ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  ai.commandBufferCount = 1;
+  VkCommandBuffer cmd{VK_NULL_HANDLE};
+  dev_->vkAllocateCommandBuffers(window_->device(), &ai, &cmd);
+
+  VkCommandBufferBeginInfo bi{};
+  bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  dev_->vkBeginCommandBuffer(cmd, &bi);
+  return cmd;
+}
+
+void VulkanRenderer::end_one_shot_commands(VkCommandBuffer cmd) {
+  dev_->vkEndCommandBuffer(cmd);
+  VkSubmitInfo si{};
+  si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  si.commandBufferCount = 1;
+  si.pCommandBuffers = &cmd;
+  dev_->vkQueueSubmit(window_->graphicsQueue(), 1, &si, VK_NULL_HANDLE);
+  dev_->vkQueueWaitIdle(window_->graphicsQueue());
+  dev_->vkFreeCommandBuffers(window_->device(), window_->graphicsCommandPool(), 1,
+                             &cmd);
+}
+
+void VulkanRenderer::transition_image_layout(VkImage image, VkImageLayout old_layout,
+                                             VkImageLayout new_layout) {
+  VkCommandBuffer cmd = begin_one_shot_commands();
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.oldLayout = old_layout;
+  barrier.newLayout = new_layout;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = image;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.layerCount = 1;
+
+  VkPipelineStageFlags src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+  VkPipelineStageFlags dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+  if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
+      new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  } else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  } else {
+    throw std::runtime_error("unsupported image layout transition");
+  }
+
+  dev_->vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr,
+                             1, &barrier);
+  end_one_shot_commands(cmd);
+}
+
+void VulkanRenderer::copy_buffer_to_image(VkBuffer buffer, VkImage image,
+                                          uint32_t width, uint32_t height) {
+  VkCommandBuffer cmd = begin_one_shot_commands();
+  VkBufferImageCopy region{};
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.layerCount = 1;
+  region.imageExtent = {width, height, 1};
+  dev_->vkCmdCopyBufferToImage(cmd, buffer, image,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+  end_one_shot_commands(cmd);
+}
+
+void VulkanRenderer::create_albedo_texture() {
+  destroy_texture(albedo_);
+
+  QImage image;
+  if (!material_.albedo_path.empty()) {
+    image = QImage(QString::fromStdString(material_.albedo_path));
+  }
+  if (image.isNull()) {
+    image = QImage(2, 2, QImage::Format_RGBA8888);
+    const QRgb c = qRgba(int(material_.albedo_color[0] * 255),
+                         int(material_.albedo_color[1] * 255),
+                         int(material_.albedo_color[2] * 255), 255);
+    image.fill(c);
+    BREP_WARN("albedo texture missing ('{}'); using solid color fallback",
+              material_.albedo_path);
+  } else {
+    image = image.convertToFormat(QImage::Format_RGBA8888);
+    BREP_INFO("loaded albedo '{}' {}x{}", material_.name, image.width(),
+              image.height());
+  }
+
+  const uint32_t width = uint32_t(image.width());
+  const uint32_t height = uint32_t(image.height());
+  const VkDeviceSize image_size = VkDeviceSize(width) * height * 4;
+  albedo_.width = width;
+  albedo_.height = height;
+
+  GpuBuffer staging = create_buffer(image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  void* data = nullptr;
+  dev_->vkMapMemory(window_->device(), staging.memory, 0, image_size, 0, &data);
+  std::memcpy(data, image.constBits(), static_cast<size_t>(image_size));
+  dev_->vkUnmapMemory(window_->device(), staging.memory);
+
+  const VkDevice device = window_->device();
+  VkImageCreateInfo ii{};
+  ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  ii.imageType = VK_IMAGE_TYPE_2D;
+  ii.extent = {width, height, 1};
+  ii.mipLevels = 1;
+  ii.arrayLayers = 1;
+  ii.format = VK_FORMAT_R8G8B8A8_UNORM;
+  ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+  ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+  ii.samples = VK_SAMPLE_COUNT_1_BIT;
+  ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  if (dev_->vkCreateImage(device, &ii, nullptr, &albedo_.image) != VK_SUCCESS) {
+    destroy_buffer(staging);
+    throw std::runtime_error("vkCreateImage failed");
+  }
+
+  VkMemoryRequirements req{};
+  dev_->vkGetImageMemoryRequirements(device, albedo_.image, &req);
+  VkMemoryAllocateInfo ai{};
+  ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  ai.allocationSize = req.size;
+  ai.memoryTypeIndex =
+      find_memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  if (dev_->vkAllocateMemory(device, &ai, nullptr, &albedo_.memory) != VK_SUCCESS) {
+    destroy_buffer(staging);
+    throw std::runtime_error("vkAllocateMemory (image) failed");
+  }
+  dev_->vkBindImageMemory(device, albedo_.image, albedo_.memory, 0);
+
+  transition_image_layout(albedo_.image, VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  copy_buffer_to_image(staging.buffer, albedo_.image, width, height);
+  transition_image_layout(albedo_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  destroy_buffer(staging);
+
+  VkImageViewCreateInfo vi{};
+  vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  vi.image = albedo_.image;
+  vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+  vi.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  vi.subresourceRange.levelCount = 1;
+  vi.subresourceRange.layerCount = 1;
+  if (dev_->vkCreateImageView(device, &vi, nullptr, &albedo_.view) != VK_SUCCESS) {
+    throw std::runtime_error("vkCreateImageView failed");
+  }
+
+  VkSamplerCreateInfo si{};
+  si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  si.magFilter = VK_FILTER_LINEAR;
+  si.minFilter = VK_FILTER_LINEAR;
+  si.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  si.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  si.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  si.maxAnisotropy = 1.0f;
+  si.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  si.unnormalizedCoordinates = VK_FALSE;
+  si.compareEnable = VK_FALSE;
+  si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  if (dev_->vkCreateSampler(device, &si, nullptr, &albedo_.sampler) != VK_SUCCESS) {
+    throw std::runtime_error("vkCreateSampler failed");
+  }
+
+  material_dirty_ = false;
 }
 
 void VulkanRenderer::initResources() {
@@ -122,13 +323,12 @@ void VulkanRenderer::initResources() {
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
+    create_albedo_texture();
     create_descriptors();
     create_pipelines();
     upload_meshes();
-    BREP_INFO("VulkanRenderer::initResources OK (spv={})",
-              QStringLiteral(BREP_VIEWER_SPV_DIR).toStdString());
+    BREP_INFO("VulkanRenderer::initResources OK (material='{}')", material_.name);
   } catch (const std::exception& ex) {
-    // Exceptions must not escape Qt Vulkan callbacks (→ 0xC000041D).
     BREP_ERROR("VulkanRenderer::initResources failed: {}", ex.what());
   }
 }
@@ -136,26 +336,35 @@ void VulkanRenderer::initResources() {
 void VulkanRenderer::create_descriptors() {
   const VkDevice device = window_->device();
 
-  VkDescriptorSetLayoutBinding binding{};
-  binding.binding = 0;
-  binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  binding.descriptorCount = 1;
-  binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  VkDescriptorSetLayoutBinding bindings[2]{};
+  bindings[0].binding = 0;
+  bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  bindings[0].descriptorCount = 1;
+  bindings[0].stageFlags =
+      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  bindings[1].binding = 1;
+  bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  bindings[1].descriptorCount = 1;
+  bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
   VkDescriptorSetLayoutCreateInfo lci{};
   lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  lci.bindingCount = 1;
-  lci.pBindings = &binding;
+  lci.bindingCount = 2;
+  lci.pBindings = bindings;
   dev_->vkCreateDescriptorSetLayout(device, &lci, nullptr, &desc_layout_);
 
-  VkDescriptorPoolSize pool_size{};
-  pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  pool_size.descriptorCount = 1;
+  VkDescriptorPoolSize pool_sizes[2]{};
+  pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  pool_sizes[0].descriptorCount = 1;
+  pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  pool_sizes[1].descriptorCount = 1;
+
   VkDescriptorPoolCreateInfo pci{};
   pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   pci.maxSets = 1;
-  pci.poolSizeCount = 1;
-  pci.pPoolSizes = &pool_size;
+  pci.poolSizeCount = 2;
+  pci.pPoolSizes = pool_sizes;
   dev_->vkCreateDescriptorPool(device, &pci, nullptr, &desc_pool_);
 
   VkDescriptorSetAllocateInfo ai{};
@@ -169,14 +378,28 @@ void VulkanRenderer::create_descriptors() {
   bi.buffer = ubo_.buffer;
   bi.offset = 0;
   bi.range = sizeof(Ubo);
-  VkWriteDescriptorSet write{};
-  write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  write.dstSet = desc_set_;
-  write.dstBinding = 0;
-  write.descriptorCount = 1;
-  write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  write.pBufferInfo = &bi;
-  dev_->vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+
+  VkDescriptorImageInfo ii{};
+  ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  ii.imageView = albedo_.view;
+  ii.sampler = albedo_.sampler;
+
+  VkWriteDescriptorSet writes[2]{};
+  writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writes[0].dstSet = desc_set_;
+  writes[0].dstBinding = 0;
+  writes[0].descriptorCount = 1;
+  writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  writes[0].pBufferInfo = &bi;
+
+  writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writes[1].dstSet = desc_set_;
+  writes[1].dstBinding = 1;
+  writes[1].descriptorCount = 1;
+  writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  writes[1].pImageInfo = &ii;
+
+  dev_->vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
 }
 
 void VulkanRenderer::create_pipelines() {
@@ -208,6 +431,7 @@ void VulkanRenderer::create_pipelines() {
       binding.stride = sizeof(TriVertexGpu);
       attrs.push_back({0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(TriVertexGpu, pos)});
       attrs.push_back({1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(TriVertexGpu, nrm)});
+      attrs.push_back({2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(TriVertexGpu, uv)});
     }
 
     VkPipelineVertexInputStateCreateInfo vi{};
@@ -314,6 +538,8 @@ void VulkanRenderer::upload_meshes() {
       verts[i].nrm[0] = static_cast<float>(triangles_.vertices[i].normal.x());
       verts[i].nrm[1] = static_cast<float>(triangles_.vertices[i].normal.y());
       verts[i].nrm[2] = static_cast<float>(triangles_.vertices[i].normal.z());
+      verts[i].uv[0] = static_cast<float>(triangles_.vertices[i].uv.u());
+      verts[i].uv[1] = static_cast<float>(triangles_.vertices[i].uv.v());
     }
     const VkDeviceSize vb_size = sizeof(TriVertexGpu) * verts.size();
     tri_vb_ = create_buffer(vb_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -367,6 +593,7 @@ void VulkanRenderer::releaseResources() {
   destroy_buffer(tri_ib_);
   destroy_buffer(line_vb_);
   destroy_buffer(ubo_);
+  destroy_texture(albedo_);
 
   if (tri_pipeline_)
     dev_->vkDestroyPipeline(device, tri_pipeline_, nullptr);
@@ -391,7 +618,6 @@ void VulkanRenderer::releaseResources() {
 
 void VulkanRenderer::startNextFrame() {
   if (!dev_ || !pipeline_layout_ || (!tri_pipeline_ && !line_pipeline_)) {
-    // initResources failed; keep presenting clear frames.
     window_->frameReady();
     window_->requestUpdate();
     return;
@@ -419,6 +645,10 @@ void VulkanRenderer::startNextFrame() {
   ubo.light_dir[1] = -1.0f;
   ubo.light_dir[2] = -0.3f;
   ubo.light_dir[3] = 0.0f;
+  ubo.albedo_color[0] = material_.albedo_color[0];
+  ubo.albedo_color[1] = material_.albedo_color[1];
+  ubo.albedo_color[2] = material_.albedo_color[2];
+  ubo.albedo_color[3] = material_.uv_scale;
 
   void* data = nullptr;
   dev_->vkMapMemory(window_->device(), ubo_.memory, 0, sizeof(Ubo), 0, &data);

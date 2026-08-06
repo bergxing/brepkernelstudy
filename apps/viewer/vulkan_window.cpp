@@ -20,8 +20,19 @@ void VulkanWindow::set_meshes(TriangleMesh triangles, EdgeMesh edges) {
   }
 }
 
+void VulkanWindow::set_material(Material material) {
+  pending_material_ = std::move(material);
+  has_pending_material_ = true;
+  if (renderer_) {
+    renderer_->set_material(pending_material_);
+  }
+}
+
 QVulkanWindowRenderer* VulkanWindow::createRenderer() {
   renderer_ = new VulkanRenderer(this);
+  if (has_pending_material_) {
+    renderer_->set_material(pending_material_);
+  }
   if (has_pending_meshes_) {
     renderer_->set_meshes(pending_triangles_, pending_edges_);
   }

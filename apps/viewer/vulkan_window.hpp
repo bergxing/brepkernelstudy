@@ -1,5 +1,6 @@
 #pragma once
 
+#include "brep/material.hpp"
 #include "brep/mesh.hpp"
 #include "camera.hpp"
 #include "vulkan_renderer.hpp"
@@ -14,6 +15,7 @@ class VulkanWindow final : public QVulkanWindow {
   explicit VulkanWindow(QWindow* parent = nullptr);
 
   void set_meshes(TriangleMesh triangles, EdgeMesh edges);
+  void set_material(Material material);
   [[nodiscard]] Camera& camera() noexcept { return camera_; }
   [[nodiscard]] const Camera& camera() const noexcept { return camera_; }
 
@@ -39,7 +41,9 @@ class VulkanWindow final : public QVulkanWindow {
   Camera camera_{};
   TriangleMesh pending_triangles_{};
   EdgeMesh pending_edges_{};
+  Material pending_material_{};
   bool has_pending_meshes_{false};
+  bool has_pending_material_{false};
   QPointF last_pos_{};
   DragMode drag_mode_{DragMode::None};
   VulkanRenderer* renderer_{nullptr};

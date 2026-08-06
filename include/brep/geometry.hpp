@@ -152,6 +152,12 @@ class PlaneSurface final : public Surface {
   [[nodiscard]] const Vector3d& u_axis() const noexcept { return u_axis_; }
   [[nodiscard]] const Vector3d& v_axis() const noexcept { return v_axis_; }
 
+  /// Project a 3D point into the plane's UV parameter space.
+  [[nodiscard]] Point2d param_of(const Point3d& p) const {
+    const Vector3d d = p - origin_;
+    return Point2d{d.dot(u_axis_), d.dot(v_axis_)};
+  }
+
  private:
   Point3d origin_;
   Vector3d u_axis_;

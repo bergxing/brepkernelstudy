@@ -4,6 +4,7 @@
 #include "brep/dump.hpp"
 #include "brep/geometry.hpp"
 #include "brep/log.hpp"
+#include "brep/material.hpp"
 #include "brep/math.hpp"
 #include "brep/mesh.hpp"
 #include "brep/model.hpp"
