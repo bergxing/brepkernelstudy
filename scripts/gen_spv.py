@@ -18,7 +18,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SHADERS = ROOT / "apps" / "viewer" / "shaders"
 OUT = ROOT / "apps" / "viewer" / "spv"
-SHADER_NAMES = ("mesh.vert", "mesh.frag", "line.vert", "line.frag")
+SHADER_NAMES = (
+    "mesh.vert",
+    "mesh.frag",
+    "line.vert",
+    "line.frag",
+    "axis.vert",
+    "axis.frag",
+)
 
 
 def find_qsb() -> Path | None:

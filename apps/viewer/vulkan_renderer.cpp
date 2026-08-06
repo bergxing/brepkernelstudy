@@ -24,6 +24,11 @@ struct TriVertexGpu {
   float uv[2];
 };
 
+struct AxisVertexGpu {
+  float pos[3];
+  float color[3];
+};
+
 }  // namespace
 
 VulkanRenderer::VulkanRenderer(VulkanWindow* window) : window_(window) {}
@@ -328,6 +333,7 @@ void VulkanRenderer::initResources() {
     create_albedo_texture();
     create_descriptors();
     create_pipelines();
+    upload_axes();
     upload_meshes();
     BREP_INFO("VulkanRenderer::initResources OK (material='{}')", material_.name);
   } catch (const std::exception& ex) {
@@ -412,6 +418,8 @@ void VulkanRenderer::create_pipelines() {
   VkShaderModule frag = load_shader(spv_dir + "/mesh.frag.spv");
   VkShaderModule line_vert = load_shader(spv_dir + "/line.vert.spv");
   VkShaderModule line_frag = load_shader(spv_dir + "/line.frag.spv");
+  VkShaderModule axis_vert = load_shader(spv_dir + "/axis.vert.spv");
+  VkShaderModule axis_frag = load_shader(spv_dir + "/axis.frag.spv");
 
   VkPipelineLayoutCreateInfo plci{};
   plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -419,16 +427,23 @@ void VulkanRenderer::create_pipelines() {
   plci.pSetLayouts = &desc_layout_;
   dev_->vkCreatePipelineLayout(device, &plci, nullptr, &pipeline_layout_);
 
-  auto make_pipeline = [&](VkShaderModule vs, VkShaderModule fs, bool lines,
+  enum class PipeKind { Mesh, Line, Axis };
+  auto make_pipeline = [&](VkShaderModule vs, VkShaderModule fs, PipeKind kind,
                            VkPipeline* out) {
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     std::vector<VkVertexInputAttributeDescription> attrs;
-    if (lines) {
+    if (kind == PipeKind::Line) {
       binding.stride = sizeof(float) * 3;
       attrs.push_back({0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0});
+    } else if (kind == PipeKind::Axis) {
+      binding.stride = sizeof(AxisVertexGpu);
+      attrs.push_back(
+          {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(AxisVertexGpu, pos)});
+      attrs.push_back(
+          {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(AxisVertexGpu, color)});
     } else {
       binding.stride = sizeof(TriVertexGpu);
       attrs.push_back({0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(TriVertexGpu, pos)});
@@ -443,6 +458,7 @@ void VulkanRenderer::create_pipelines() {
     vi.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrs.size());
     vi.pVertexAttributeDescriptions = attrs.data();
 
+    const bool lines = kind != PipeKind::Mesh;
     VkPipelineInputAssemblyStateCreateInfo ia{};
     ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     ia.topology = lines ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST
@@ -466,8 +482,9 @@ void VulkanRenderer::create_pipelines() {
 
     VkPipelineDepthStencilStateCreateInfo ds{};
     ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    ds.depthTestEnable = VK_TRUE;
-    ds.depthWriteEnable = lines ? VK_FALSE : VK_TRUE;
+    // World axes stay visible through the model (CAD-style gizmo feel).
+    ds.depthTestEnable = kind == PipeKind::Axis ? VK_FALSE : VK_TRUE;
+    ds.depthWriteEnable = kind == PipeKind::Mesh ? VK_TRUE : VK_FALSE;
     ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
     VkPipelineColorBlendAttachmentState blend_att{};
@@ -515,13 +532,38 @@ void VulkanRenderer::create_pipelines() {
     }
   };
 
-  make_pipeline(vert, frag, false, &tri_pipeline_);
-  make_pipeline(line_vert, line_frag, true, &line_pipeline_);
+  make_pipeline(vert, frag, PipeKind::Mesh, &tri_pipeline_);
+  make_pipeline(line_vert, line_frag, PipeKind::Line, &line_pipeline_);
+  make_pipeline(axis_vert, axis_frag, PipeKind::Axis, &axis_pipeline_);
 
   dev_->vkDestroyShaderModule(device, vert, nullptr);
   dev_->vkDestroyShaderModule(device, frag, nullptr);
   dev_->vkDestroyShaderModule(device, line_vert, nullptr);
   dev_->vkDestroyShaderModule(device, line_frag, nullptr);
+  dev_->vkDestroyShaderModule(device, axis_vert, nullptr);
+  dev_->vkDestroyShaderModule(device, axis_frag, nullptr);
+}
+
+void VulkanRenderer::upload_axes() {
+  destroy_buffer(axis_vb_);
+  axis_vertex_count_ = 0;
+
+  constexpr float L = 2.5f;
+  const AxisVertexGpu axes[] = {
+      {{0, 0, 0}, {1.0f, 0.15f, 0.15f}}, {{L, 0, 0}, {1.0f, 0.15f, 0.15f}},  // X
+      {{0, 0, 0}, {0.2f, 0.9f, 0.25f}},  {{0, L, 0}, {0.2f, 0.9f, 0.25f}},   // Y
+      {{0, 0, 0}, {0.25f, 0.45f, 1.0f}}, {{0, 0, L}, {0.25f, 0.45f, 1.0f}},  // Z
+  };
+
+  const VkDeviceSize size = sizeof(axes);
+  axis_vb_ = create_buffer(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  void* data = nullptr;
+  dev_->vkMapMemory(window_->device(), axis_vb_.memory, 0, size, 0, &data);
+  std::memcpy(data, axes, static_cast<size_t>(size));
+  dev_->vkUnmapMemory(window_->device(), axis_vb_.memory);
+  axis_vertex_count_ = 6;
 }
 
 void VulkanRenderer::upload_meshes() {
@@ -594,6 +636,7 @@ void VulkanRenderer::releaseResources() {
   destroy_buffer(tri_vb_);
   destroy_buffer(tri_ib_);
   destroy_buffer(line_vb_);
+  destroy_buffer(axis_vb_);
   destroy_buffer(ubo_);
   destroy_texture(albedo_);
 
@@ -601,6 +644,8 @@ void VulkanRenderer::releaseResources() {
     dev_->vkDestroyPipeline(device, tri_pipeline_, nullptr);
   if (line_pipeline_)
     dev_->vkDestroyPipeline(device, line_pipeline_, nullptr);
+  if (axis_pipeline_)
+    dev_->vkDestroyPipeline(device, axis_pipeline_, nullptr);
   if (pipeline_layout_)
     dev_->vkDestroyPipelineLayout(device, pipeline_layout_, nullptr);
   if (pipeline_cache_)
@@ -610,12 +655,13 @@ void VulkanRenderer::releaseResources() {
   if (desc_layout_)
     dev_->vkDestroyDescriptorSetLayout(device, desc_layout_, nullptr);
 
-  tri_pipeline_ = line_pipeline_ = VK_NULL_HANDLE;
+  tri_pipeline_ = line_pipeline_ = axis_pipeline_ = VK_NULL_HANDLE;
   pipeline_layout_ = VK_NULL_HANDLE;
   pipeline_cache_ = VK_NULL_HANDLE;
   desc_pool_ = VK_NULL_HANDLE;
   desc_layout_ = VK_NULL_HANDLE;
   desc_set_ = VK_NULL_HANDLE;
+  axis_vertex_count_ = 0;
 }
 
 void VulkanRenderer::startNextFrame() {
@@ -624,7 +670,8 @@ void VulkanRenderer::startNextFrame() {
     ecs::render_sync(window_->world()->registry(), *this);
   }
 
-  if (!dev_ || !pipeline_layout_ || (!tri_pipeline_ && !line_pipeline_)) {
+  if (!dev_ || !pipeline_layout_ ||
+      (!tri_pipeline_ && !line_pipeline_ && !axis_pipeline_)) {
     window_->frameReady();
     window_->requestUpdate();
     return;
@@ -707,6 +754,13 @@ void VulkanRenderer::startNextFrame() {
     VkDeviceSize offset = 0;
     dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &line_vb_.buffer, &offset);
     dev_->vkCmdDraw(cmd, line_vertex_count_, 1, 0, 0);
+  }
+
+  if (axis_vertex_count_ > 0 && axis_pipeline_) {
+    dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);
+    VkDeviceSize offset = 0;
+    dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &axis_vb_.buffer, &offset);
+    dev_->vkCmdDraw(cmd, axis_vertex_count_, 1, 0, 0);
   }
 
   dev_->vkCmdEndRenderPass(cmd);

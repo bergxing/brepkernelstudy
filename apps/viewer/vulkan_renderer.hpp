@@ -58,6 +58,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void create_descriptors();
   void create_pipelines();
   void upload_meshes();
+  void upload_axes();
   void create_albedo_texture();
   void destroy_texture(GpuTexture& tex);
   void transition_image_layout(VkImage image, VkImageLayout old_layout,
@@ -79,6 +80,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   GpuBuffer tri_vb_{};
   GpuBuffer tri_ib_{};
   GpuBuffer line_vb_{};
+  GpuBuffer axis_vb_{};
   GpuBuffer ubo_{};
   GpuTexture albedo_{};
 
@@ -89,10 +91,12 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   VkPipelineLayout pipeline_layout_{VK_NULL_HANDLE};
   VkPipeline tri_pipeline_{VK_NULL_HANDLE};
   VkPipeline line_pipeline_{VK_NULL_HANDLE};
+  VkPipeline axis_pipeline_{VK_NULL_HANDLE};
 
   VkPipelineCache pipeline_cache_{VK_NULL_HANDLE};
   std::uint32_t index_count_{0};
   std::uint32_t line_vertex_count_{0};
+  std::uint32_t axis_vertex_count_{0};
 };
 
 }  // namespace brep::viewer

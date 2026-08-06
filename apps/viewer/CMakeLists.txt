@@ -16,6 +16,8 @@ set(VIEWER_SHADERS
   shaders/mesh.frag
   shaders/line.vert
   shaders/line.frag
+  shaders/axis.vert
+  shaders/axis.frag
 )
 
 set(VIEWER_SPV_DIR ${CMAKE_CURRENT_BINARY_DIR}/spv)
@@ -58,6 +60,7 @@ add_custom_target(brep_viewer_shaders DEPENDS ${VIEWER_SPV_OUTPUTS})
 qt_add_executable(brep_viewer
   main.cpp
   main_window.cpp
+  view_cube.cpp
   vulkan_window.cpp
   vulkan_renderer.cpp
   ecs/world.cpp

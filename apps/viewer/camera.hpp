@@ -46,6 +46,42 @@ struct Camera {
     if (distance > 200.0f) distance = 200.0f;
   }
 
+  void set_yaw_pitch(float yaw, float pitch) {
+    yaw_deg = yaw;
+    pitch_deg = pitch;
+    if (pitch_deg > 89.0f) pitch_deg = 89.0f;
+    if (pitch_deg < -89.0f) pitch_deg = -89.0f;
+  }
+
+  /// Snap to a CAD-style orthographic-ish view (keeps current target/distance).
+  void set_standard_view(char face) {
+    switch (face) {
+      case 'r':  // +X
+        set_yaw_pitch(0.0f, 0.0f);
+        break;
+      case 'l':  // -X
+        set_yaw_pitch(180.0f, 0.0f);
+        break;
+      case 't':  // +Y
+        set_yaw_pitch(yaw_deg, 89.0f);
+        break;
+      case 'b':  // -Y
+        set_yaw_pitch(yaw_deg, -89.0f);
+        break;
+      case 'f':  // +Z
+        set_yaw_pitch(90.0f, 0.0f);
+        break;
+      case 'k':  // -Z (bacK)
+        set_yaw_pitch(-90.0f, 0.0f);
+        break;
+      case 'h':  // home / iso
+        set_yaw_pitch(-35.0f, -25.0f);
+        break;
+      default:
+        break;
+    }
+  }
+
   [[nodiscard]] Point3d eye() const {
     const float yaw = yaw_deg * 0.01745329252f;
     const float pitch = pitch_deg * 0.01745329252f;
