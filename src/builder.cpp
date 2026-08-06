@@ -89,13 +89,14 @@ Body* make_box(Model& model, const BoxSpec& spec) {
   }
 
   const FaceBuild faces[6] = {
+      // Loop must be CCW when viewed against the outward normal (-Z).
       {"f_zmin",
        {spec.min.x(), spec.min.y(), spec.min.z()},
        {1, 0, 0},
        {0, -1, 0},
-       {0, 1, 2, 3},
-       {true, true, true, true},
-       {Point2d{0, 0}, Point2d{dx, 0}, Point2d{dx, -dy}, Point2d{0, -dy},
+       {3, 2, 1, 0},
+       {false, false, false, false},
+       {Point2d{0, 0}, Point2d{0, -dy}, Point2d{dx, -dy}, Point2d{dx, 0},
         Point2d{0, 0}}},
       {"f_zmax",
        {spec.min.x(), spec.min.y(), spec.max.z()},

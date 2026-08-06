@@ -54,6 +54,17 @@ TriangleMesh tessellate_body(const Body& body) {
       }
 
       const Vector3d n = face->normal_at(0.0, 0.0);
+
+      // Ensure ring winding matches the outward face normal so Vulkan
+      // back-face culling keeps exterior faces visible.
+      if (ring.size() >= 3) {
+        const Vector3d geom_n =
+            (ring[1] - ring[0]).cross(ring[2] - ring[0]);
+        if (geom_n.dot(n) < 0.0) {
+          std::reverse(ring.begin(), ring.end());
+        }
+      }
+
       std::vector<Point2d> raw_uv(ring.size());
       double u_min = std::numeric_limits<double>::infinity();
       double u_max = -std::numeric_limits<double>::infinity();
