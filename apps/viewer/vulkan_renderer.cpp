@@ -697,10 +697,10 @@ void VulkanRenderer::startNextFrame() {
   float view[16];
   float proj[16];
   cam.view_matrix(view);
-  // Keep near extremely small so panning close to a face does not cut a hole.
-  // (A large near plane was clipping the wood box into a triangular void.)
-  constexpr float znear = 0.001f;
-  const float zfar = std::max(1000.0f, cam.distance * 200.0f);
+  // Near plane sits well in front of the eye but far closer than the target,
+  // so a pan near the model cannot carve a triangular hole through faces.
+  const float znear = std::clamp(cam.distance * 0.002f, 0.01f, 0.25f);
+  const float zfar = std::max(500.0f, cam.distance * 50.0f);
   if (cam.ortho) {
     const float half_h = std::max(0.05f, cam.ortho_half_h);
     const float half_w = half_h * aspect;

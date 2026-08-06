@@ -118,18 +118,32 @@ void MainWindow::place_view_cube() {
 }
 
 void MainWindow::apply_wheel_zoom(int dy) {
-  if (!vulkan_window_ || dy == 0) return;
-  BREP_INFO("wheel zoom delta={}", dy);
-  vulkan_window_->handle_wheel(dy);
-  if (Camera* cam = world_.main_camera()) {
-    statusBar()->showMessage(
-        QStringLiteral("Zoom | dist=%1  fov=%2°  orthoHalf=%3  mode=%4")
-            .arg(cam->distance, 0, 'f', 2)
-            .arg(cam->fov_deg, 0, 'f', 1)
-            .arg(cam->ortho_half_h, 0, 'f', 2)
-            .arg(cam->ortho ? QStringLiteral("ortho")
-                            : QStringLiteral("persp")));
+  if (dy == 0) return;
+
+  // Mutate the ECS camera directly (same object the renderer reads every frame).
+  Camera* cam = world_.main_camera();
+  if (!cam) {
+    BREP_ERROR("wheel zoom: main camera missing");
+    return;
   }
+
+  const float dist0 = cam->distance;
+  const float half0 = cam->ortho_half_h;
+  const bool ortho0 = cam->ortho;
+  cam->zoom(dy > 0 ? 1.0f : -1.0f);
+
+  BREP_INFO(
+      "wheel zoom delta={} ortho={} dist {:.3f}->{:.3f} orthoHalf {:.3f}->{:.3f}",
+      dy, ortho0, dist0, cam->distance, half0, cam->ortho_half_h);
+
+  statusBar()->showMessage(
+      QStringLiteral("Zoom | dist=%1  orthoHalf=%2  mode=%3")
+          .arg(cam->distance, 0, 'f', 2)
+          .arg(cam->ortho_half_h, 0, 'f', 2)
+          .arg(cam->ortho ? QStringLiteral("ortho")
+                          : QStringLiteral("persp")));
+
+  if (vulkan_window_) vulkan_window_->requestUpdate();
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
