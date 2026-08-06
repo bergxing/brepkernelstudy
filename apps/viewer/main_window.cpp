@@ -1,12 +1,21 @@
 #include "main_window.hpp"
 
 #include "brep/log.hpp"
+#include "ecs/components.hpp"
+#include "io/dxf_export.hpp"
 
+#include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QEvent>
+#include <QFileDialog>
 #include <QFileInfo>
+#include <QKeySequence>
+#include <QMenuBar>
+#include <QMessageBox>
+
+#include <filesystem>
 #include <QMoveEvent>
 #include <QResizeEvent>
 #include <QStatusBar>
@@ -16,6 +25,7 @@
 #include <QWidget>
 
 #include <stdexcept>
+#include <vector>
 
 namespace brep::viewer {
 namespace {
@@ -30,7 +40,6 @@ int wheel_delta_y(const QWheelEvent* event) {
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
-  setWindowTitle(QStringLiteral("B-Rep Kernel Viewer"));
   resize(1100, 720);
 
   vulkan_instance_ = std::make_unique<QVulkanInstance>();
@@ -47,12 +56,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   vulkan_window_->setSampleCount(1);
   vulkan_window_->set_world(&world_);
 
-  QString wood_path = QStringLiteral(BREP_VIEWER_ASSETS_DIR "/wood.png");
-  if (!QFileInfo::exists(wood_path)) {
-    wood_path = QDir(QCoreApplication::applicationDirPath())
-                    .filePath(QStringLiteral("assets/wood.png"));
-  }
-  world_.create_demo_box_scene(wood_path.toStdString());
+  document_.new_document(world_, wood_albedo_path().toStdString());
   BREP_INFO("ECS scene ready: camera + demo_box (wood)");
 
   viewport_container_ = QWidget::createWindowContainer(vulkan_window_, this);
@@ -66,7 +70,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   view_cube_->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
                              Qt::WindowDoesNotAcceptFocus);
   view_cube_->setAttribute(Qt::WA_ShowWithoutActivating);
-  view_cube_->set_camera(world_.main_camera());
+  rebind_view_cube_camera();
   view_cube_->set_redraw_callback([this] {
     if (vulkan_window_) vulkan_window_->requestUpdate();
     if (viewport_container_) {
@@ -76,13 +80,99 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   place_view_cube();
   view_cube_->show();
 
+  setup_menus();
+  refresh_window_title();
+
   // Catch wheel at the application level — QVulkanWindow / createWindowContainer
   // often drops wheel events before they reach the QWindow on Windows.
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "ECS | Axes + ViewCube | Left-drag: rotate | Right/Middle: pan | Wheel: "
-      "zoom | Click cube faces to snap"));
+      "File: New / Export DWG·DXF | Axes + ViewCube | Left-drag: rotate | "
+      "Right/Middle: pan | Wheel: zoom"));
+}
+
+QString MainWindow::wood_albedo_path() const {
+  QString wood_path = QStringLiteral(BREP_VIEWER_ASSETS_DIR "/wood.png");
+  if (!QFileInfo::exists(wood_path)) {
+    wood_path = QDir(QCoreApplication::applicationDirPath())
+                    .filePath(QStringLiteral("assets/wood.png"));
+  }
+  return wood_path;
+}
+
+void MainWindow::setup_menus() {
+  auto* file_menu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
+
+  auto* act_new = file_menu->addAction(QStringLiteral("新建(&N)"));
+  act_new->setShortcut(QKeySequence::New);
+  connect(act_new, &QAction::triggered, this, &MainWindow::on_new_document);
+
+  auto* act_export =
+      file_menu->addAction(QStringLiteral("导出 DWG/DXF(&E)…"));
+  act_export->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
+  connect(act_export, &QAction::triggered, this,
+          &MainWindow::on_export_dwg_dxf);
+}
+
+void MainWindow::refresh_window_title() {
+  setWindowTitle(document_.window_title());
+}
+
+void MainWindow::rebind_view_cube_camera() {
+  if (view_cube_) view_cube_->set_camera(world_.main_camera());
+}
+
+void MainWindow::on_new_document() {
+  document_.new_document(world_, wood_albedo_path().toStdString());
+  rebind_view_cube_camera();
+  refresh_window_title();
+  if (vulkan_window_) vulkan_window_->requestUpdate();
+  statusBar()->showMessage(QStringLiteral("已新建文档（demo 木盒）"), 4000);
+  BREP_INFO("document: new demo scene");
+}
+
+void MainWindow::on_export_dwg_dxf() {
+  QString start = document_.path();
+  if (start.isEmpty()) {
+    start = QDir::homePath() + QStringLiteral("/untitled.dxf");
+  }
+
+  QString path = QFileDialog::getSaveFileName(
+      this, QStringLiteral("导出 DWG/DXF"), start,
+      QStringLiteral("CAD Drawing (*.dxf);;All Files (*)"));
+  if (path.isEmpty()) return;
+
+  if (!path.endsWith(QStringLiteral(".dxf"), Qt::CaseInsensitive)) {
+    path += QStringLiteral(".dxf");
+  }
+
+  std::vector<io::DxfSegment> segments;
+  auto view =
+      world_.registry().view<ecs::MeshComponent, ecs::Transform>();
+  for (auto entity : view) {
+    const auto& mesh = view.get<ecs::MeshComponent>(entity);
+    const auto& xform = view.get<ecs::Transform>(entity);
+    io::append_edge_segments(mesh.edges, xform.position, segments);
+  }
+
+  const std::filesystem::path fs_path = path.toStdString();
+  if (!io::write_edges_dxf(fs_path, segments)) {
+    const QString err = QString::fromStdString(io::last_dxf_error());
+    QMessageBox::critical(this, QStringLiteral("导出失败"), err);
+    BREP_ERROR("dxf export failed: {}", io::last_dxf_error());
+    return;
+  }
+
+  document_.set_export_path(path);
+  refresh_window_title();
+  statusBar()->showMessage(
+      QStringLiteral("已导出 DXF 线框（%1 段）: %2")
+          .arg(segments.size())
+          .arg(path),
+      6000);
+  BREP_INFO("exported DXF {} segments -> {}", segments.size(),
+            path.toStdString());
 }
 
 void MainWindow::resizeEvent(QResizeEvent* event) {

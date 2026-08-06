@@ -60,11 +60,13 @@ add_custom_target(brep_viewer_shaders DEPENDS ${VIEWER_SPV_OUTPUTS})
 qt_add_executable(brep_viewer
   main.cpp
   main_window.cpp
+  document.cpp
   view_cube.cpp
   vulkan_window.cpp
   vulkan_renderer.cpp
   ecs/world.cpp
   ecs/systems.cpp
+  io/dxf_export.cpp
   ${VIEWER_SPV_OUTPUTS}
 )
 add_dependencies(brep_viewer brep_viewer_shaders)

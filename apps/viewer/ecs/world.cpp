@@ -8,6 +8,16 @@ World::World() {
   registry_.ctx().emplace<InputState>();
 }
 
+void World::clear_scene() {
+  registry_.clear();
+  if (!registry_.ctx().contains<InputState>()) {
+    registry_.ctx().emplace<InputState>();
+  } else {
+    registry_.ctx().get<InputState>() = InputState{};
+  }
+  model_ = brep::Model{};
+}
+
 entt::entity World::create_camera(Camera camera) {
   const entt::entity e = registry_.create();
   registry_.emplace<Name>(e, Name{"main_camera"});
@@ -33,12 +43,13 @@ entt::entity World::create_renderable(std::string name, TriangleMesh triangles,
 void World::create_demo_box_scene(const std::string& wood_albedo_path) {
   using namespace brep;
 
+  clear_scene();
+
   Camera cam;
   cam.target = Point3d{1.0, 0.5, 1.5};
   create_camera(cam);
 
-  static Model model;
-  Body* body = make_box(model, BoxSpec{
+  Body* body = make_box(model_, BoxSpec{
       .min = Point3d{0, 0, 0},
       .max = Point3d{2, 1, 3},
       .name = "demo_box",
