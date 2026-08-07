@@ -1,15 +1,12 @@
 #include "main_window.hpp"
 
 #include "brep/log.hpp"
-#include "ecs/components.hpp"
-#include "io/dxf_export.hpp"
 
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QEvent>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QKeySequence>
 #include <QMenuBar>
@@ -24,9 +21,7 @@
 #include <QWheelEvent>
 #include <QWidget>
 
-#include <filesystem>
 #include <stdexcept>
-#include <vector>
 
 namespace brep::viewer {
 namespace {
@@ -42,6 +37,8 @@ int wheel_delta_y(const QWheelEvent* event) {
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   resize(1100, 720);
 
+  commands::register_builtin_commands(commands_);
+
   vulkan_instance_ = std::make_unique<QVulkanInstance>();
   vulkan_instance_->setApiVersion(QVersionNumber(1, 2, 0));
   if (!vulkan_instance_->create()) {
@@ -56,7 +53,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   vulkan_window_->setSampleCount(1);
   vulkan_window_->set_world(&world_);
 
-  // Start with a blank document (no bodies).
   document_.new_blank_document(world_);
   BREP_INFO("ECS scene ready: blank Document + Part + camera");
 
@@ -79,7 +75,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     }
   });
   place_view_cube();
-  view_cube_->hide();  // shown with MainWindow after splash
+  view_cube_->hide();
 
   setup_menus();
   setup_toolbar();
@@ -87,8 +83,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
   qApp->installEventFilter(this);
 
-  statusBar()->showMessage(
-      QStringLiteral("XCAD | 新建空白文档 | 导出 DXF | ViewCube / 滚轮缩放"));
+  statusBar()->showMessage(QStringLiteral(
+      "XCAD | 命令: doc.new / part.create_box / file.export_dxf"));
 }
 
 QString MainWindow::wood_albedo_path() const {
@@ -100,19 +96,70 @@ QString MainWindow::wood_albedo_path() const {
   return wood_path;
 }
 
+commands::CommandContext MainWindow::make_command_context() {
+  commands::CommandContext ctx;
+  ctx.world = &world_;
+  ctx.session = &document_;
+  ctx.parent_widget = this;
+  ctx.wood_albedo_path = wood_albedo_path().toStdString();
+  ctx.report_status = [this](const QString& msg) {
+    statusBar()->showMessage(msg, 5000);
+  };
+  ctx.request_redraw = [this] {
+    if (vulkan_window_) vulkan_window_->requestUpdate();
+  };
+  ctx.after_document_reset = [this] {
+    rebind_view_cube_camera();
+    refresh_window_title();
+  };
+  return ctx;
+}
+
+commands::CommandResult MainWindow::run_command(std::string_view command_id) {
+  auto ctx = make_command_context();
+  auto result = commands_.execute(command_id, ctx);
+  if (result.status == commands::CommandStatus::Failed &&
+      !result.message.isEmpty()) {
+    QMessageBox::warning(this, QStringLiteral("命令失败"), result.message);
+  }
+  if (result.succeeded()) {
+    refresh_window_title();
+  }
+  return result;
+}
+
+void MainWindow::bind_action(QAction* action, const char* command_id) {
+  action->setData(QString::fromUtf8(command_id));
+  connect(action, &QAction::triggered, this, &MainWindow::on_run_command);
+}
+
+void MainWindow::on_run_command() {
+  auto* action = qobject_cast<QAction*>(sender());
+  if (!action) return;
+  const QString id = action->data().toString();
+  if (id.isEmpty()) return;
+  run_command(id.toStdString());
+}
+
 void MainWindow::setup_menus() {
   auto* file_menu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
 
   auto* act_new = file_menu->addAction(QStringLiteral("新建(&N)"));
   act_new->setShortcut(QKeySequence::New);
-  act_new->setToolTip(QStringLiteral("新建空白文档"));
-  connect(act_new, &QAction::triggered, this, &MainWindow::on_new_document);
+  act_new->setToolTip(QStringLiteral("新建空白文档 (doc.new)"));
+  bind_action(act_new, "doc.new");
 
   auto* act_export =
       file_menu->addAction(QStringLiteral("导出 DWG/DXF(&E)…"));
   act_export->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
-  connect(act_export, &QAction::triggered, this,
-          &MainWindow::on_export_dwg_dxf);
+  act_export->setToolTip(QStringLiteral("导出 DXF (file.export_dxf)"));
+  bind_action(act_export, "file.export_dxf");
+
+  auto* model_menu = menuBar()->addMenu(QStringLiteral("建模(&M)"));
+  auto* act_box = model_menu->addAction(QStringLiteral("创建立方体(&B)"));
+  act_box->setShortcut(QKeySequence(QStringLiteral("Ctrl+B")));
+  act_box->setToolTip(QStringLiteral("在当前 Part 上创建盒子 (part.create_box)"));
+  bind_action(act_box, "part.create_box");
 }
 
 void MainWindow::setup_toolbar() {
@@ -122,13 +169,15 @@ void MainWindow::setup_toolbar() {
 
   auto* act_new = toolbar_->addAction(QStringLiteral("新建"));
   act_new->setToolTip(QStringLiteral("新建空白文档 (Ctrl+N)"));
-  act_new->setShortcut(QKeySequence::New);
-  connect(act_new, &QAction::triggered, this, &MainWindow::on_new_document);
+  bind_action(act_new, "doc.new");
+
+  auto* act_box = toolbar_->addAction(QStringLiteral("立方体"));
+  act_box->setToolTip(QStringLiteral("创建盒子 (Ctrl+B)"));
+  bind_action(act_box, "part.create_box");
 
   auto* act_export = toolbar_->addAction(QStringLiteral("导出 DXF"));
-  act_export->setToolTip(QStringLiteral("导出 DWG/DXF 线框 (Ctrl+E)"));
-  connect(act_export, &QAction::triggered, this,
-          &MainWindow::on_export_dwg_dxf);
+  act_export->setToolTip(QStringLiteral("导出 DWG/DXF (Ctrl+E)"));
+  bind_action(act_export, "file.export_dxf");
 }
 
 void MainWindow::refresh_window_title() {
@@ -137,58 +186,6 @@ void MainWindow::refresh_window_title() {
 
 void MainWindow::rebind_view_cube_camera() {
   if (view_cube_) view_cube_->set_camera(world_.main_camera());
-}
-
-void MainWindow::on_new_document() {
-  document_.new_blank_document(world_);
-  rebind_view_cube_camera();
-  refresh_window_title();
-  if (vulkan_window_) vulkan_window_->requestUpdate();
-  statusBar()->showMessage(QStringLiteral("已新建空白文档"), 4000);
-  BREP_INFO("document: new blank Document/Part");
-}
-
-void MainWindow::on_export_dwg_dxf() {
-  QString start = document_.path();
-  if (start.isEmpty()) {
-    start = QDir::homePath() + QStringLiteral("/untitled.dxf");
-  }
-
-  QString path = QFileDialog::getSaveFileName(
-      this, QStringLiteral("导出 DWG/DXF"), start,
-      QStringLiteral("CAD Drawing (*.dxf);;All Files (*)"));
-  if (path.isEmpty()) return;
-
-  if (!path.endsWith(QStringLiteral(".dxf"), Qt::CaseInsensitive)) {
-    path += QStringLiteral(".dxf");
-  }
-
-  std::vector<io::DxfSegment> segments;
-  auto view =
-      world_.registry().view<ecs::MeshComponent, ecs::Transform>();
-  for (auto entity : view) {
-    const auto& mesh = view.get<ecs::MeshComponent>(entity);
-    const auto& xform = view.get<ecs::Transform>(entity);
-    io::append_edge_segments(mesh.edges, xform.position, segments);
-  }
-
-  const std::filesystem::path fs_path = path.toStdString();
-  if (!io::write_edges_dxf(fs_path, segments)) {
-    const QString err = QString::fromStdString(io::last_dxf_error());
-    QMessageBox::critical(this, QStringLiteral("导出失败"), err);
-    BREP_ERROR("dxf export failed: {}", io::last_dxf_error());
-    return;
-  }
-
-  document_.set_export_path(path);
-  refresh_window_title();
-  statusBar()->showMessage(
-      QStringLiteral("已导出 DXF 线框（%1 段）: %2")
-          .arg(segments.size())
-          .arg(path),
-      6000);
-  BREP_INFO("exported DXF {} segments -> {}", segments.size(),
-            path.toStdString());
 }
 
 void MainWindow::showEvent(QShowEvent* event) {

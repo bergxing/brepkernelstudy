@@ -69,6 +69,8 @@ qt_add_executable(brep_viewer
   ecs/world.cpp
   ecs/systems.cpp
   io/dxf_export.cpp
+  commands/command_registry.cpp
+  commands/builtin_commands.cpp
   ${VIEWER_SPV_OUTPUTS}
 )
 add_dependencies(brep_viewer brep_viewer_shaders)
