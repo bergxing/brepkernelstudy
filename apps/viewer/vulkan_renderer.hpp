@@ -24,6 +24,10 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void set_preview_edges(EdgeMesh edges);
   void clear_preview();
 
+  /// Selection outline (drawn on top of scene meshes, under tool preview).
+  void set_highlight_edges(EdgeMesh edges);
+  void clear_highlight();
+
   void initResources() override;
   void initSwapChainResources() override;
   void releaseSwapChainResources() override;
@@ -64,9 +68,12 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void upload_meshes();
   void upload_axes();
   void upload_preview();
+  void upload_highlight();
   void create_albedo_texture();
   void update_albedo_descriptors();
   void destroy_texture(GpuTexture& tex);
+  void upload_colored_edges(const EdgeMesh& edges, float r, float g, float b,
+                            GpuBuffer& vb, std::uint32_t& vertex_count);
   void transition_image_layout(VkImage image, VkImageLayout old_layout,
                                VkImageLayout new_layout);
   void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width,
@@ -80,16 +87,19 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   TriangleMesh triangles_;
   EdgeMesh edges_;
   EdgeMesh preview_edges_;
+  EdgeMesh highlight_edges_;
   Material material_{};
   bool meshes_dirty_{true};
   bool material_dirty_{true};
   bool preview_dirty_{false};
+  bool highlight_dirty_{false};
 
   GpuBuffer tri_vb_{};
   GpuBuffer tri_ib_{};
   GpuBuffer line_vb_{};
   GpuBuffer axis_vb_{};
   GpuBuffer preview_vb_{};
+  GpuBuffer highlight_vb_{};
   GpuBuffer ubo_{};       // scene MVP (mesh + edges)
   GpuBuffer axis_ubo_{};  // screen-space gizmo MVP (must be separate!)
   GpuTexture albedo_{};
@@ -109,6 +119,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   std::uint32_t line_vertex_count_{0};
   std::uint32_t axis_vertex_count_{0};
   std::uint32_t preview_vertex_count_{0};
+  std::uint32_t highlight_vertex_count_{0};
 };
 
 }  // namespace brep::viewer

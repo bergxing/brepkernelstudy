@@ -136,36 +136,110 @@ void input_on_key(entt::registry& registry, int key) {
   if (changed) input(registry).camera_dirty = true;
 }
 
+namespace {
+
+void append_transformed_mesh(TriangleMesh& dst, const TriangleMesh& src,
+                             const Point3d& offset) {
+  const auto base = static_cast<std::uint32_t>(dst.vertices.size());
+  dst.vertices.reserve(dst.vertices.size() + src.vertices.size());
+  for (const auto& v : src.vertices) {
+    MeshVertex out = v;
+    out.position = Point3d{v.position.x() + offset.x(),
+                           v.position.y() + offset.y(),
+                           v.position.z() + offset.z()};
+    dst.vertices.push_back(out);
+  }
+  dst.indices.reserve(dst.indices.size() + src.indices.size());
+  for (const auto idx : src.indices) {
+    dst.indices.push_back(base + idx);
+  }
+}
+
+void append_transformed_edges(EdgeMesh& dst, const EdgeMesh& src,
+                              const Point3d& offset) {
+  dst.positions.reserve(dst.positions.size() + src.positions.size());
+  for (const auto& p : src.positions) {
+    dst.positions.push_back(Point3d{p.x() + offset.x(), p.y() + offset.y(),
+                                    p.z() + offset.z()});
+  }
+}
+
+RenderCache& render_cache(entt::registry& registry) {
+  if (!registry.ctx().contains<RenderCache>()) {
+    registry.ctx().emplace<RenderCache>();
+  }
+  return registry.ctx().get<RenderCache>();
+}
+
+}  // namespace
+
 void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
   auto view =
       registry.view<MeshComponent, MaterialComponent, Transform, RenderableTag>();
-  bool any = false;
+
+  std::size_t count = 0;
+  bool any_component_dirty = false;
   for (auto entity : view) {
-    any = true;
+    ++count;
+    if (view.get<MeshComponent>(entity).dirty ||
+        view.get<MaterialComponent>(entity).dirty) {
+      any_component_dirty = true;
+    }
+  }
+
+  auto& cache = render_cache(registry);
+  const entt::entity sel = selected_entity(registry);
+  const bool need_rebuild =
+      any_component_dirty || count != cache.renderable_count ||
+      sel != cache.selection;
+
+  if (!need_rebuild) return;
+
+  TriangleMesh combined_tri;
+  EdgeMesh combined_edges;
+  EdgeMesh highlight;
+  Material scene_material{};
+  bool have_material = false;
+
+  for (auto entity : view) {
     auto& mesh = view.get<MeshComponent>(entity);
     auto& mat = view.get<MaterialComponent>(entity);
-    if (mesh.dirty) {
-      renderer.set_meshes(mesh.triangles, mesh.edges);
-      mesh.dirty = false;
+    const auto& xform = view.get<Transform>(entity);
+
+    append_transformed_mesh(combined_tri, mesh.triangles, xform.position);
+    append_transformed_edges(combined_edges, mesh.edges, xform.position);
+
+    if (!have_material) {
+      scene_material = mat.material;
+      have_material = true;
+    } else if (scene_material.albedo_path.empty() &&
+               !mat.material.albedo_path.empty()) {
+      scene_material = mat.material;
     }
-    if (mat.dirty) {
-      Material upload = mat.material;
-      if (registry.all_of<SelectedTag>(entity)) {
-        // Solid highlight so selection is obvious even with textured albedo.
-        upload.name = "selected";
-        upload.albedo_path.clear();
-        upload.albedo_color[0] = 1.0f;
-        upload.albedo_color[1] = 0.62f;
-        upload.albedo_color[2] = 0.12f;
-      }
-      renderer.set_material(upload);
-      mat.dirty = false;
+
+    if (registry.all_of<SelectedTag>(entity)) {
+      append_transformed_edges(highlight, mesh.edges, xform.position);
     }
+
+    mesh.dirty = false;
+    mat.dirty = false;
   }
-  // Blank documents have no renderables — clear leftover GPU meshes.
-  if (!any) {
+
+  if (count == 0) {
     renderer.set_meshes({}, {});
+    renderer.clear_highlight();
+  } else {
+    renderer.set_meshes(std::move(combined_tri), std::move(combined_edges));
+    if (have_material) renderer.set_material(scene_material);
+    if (highlight.positions.empty()) {
+      renderer.clear_highlight();
+    } else {
+      renderer.set_highlight_edges(std::move(highlight));
+    }
   }
+
+  cache.renderable_count = count;
+  cache.selection = sel;
 }
 
 bool consume_camera_dirty(entt::registry& registry) {
@@ -211,25 +285,17 @@ void set_selection(entt::registry& registry, entt::entity entity) {
 
   if (sel.primary != entt::null && registry.valid(sel.primary)) {
     registry.remove<SelectedTag>(sel.primary);
-    if (auto* mat = registry.try_get<MaterialComponent>(sel.primary)) {
-      mat->dirty = true;
-    }
   }
 
   sel.primary = entity;
   if (entity == entt::null || !registry.valid(entity)) {
     sel.primary = entt::null;
-    return;
+  } else {
+    registry.emplace_or_replace<SelectedTag>(entity);
   }
 
-  registry.emplace_or_replace<SelectedTag>(entity);
-  if (auto* mat = registry.try_get<MaterialComponent>(entity)) {
-    mat->dirty = true;
-  }
-  // With the single-mesh renderer, make the selected body the active GPU mesh.
-  if (auto* mesh = registry.try_get<MeshComponent>(entity)) {
-    mesh->dirty = true;
-  }
+  // Force scene rebuild so the orange highlight outline updates.
+  render_cache(registry).selection = entt::null;
 }
 
 void clear_selection(entt::registry& registry) {

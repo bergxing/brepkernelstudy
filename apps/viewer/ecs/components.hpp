@@ -55,6 +55,12 @@ struct SelectionState {
   entt::entity primary{entt::null};
 };
 
+/// Tracks what was last uploaded to the GPU scene buffers.
+struct RenderCache {
+  std::size_t renderable_count{0};
+  entt::entity selection{entt::null};
+};
+
 /// Transient input state (stored in registry context, not on an entity).
 struct InputState {
   /// Left-press starts as PendingSelect; crosses slop → Orbit. Click = select.

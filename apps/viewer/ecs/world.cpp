@@ -9,6 +9,7 @@ namespace brep::viewer::ecs {
 World::World() {
   registry_.ctx().emplace<InputState>();
   registry_.ctx().emplace<SelectionState>();
+  registry_.ctx().emplace<RenderCache>();
 }
 
 brep::Model* World::model() noexcept {
@@ -34,6 +35,11 @@ void World::clear_scene() {
     registry_.ctx().emplace<SelectionState>();
   } else {
     registry_.ctx().get<SelectionState>() = SelectionState{};
+  }
+  if (!registry_.ctx().contains<RenderCache>()) {
+    registry_.ctx().emplace<RenderCache>();
+  } else {
+    registry_.ctx().get<RenderCache>() = RenderCache{};
   }
   document_.reset();
 }

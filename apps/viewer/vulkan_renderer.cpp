@@ -61,6 +61,19 @@ void VulkanRenderer::clear_preview() {
   preview_dirty_ = true;
 }
 
+void VulkanRenderer::set_highlight_edges(EdgeMesh edges) {
+  highlight_edges_ = std::move(edges);
+  highlight_dirty_ = true;
+}
+
+void VulkanRenderer::clear_highlight() {
+  if (highlight_edges_.positions.empty() && highlight_vertex_count_ == 0) {
+    return;
+  }
+  highlight_edges_ = {};
+  highlight_dirty_ = true;
+}
+
 uint32_t VulkanRenderer::find_memory_type(uint32_t type_bits,
                                           VkMemoryPropertyFlags props) const {
   VkPhysicalDeviceMemoryProperties mem_props;
@@ -697,36 +710,44 @@ void VulkanRenderer::upload_meshes() {
   meshes_dirty_ = false;
 }
 
-void VulkanRenderer::upload_preview() {
-  destroy_buffer(preview_vb_);
-  preview_vertex_count_ = 0;
+void VulkanRenderer::upload_colored_edges(const EdgeMesh& edges, float r,
+                                          float g, float b, GpuBuffer& vb,
+                                          std::uint32_t& vertex_count) {
+  destroy_buffer(vb);
+  vertex_count = 0;
+  if (edges.positions.empty()) return;
 
-  if (!preview_edges_.positions.empty()) {
-    std::vector<AxisVertexGpu> verts(preview_edges_.positions.size());
-    // Bright yellow — readable on the dark clear color.
-    constexpr float kR = 1.0f;
-    constexpr float kG = 0.92f;
-    constexpr float kB = 0.15f;
-    for (size_t i = 0; i < preview_edges_.positions.size(); ++i) {
-      verts[i].pos[0] = static_cast<float>(preview_edges_.positions[i].x());
-      verts[i].pos[1] = static_cast<float>(preview_edges_.positions[i].y());
-      verts[i].pos[2] = static_cast<float>(preview_edges_.positions[i].z());
-      verts[i].color[0] = kR;
-      verts[i].color[1] = kG;
-      verts[i].color[2] = kB;
-    }
-    const VkDeviceSize size = sizeof(AxisVertexGpu) * verts.size();
-    preview_vb_ = create_buffer(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    void* data = nullptr;
-    dev_->vkMapMemory(window_->device(), preview_vb_.memory, 0, size, 0, &data);
-    std::memcpy(data, verts.data(), static_cast<size_t>(size));
-    dev_->vkUnmapMemory(window_->device(), preview_vb_.memory);
-    preview_vertex_count_ = static_cast<uint32_t>(verts.size());
+  std::vector<AxisVertexGpu> verts(edges.positions.size());
+  for (size_t i = 0; i < edges.positions.size(); ++i) {
+    verts[i].pos[0] = static_cast<float>(edges.positions[i].x());
+    verts[i].pos[1] = static_cast<float>(edges.positions[i].y());
+    verts[i].pos[2] = static_cast<float>(edges.positions[i].z());
+    verts[i].color[0] = r;
+    verts[i].color[1] = g;
+    verts[i].color[2] = b;
   }
+  const VkDeviceSize size = sizeof(AxisVertexGpu) * verts.size();
+  vb = create_buffer(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  void* data = nullptr;
+  dev_->vkMapMemory(window_->device(), vb.memory, 0, size, 0, &data);
+  std::memcpy(data, verts.data(), static_cast<size_t>(size));
+  dev_->vkUnmapMemory(window_->device(), vb.memory);
+  vertex_count = static_cast<uint32_t>(verts.size());
+}
 
+void VulkanRenderer::upload_preview() {
+  upload_colored_edges(preview_edges_, 1.0f, 0.92f, 0.15f, preview_vb_,
+                       preview_vertex_count_);
   preview_dirty_ = false;
+}
+
+void VulkanRenderer::upload_highlight() {
+  // Orange selection outline.
+  upload_colored_edges(highlight_edges_, 1.0f, 0.55f, 0.1f, highlight_vb_,
+                       highlight_vertex_count_);
+  highlight_dirty_ = false;
 }
 
 void VulkanRenderer::initSwapChainResources() {}
@@ -742,10 +763,12 @@ void VulkanRenderer::releaseResources() {
   destroy_buffer(line_vb_);
   destroy_buffer(axis_vb_);
   destroy_buffer(preview_vb_);
+  destroy_buffer(highlight_vb_);
   destroy_buffer(ubo_);
   destroy_buffer(axis_ubo_);
   destroy_texture(albedo_);
   preview_vertex_count_ = 0;
+  highlight_vertex_count_ = 0;
 
   if (tri_pipeline_)
     dev_->vkDestroyPipeline(device, tri_pipeline_, nullptr);
@@ -811,6 +834,15 @@ void VulkanRenderer::startNextFrame() {
     } catch (const std::exception& ex) {
       BREP_ERROR("upload_preview failed: {}", ex.what());
       preview_dirty_ = false;
+    }
+  }
+
+  if (highlight_dirty_) {
+    try {
+      upload_highlight();
+    } catch (const std::exception& ex) {
+      BREP_ERROR("upload_highlight failed: {}", ex.what());
+      highlight_dirty_ = false;
     }
   }
 
@@ -897,8 +929,13 @@ void VulkanRenderer::startNextFrame() {
     dev_->vkCmdDraw(cmd, line_vertex_count_, 1, 0, 0);
   }
 
-  // Tool rubber-band (cyan). Uses axis vertex format + scene MVP; depth off so
-  // the preview stays readable while dragging.
+  // Selection outline (orange), then tool rubber-band (yellow).
+  if (highlight_vertex_count_ > 0 && axis_pipeline_ && highlight_vb_.buffer) {
+    dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);
+    VkDeviceSize offset = 0;
+    dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &highlight_vb_.buffer, &offset);
+    dev_->vkCmdDraw(cmd, highlight_vertex_count_, 1, 0, 0);
+  }
   if (preview_vertex_count_ > 0 && axis_pipeline_ && preview_vb_.buffer) {
     dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);
     VkDeviceSize offset = 0;
