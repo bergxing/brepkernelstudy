@@ -71,6 +71,11 @@ MainWindow::MainWindow(QWidget* parent)
             .arg(QString::fromStdString(label)),
         6000);
   });
+  vulkan_window_->set_tool_motion_callback([this](float x, float y) {
+    if (!command_manager_.has_active_tool()) return;
+    auto ctx = make_command_context();
+    command_manager_.tool_mouse_move(ctx, x, y);
+  });
 
   document_.new_blank_document(world_);
   BREP_INFO("ECS scene ready: blank Document + Part + camera");
@@ -78,10 +83,12 @@ MainWindow::MainWindow(QWidget* parent)
   viewport_container_ = QWidget::createWindowContainer(vulkan_window_, this);
   viewport_container_->setFocusPolicy(Qt::StrongFocus);
   viewport_container_->setMouseTracking(true);
+  viewport_container_->setAttribute(Qt::WA_Hover, true);
   viewport_container_->installEventFilter(vulkan_window_);
   viewport_container_->installEventFilter(this);
   viewport_container_->setFocus();
   setCentralWidget(viewport_container_);
+  setMouseTracking(true);
 
   view_cube_ = new ViewCubeWidget(this);
   view_cube_->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
@@ -131,7 +138,13 @@ commands::CommandContext MainWindow::make_command_context() {
   ctx.history = &command_manager_.history();
   ctx.parent_widget = this;
   ctx.wood_albedo_path = wood_albedo_path().toStdString();
-  if (viewport_container_) {
+  // Prefer QVulkanWindow pixel size — matches QWindow mouse coordinates and
+  // the swapchain used for picking rays.
+  if (vulkan_window_ && vulkan_window_->width() > 0 &&
+      vulkan_window_->height() > 0) {
+    ctx.viewport_w = vulkan_window_->width();
+    ctx.viewport_h = vulkan_window_->height();
+  } else if (viewport_container_) {
     ctx.viewport_w = std::max(1, viewport_container_->width());
     ctx.viewport_h = std::max(1, viewport_container_->height());
   }
@@ -364,11 +377,20 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
       viewport_container_->mapFromGlobal(e->globalPosition().toPoint());
   if (!viewport_container_->rect().contains(local)) return false;
 
+  // Scale container (logical) → Vulkan window pixels when they differ (DPI).
+  const int cw = std::max(1, viewport_container_->width());
+  const int ch = std::max(1, viewport_container_->height());
+  const int vw =
+      vulkan_window_ ? std::max(1, vulkan_window_->width()) : cw;
+  const int vh =
+      vulkan_window_ ? std::max(1, vulkan_window_->height()) : ch;
+  const float sx = float(local.x()) * float(vw) / float(cw);
+  const float sy = float(local.y()) * float(vh) / float(ch);
+
   auto ctx = make_command_context();
   if (type == QEvent::MouseButtonPress) {
     if (e->button() != Qt::LeftButton) return false;
-    if (command_manager_.tool_mouse_press(ctx, float(local.x()),
-                                          float(local.y()), int(e->button()))) {
+    if (command_manager_.tool_mouse_press(ctx, sx, sy, int(e->button()))) {
       sync_tool_ui();
       refresh_edit_actions();
       return true;
@@ -385,7 +407,7 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
 
   // MouseMove: update rubber-band. Only consume when not panning with RMB/MMB,
   // otherwise orbit/pan handlers never see the drag.
-  command_manager_.tool_mouse_move(ctx, float(local.x()), float(local.y()));
+  command_manager_.tool_mouse_move(ctx, sx, sy);
   if (e->buttons() & (Qt::RightButton | Qt::MiddleButton)) return false;
   return true;
 }

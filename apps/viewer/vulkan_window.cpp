@@ -76,6 +76,12 @@ void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
 }
 
 void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
+  // QWindow-direct moves (common with QWidget::createWindowContainer) must
+  // still drive tool rubber-band previews.
+  if (!selection_enabled_ && tool_motion_callback_) {
+    tool_motion_callback_(float(pos.x()), float(pos.y()));
+  }
+
   if (!world_) return;
   if (!selection_enabled_ && (buttons & Qt::LeftButton) &&
       !(buttons & (Qt::RightButton | Qt::MiddleButton))) {

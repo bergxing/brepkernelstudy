@@ -27,6 +27,13 @@ class VulkanWindow final : public QVulkanWindow {
     selection_callback_ = std::move(cb);
   }
 
+  /// Called for mouse moves while an interactive tool owns the viewport
+  /// (`selection_enabled_ == false`). Coordinates are in QWindow pixels.
+  using ToolMotionCallback = std::function<void(float x, float y)>;
+  void set_tool_motion_callback(ToolMotionCallback cb) {
+    tool_motion_callback_ = std::move(cb);
+  }
+
   [[nodiscard]] Camera& camera();
   [[nodiscard]] const Camera& camera() const;
 
@@ -60,6 +67,7 @@ class VulkanWindow final : public QVulkanWindow {
   VulkanRenderer* renderer_{nullptr};
   bool selection_enabled_{true};
   SelectionCallback selection_callback_;
+  ToolMotionCallback tool_motion_callback_;
 };
 
 }  // namespace brep::viewer

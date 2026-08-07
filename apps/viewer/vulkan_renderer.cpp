@@ -703,9 +703,10 @@ void VulkanRenderer::upload_preview() {
 
   if (!preview_edges_.positions.empty()) {
     std::vector<AxisVertexGpu> verts(preview_edges_.positions.size());
-    constexpr float kR = 0.15f;
-    constexpr float kG = 0.85f;
-    constexpr float kB = 1.0f;
+    // Bright yellow — readable on the dark clear color.
+    constexpr float kR = 1.0f;
+    constexpr float kG = 0.92f;
+    constexpr float kB = 0.15f;
     for (size_t i = 0; i < preview_edges_.positions.size(); ++i) {
       verts[i].pos[0] = static_cast<float>(preview_edges_.positions[i].x());
       verts[i].pos[1] = static_cast<float>(preview_edges_.positions[i].y());

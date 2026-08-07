@@ -39,6 +39,17 @@ void push_seg(EdgeMesh& mesh, const Point3d& a, const Point3d& b) {
   mesh.positions.push_back(b);
 }
 
+EdgeMesh make_point_marker(const Point3d& p, double s = 0.12) {
+  EdgeMesh mesh;
+  push_seg(mesh, Point3d{p.x() - s, p.y(), p.z()},
+           Point3d{p.x() + s, p.y(), p.z()});
+  push_seg(mesh, Point3d{p.x(), p.y(), p.z() - s},
+           Point3d{p.x(), p.y(), p.z() + s});
+  push_seg(mesh, Point3d{p.x(), p.y() - s, p.z()},
+           Point3d{p.x(), p.y() + s, p.z()});
+  return mesh;
+}
+
 EdgeMesh make_rect_wire(double minx, double minz, double maxx, double maxz,
                         double y) {
   EdgeMesh mesh;
@@ -113,6 +124,7 @@ void CreateBoxTool::on_start(CommandContext& ctx) {
   result_ = CommandResult::cancelled();
   clear_preview(ctx);
   if (ctx.report_status) ctx.report_status(prompt());
+  BREP_INFO("CreateBoxTool start (3-point: base + height)");
 }
 
 bool CreateBoxTool::pick_ground(CommandContext& ctx, float x, float y,
@@ -155,15 +167,27 @@ bool CreateBoxTool::pick_height(CommandContext& ctx, float x, float y,
 }
 
 void CreateBoxTool::update_preview(CommandContext& ctx, float x, float y) {
-  if (!ctx.set_preview_edges) return;
+  if (!ctx.set_preview_edges) {
+    BREP_WARN("CreateBoxTool: set_preview_edges callback is empty");
+    return;
+  }
 
   if (step_ == 1) {
     Point3d hit;
-    if (!pick_ground(ctx, x, y, hit)) return;
+    if (!pick_ground(ctx, x, y, hit)) {
+      // Keep the first-point marker visible even if the ray misses.
+      ctx.set_preview_edges(make_point_marker(corner_a_));
+      if (ctx.request_redraw) ctx.request_redraw();
+      return;
+    }
     double minx = 0, maxx = 0, minz = 0, maxz = 0;
     base_bounds(corner_a_, hit, minx, maxx, minz, maxz);
-    if (std::abs(maxx - minx) < 1e-6 && std::abs(maxz - minz) < 1e-6) return;
-    ctx.set_preview_edges(make_rect_wire(minx, minz, maxx, maxz, 0.0));
+    EdgeMesh wire = make_rect_wire(minx, minz, maxx, maxz, 0.0);
+    // Also keep a marker on the first corner.
+    EdgeMesh marker = make_point_marker(corner_a_);
+    wire.positions.insert(wire.positions.end(), marker.positions.begin(),
+                          marker.positions.end());
+    ctx.set_preview_edges(std::move(wire));
     if (ctx.request_redraw) ctx.request_redraw();
     return;
   }
@@ -203,6 +227,11 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height) {
 
   const double miny = std::min(0.0, height);
   const double maxy = std::max(0.0, height);
+
+  BREP_INFO(
+      "CreateBoxTool commit extents min=({:.4f},{:.4f},{:.4f}) "
+      "max=({:.4f},{:.4f},{:.4f})",
+      minx, miny, minz, maxx, maxy, maxz);
 
   Body* body = part->add_box(BoxSpec{
       .min = Point3d{minx, miny, minz},
@@ -261,18 +290,31 @@ bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
                                    int button) {
   if (button != Qt::LeftButton) return false;
 
+  BREP_INFO("CreateBoxTool click screen=({:.1f},{:.1f}) step={} viewport={}x{}",
+            x, y, step_, ctx.viewport_w, ctx.viewport_h);
+
   if (step_ == 0 || step_ == 1) {
     Point3d hit;
     if (!pick_ground(ctx, x, y, hit)) {
+      BREP_WARN("CreateBoxTool pick ground failed at screen=({:.1f},{:.1f})", x,
+                y);
       if (ctx.report_status) {
         ctx.report_status(QStringLiteral("未点到地面 (y=0)，请换个角度再试"));
       }
       return true;
     }
 
+    BREP_INFO("CreateBoxTool picked ground point=({:.4f},{:.4f},{:.4f}) step={}",
+              hit.x(), hit.y(), hit.z(), step_);
+
     if (step_ == 0) {
       corner_a_ = hit;
       step_ = 1;
+      // Immediate feedback before the next move arrives.
+      if (ctx.set_preview_edges) {
+        ctx.set_preview_edges(make_point_marker(corner_a_));
+      }
+      if (ctx.request_redraw) ctx.request_redraw();
       if (ctx.report_status) ctx.report_status(prompt());
       return true;
     }
@@ -280,6 +322,8 @@ bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
     double minx = 0, maxx = 0, minz = 0, maxz = 0;
     base_bounds(corner_a_, hit, minx, maxx, minz, maxz);
     if (std::abs(maxx - minx) < 1e-4 || std::abs(maxz - minz) < 1e-4) {
+      BREP_WARN("CreateBoxTool base too small dx={:.6f} dz={:.6f}",
+                maxx - minx, maxz - minz);
       if (ctx.report_status) {
         ctx.report_status(QStringLiteral("底面尺寸过小，请重新指定对角点"));
       }
@@ -294,11 +338,14 @@ bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
 
   double height = 0.0;
   if (!pick_height(ctx, x, y, height)) {
+    BREP_WARN("CreateBoxTool pick height failed at screen=({:.1f},{:.1f})", x,
+              y);
     if (ctx.report_status) {
       ctx.report_status(QStringLiteral("无法拾取高度，请调整视角后再试"));
     }
     return true;
   }
+  BREP_INFO("CreateBoxTool picked height={:.4f}", height);
   commit_box(ctx, height);
   return true;
 }
@@ -314,6 +361,7 @@ void CreateBoxTool::on_cancel(CommandContext& ctx) {
   finished_ = true;
   result_ = CommandResult::cancelled(QStringLiteral("已取消创建立方体"));
   if (ctx.report_status) ctx.report_status(result_.message);
+  BREP_INFO("CreateBoxTool cancelled at step={}", step_);
 }
 
 }  // namespace brep::viewer::commands
