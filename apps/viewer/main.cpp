@@ -9,6 +9,56 @@
 
 #include <exception>
 
+namespace {
+
+void open_home_window(QApplication& app);
+
+void open_workspace(QApplication& app) {
+  try {
+    auto* workspace = new brep::viewer::MainWindow();
+    workspace->setAttribute(Qt::WA_DeleteOnClose);
+    QObject::connect(workspace, &QObject::destroyed, &app,
+                     [&app] { open_home_window(app); });
+
+    workspace->show();
+    workspace->raise();
+    workspace->activateWindow();
+    app.setQuitOnLastWindowClosed(true);
+  } catch (const std::exception& ex) {
+    BREP_ERROR("workspace failed: {}", ex.what());
+    QMessageBox::critical(nullptr, QStringLiteral("XCAD Error"),
+                          QString::fromUtf8(ex.what()));
+    app.setQuitOnLastWindowClosed(true);
+    open_home_window(app);
+  }
+}
+
+void open_home_window(QApplication& app) {
+  auto* home = new brep::viewer::HomeWindow();
+  home->setAttribute(Qt::WA_DeleteOnClose);
+
+  QObject::connect(home, &brep::viewer::HomeWindow::exit_requested, &app,
+                   &QApplication::quit);
+
+  QObject::connect(
+      home, &brep::viewer::HomeWindow::new_document_requested, &app,
+      [home, &app] {
+        // Close home first; open workspace only after home is gone.
+        app.setQuitOnLastWindowClosed(false);
+        QObject::connect(home, &QObject::destroyed, &app,
+                         [&app] { open_workspace(app); },
+                         Qt::QueuedConnection);
+        home->close();
+      });
+
+  home->show();
+  home->raise();
+  home->activateWindow();
+  app.setQuitOnLastWindowClosed(true);
+}
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
   brep::init_logging("brep_viewer.log", brep::LogLevel::Info);
 
@@ -22,42 +72,11 @@ int main(int argc, char* argv[]) {
       BREP_WARN("splash artwork missing; showing fallback splash");
     }
 
-    auto* home = new brep::viewer::HomeWindow();
-    home->hide();
-
     QObject::connect(splash, &brep::viewer::SplashScreen::finished, &app,
-                     [splash, home] {
-                       home->show();
-                       home->raise();
-                       home->activateWindow();
+                     [splash, &app] {
+                       open_home_window(app);
                        splash->deleteLater();
                      });
-
-    // Splash → start page → "新建" opens the modeling workspace.
-    QObject::connect(
-        home, &brep::viewer::HomeWindow::new_document_requested, &app, [home] {
-          try {
-            auto* workspace = new brep::viewer::MainWindow();
-            workspace->setAttribute(Qt::WA_DeleteOnClose);
-            QObject::connect(workspace, &QObject::destroyed, home, [home] {
-              home->show();
-              home->raise();
-              home->activateWindow();
-            });
-            home->hide();
-            workspace->show();
-            workspace->raise();
-            workspace->activateWindow();
-          } catch (const std::exception& ex) {
-            BREP_ERROR("workspace failed: {}", ex.what());
-            QMessageBox::critical(home, QStringLiteral("XCAD Error"),
-                                  QString::fromUtf8(ex.what()));
-            home->show();
-          }
-        });
-
-    QObject::connect(home, &brep::viewer::HomeWindow::exit_requested, &app,
-                     &QApplication::quit);
 
     splash->show();
     return app.exec();
