@@ -5,7 +5,7 @@
 
 namespace brep::viewer {
 
-/// Frameless splash; shows full artwork for ~3s then emits finished().
+/// Frameless 800x600 splash; shows full artwork for ~3s then emits finished().
 class SplashScreen final : public QWidget {
   Q_OBJECT
  public:
@@ -23,7 +23,6 @@ class SplashScreen final : public QWidget {
   void mousePressEvent(QMouseEvent* event) override;
 
  private:
-  void fit_to_artwork();
   void start_timer();
   void complete();
 

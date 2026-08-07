@@ -1,6 +1,5 @@
 #include "splash_screen.hpp"
 
-#include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -12,12 +11,17 @@
 #include <QTimer>
 
 namespace brep::viewer {
+namespace {
+constexpr int kSplashW = 800;
+constexpr int kSplashH = 600;
+}  // namespace
 
 SplashScreen::SplashScreen(QWidget* parent) : QWidget(parent) {
   setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
                  Qt::SplashScreen);
   setAttribute(Qt::WA_DeleteOnClose, false);
   setAttribute(Qt::WA_OpaquePaintEvent, true);
+  setFixedSize(kSplashW, kSplashH);
 }
 
 bool SplashScreen::load_artwork() {
@@ -31,30 +35,10 @@ bool SplashScreen::load_artwork() {
   for (const QString& path : candidates) {
     if (QFileInfo::exists(path)) {
       pixmap_ = QPixmap(path);
-      if (!pixmap_.isNull()) {
-        fit_to_artwork();
-        return true;
-      }
+      if (!pixmap_.isNull()) return true;
     }
   }
-  setFixedSize(960, 540);
   return false;
-}
-
-void SplashScreen::fit_to_artwork() {
-  if (pixmap_.isNull()) {
-    setFixedSize(960, 540);
-    return;
-  }
-
-  // Show the entire image (letterbox if needed). Cap to ~80% of screen.
-  QSize target = pixmap_.size();
-  if (const QScreen* screen = QApplication::primaryScreen()) {
-    const QSize avail = screen->availableGeometry().size() * 4 / 5;
-    target = target.scaled(avail, Qt::KeepAspectRatio);
-  }
-  // Prefer exact aspect of source so "CAD" / torus are not cropped.
-  setFixedSize(target);
 }
 
 void SplashScreen::showEvent(QShowEvent* event) {
@@ -98,7 +82,7 @@ void SplashScreen::paintEvent(QPaintEvent* event) {
   p.fillRect(rect(), QColor(6, 18, 48));
 
   if (!pixmap_.isNull()) {
-    // KeepAspectRatio: never crop — full splash art visible.
+    // Fit entire image inside 800x600 — no cropping.
     const QPixmap scaled =
         pixmap_.scaled(size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     const QPoint top_left((width() - scaled.width()) / 2,
