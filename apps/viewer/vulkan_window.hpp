@@ -34,6 +34,12 @@ class VulkanWindow final : public QVulkanWindow {
     tool_motion_callback_ = std::move(cb);
   }
 
+  /// Left-button press while a tool owns the viewport. Return true if consumed.
+  using ToolPressCallback = std::function<bool(float x, float y, int button)>;
+  void set_tool_press_callback(ToolPressCallback cb) {
+    tool_press_callback_ = std::move(cb);
+  }
+
   [[nodiscard]] Camera& camera();
   [[nodiscard]] const Camera& camera() const;
 
@@ -61,6 +67,7 @@ class VulkanWindow final : public QVulkanWindow {
   void apply_key(int key);
   void sync_renderer();
   void maybe_select_at(float x, float y);
+  [[nodiscard]] bool forward_tool_press(QPointF pos, Qt::MouseButton button);
 
   ecs::World* world_{nullptr};
   Camera fallback_camera_{};
@@ -68,6 +75,7 @@ class VulkanWindow final : public QVulkanWindow {
   bool selection_enabled_{true};
   SelectionCallback selection_callback_;
   ToolMotionCallback tool_motion_callback_;
+  ToolPressCallback tool_press_callback_;
 };
 
 }  // namespace brep::viewer

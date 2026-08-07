@@ -76,6 +76,17 @@ MainWindow::MainWindow(QWidget* parent)
     auto ctx = make_command_context();
     command_manager_.tool_mouse_move(ctx, x, y);
   });
+  // QWindowContainer often delivers presses to the QWindow directly; the
+  // widget/qApp filters alone are not enough on Windows.
+  vulkan_window_->set_tool_press_callback([this](float x, float y, int button) {
+    if (!command_manager_.has_active_tool()) return false;
+    auto ctx = make_command_context();
+    const bool consumed =
+        command_manager_.tool_mouse_press(ctx, x, y, button);
+    sync_tool_ui();
+    refresh_edit_actions();
+    return consumed;
+  });
 
   document_.new_blank_document(world_);
   BREP_INFO("ECS scene ready: blank Document + Part + camera");

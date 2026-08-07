@@ -2,6 +2,8 @@
 
 #include "ecs/systems.hpp"
 
+#include "brep/log.hpp"
+
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -60,11 +62,25 @@ void VulkanWindow::maybe_select_at(float x, float y) {
   if (selection_callback_) selection_callback_(hit);
 }
 
+bool VulkanWindow::forward_tool_press(QPointF pos, Qt::MouseButton button) {
+  if (selection_enabled_ || button != Qt::LeftButton || !tool_press_callback_) {
+    return false;
+  }
+  BREP_INFO("VulkanWindow tool press at ({:.1f},{:.1f}) size={}x{}", pos.x(),
+            pos.y(), width(), height());
+  return tool_press_callback_(float(pos.x()), float(pos.y()), int(button));
+}
+
 void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
+  if (forward_tool_press(pos, button)) return;
+
   if (!world_) return;
   // Interactive tools own the left button (pick points); do not start
   // select/orbit, and do not replace the application pick cursor.
-  if (!selection_enabled_ && button == Qt::LeftButton) return;
+  if (!selection_enabled_ && button == Qt::LeftButton) {
+    BREP_WARN("VulkanWindow left press in tool mode but no tool_press_callback");
+    return;
+  }
 
   const int mode = ecs::input_on_press(world_->registry(), float(pos.x()),
                                        float(pos.y()), int(button));
@@ -166,9 +182,6 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
   switch (event->type()) {
     case QEvent::MouseButtonPress: {
       auto* e = static_cast<QMouseEvent*>(event);
-      if (!selection_enabled_ && e->button() == Qt::LeftButton) {
-        return false;  // let MainWindow / tool handle picking
-      }
       pointer_press(e->position(), e->button());
       return true;
     }
