@@ -36,6 +36,9 @@ class VulkanWindow final : public QVulkanWindow {
   /// Apply a wheel zoom step (positive = zoom in). Used by overlays / MainWindow.
   void handle_wheel(int angle_delta_y) { pointer_wheel(angle_delta_y); }
 
+  void set_preview_edges(EdgeMesh edges);
+  void clear_preview();
+
  protected:
   void mousePressEvent(QMouseEvent* event) override;
   void mouseReleaseEvent(QMouseEvent* event) override;

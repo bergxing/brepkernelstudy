@@ -42,6 +42,7 @@ class MainWindow final : public QMainWindow {
   void refresh_window_title();
   void refresh_edit_actions();
   void rebind_view_cube_camera();
+  void sync_tool_ui();
   void bind_action(QAction* action, const char* command_id);
   commands::CommandResult run_command(std::string_view command_id);
   [[nodiscard]] commands::CommandContext make_command_context();

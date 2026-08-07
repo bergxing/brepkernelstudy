@@ -32,6 +32,18 @@ void VulkanWindow::sync_renderer() {
   ecs::render_sync(world_->registry(), *renderer_);
 }
 
+void VulkanWindow::set_preview_edges(EdgeMesh edges) {
+  if (!renderer_) return;
+  renderer_->set_preview_edges(std::move(edges));
+  requestUpdate();
+}
+
+void VulkanWindow::clear_preview() {
+  if (!renderer_) return;
+  renderer_->clear_preview();
+  requestUpdate();
+}
+
 QVulkanWindowRenderer* VulkanWindow::createRenderer() {
   renderer_ = new VulkanRenderer(this);
   sync_renderer();

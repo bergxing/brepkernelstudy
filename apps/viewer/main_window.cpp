@@ -105,7 +105,7 @@ MainWindow::MainWindow(QWidget* parent)
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "XCAD | 左键单击选择 / 拖动旋转 | 立方体=两点创建 | ESC 取消工具"));
+      "XCAD | 左键单击选择 / 拖动旋转 | 立方体=三点创建 | ESC 取消工具"));
 }
 
 QString MainWindow::wood_albedo_path() const {
@@ -129,7 +129,8 @@ commands::CommandContext MainWindow::make_command_context() {
     ctx.viewport_h = std::max(1, viewport_container_->height());
   }
   ctx.report_status = [this](const QString& msg) {
-    statusBar()->showMessage(msg, 6000);
+    // Keep tool prompts visible until the next status update.
+    statusBar()->showMessage(msg);
   };
   ctx.request_redraw = [this] {
     if (vulkan_window_) vulkan_window_->requestUpdate();
@@ -142,7 +143,32 @@ commands::CommandContext MainWindow::make_command_context() {
     refresh_window_title();
     refresh_edit_actions();
   };
+  ctx.set_preview_edges = [this](EdgeMesh edges) {
+    if (vulkan_window_) vulkan_window_->set_preview_edges(std::move(edges));
+  };
+  ctx.clear_preview = [this] {
+    if (vulkan_window_) vulkan_window_->clear_preview();
+  };
   return ctx;
+}
+
+void MainWindow::sync_tool_ui() {
+  const bool tool = command_manager_.has_active_tool();
+  if (vulkan_window_) {
+    vulkan_window_->set_selection_enabled(!tool);
+    if (tool) {
+      vulkan_window_->setCursor(Qt::CrossCursor);
+    } else {
+      vulkan_window_->unsetCursor();
+    }
+  }
+  if (viewport_container_) {
+    if (tool) {
+      viewport_container_->setCursor(Qt::CrossCursor);
+    } else {
+      viewport_container_->unsetCursor();
+    }
+  }
 }
 
 commands::CommandResult MainWindow::run_command(std::string_view command_id) {
@@ -152,10 +178,7 @@ commands::CommandResult MainWindow::run_command(std::string_view command_id) {
       !result.message.isEmpty()) {
     QMessageBox::warning(this, QStringLiteral("命令失败"), result.message);
   }
-  if (vulkan_window_) {
-    vulkan_window_->set_selection_enabled(
-        !command_manager_.has_active_tool());
-  }
+  sync_tool_ui();
   refresh_edit_actions();
   if (result.succeeded() || command_manager_.has_active_tool()) {
     refresh_window_title();
@@ -224,7 +247,7 @@ void MainWindow::setup_menus() {
   auto* model_menu = menuBar()->addMenu(QStringLiteral("建模(&M)"));
   auto* act_box = model_menu->addAction(QStringLiteral("创建立方体(&B)…"));
   act_box->setShortcut(QKeySequence(QStringLiteral("Ctrl+B")));
-  act_box->setToolTip(QStringLiteral("两点拾取创建（交互）"));
+  act_box->setToolTip(QStringLiteral("三点拾取创建：底面两点 + 高度点"));
   bind_action(act_box, "part.create_box");
 
   auto* act_box_fast =
@@ -248,7 +271,7 @@ void MainWindow::setup_toolbar() {
   bind_action(act_new, "doc.new");
 
   auto* act_box = toolbar_->addAction(QStringLiteral("立方体"));
-  act_box->setToolTip(QStringLiteral("两点创建盒子 (Ctrl+B)"));
+  act_box->setToolTip(QStringLiteral("三点创建盒子 (Ctrl+B)"));
   bind_action(act_box, "part.create_box");
 
   auto* act_export = toolbar_->addAction(QStringLiteral("导出 DXF"));
@@ -315,7 +338,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
   if (event->key() == Qt::Key_Escape && command_manager_.has_active_tool()) {
     auto ctx = make_command_context();
     command_manager_.cancel_active_tool(ctx);
-    if (vulkan_window_) vulkan_window_->set_selection_enabled(true);
+    sync_tool_ui();
     event->accept();
     return;
   }
@@ -333,10 +356,7 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
     if (!viewport_container_->rect().contains(local)) return false;
     if (command_manager_.tool_mouse_press(ctx, float(local.x()),
                                           float(local.y()), int(e->button()))) {
-      if (vulkan_window_) {
-        vulkan_window_->set_selection_enabled(
-            !command_manager_.has_active_tool());
-      }
+      sync_tool_ui();
       refresh_edit_actions();
       return true;
     }
@@ -345,7 +365,9 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
     const QPoint local = viewport_container_->mapFromGlobal(
         e->globalPosition().toPoint());
     command_manager_.tool_mouse_move(ctx, float(local.x()), float(local.y()));
-    // Do not consume move so orbit can still work with RMB if desired.
+    // Consume move while a tool is active so the rubber-band updates smoothly
+    // and left-drag does not start orbit/select.
+    return true;
   }
   return false;
 }
@@ -361,7 +383,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     if (ke->key() == Qt::Key_Escape && command_manager_.has_active_tool()) {
       auto ctx = make_command_context();
       command_manager_.cancel_active_tool(ctx);
-      if (vulkan_window_) vulkan_window_->set_selection_enabled(true);
+      sync_tool_ui();
       return true;
     }
   }

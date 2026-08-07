@@ -2,12 +2,11 @@
 
 #include "commands/itool.hpp"
 
-#include "brep/guid.hpp"
 #include "brep/math.hpp"
 
 namespace brep::viewer::commands {
 
-/// Two clicks on the y=0 plane define the box footprint; height is fixed.
+/// Three-point box: base corner → opposite corner → height.
 class CreateBoxTool final : public ITool {
  public:
   [[nodiscard]] std::string_view id() const noexcept override {
@@ -25,10 +24,14 @@ class CreateBoxTool final : public ITool {
 
  private:
   bool pick_ground(CommandContext& ctx, float x, float y, Point3d& hit) const;
-  void commit_box(CommandContext& ctx, const Point3d& a, const Point3d& b);
+  bool pick_height(CommandContext& ctx, float x, float y, double& height) const;
+  void update_preview(CommandContext& ctx, float x, float y);
+  void clear_preview(CommandContext& ctx);
+  void commit_box(CommandContext& ctx, double height);
 
-  int step_{0};  // 0: wait first corner, 1: wait second
+  int step_{0};  // 0: first corner, 1: opposite corner, 2: height
   Point3d corner_a_{};
+  Point3d corner_b_{};
   bool finished_{false};
   CommandResult result_{CommandResult::cancelled()};
 };

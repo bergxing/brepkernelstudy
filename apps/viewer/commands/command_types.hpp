@@ -3,6 +3,8 @@
 #include "document.hpp"
 #include "ecs/world.hpp"
 
+#include "brep/mesh.hpp"
+
 #include <QString>
 #include <QWidget>
 
@@ -57,6 +59,8 @@ struct CommandContext {
   std::function<void()> request_redraw;
   std::function<void()> after_document_reset;
   std::function<void()> refresh_ui;
+  std::function<void(EdgeMesh)> set_preview_edges;
+  std::function<void()> clear_preview;
 };
 
 }  // namespace brep::viewer::commands

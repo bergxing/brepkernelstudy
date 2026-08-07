@@ -71,6 +71,17 @@ bool intersect_plane_y(const Point3d& origin, const Vector3d& dir, double plane_
   return true;
 }
 
+bool intersect_plane(const Point3d& origin, const Vector3d& dir,
+                     const Point3d& plane_point, const Vector3d& plane_normal,
+                     Point3d& out_hit) {
+  const double denom = dir.dot(plane_normal);
+  if (std::abs(denom) < 1e-9) return false;
+  const double t = (plane_point - origin).dot(plane_normal) / denom;
+  if (t < 0.0) return false;
+  out_hit = origin + dir * t;
+  return true;
+}
+
 namespace {
 
 bool intersect_triangle(const Point3d& origin, const Vector3d& dir,

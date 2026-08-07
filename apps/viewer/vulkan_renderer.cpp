@@ -50,6 +50,17 @@ void VulkanRenderer::set_material(Material material) {
   material_dirty_ = true;
 }
 
+void VulkanRenderer::set_preview_edges(EdgeMesh edges) {
+  preview_edges_ = std::move(edges);
+  preview_dirty_ = true;
+}
+
+void VulkanRenderer::clear_preview() {
+  if (preview_edges_.positions.empty() && preview_vertex_count_ == 0) return;
+  preview_edges_ = {};
+  preview_dirty_ = true;
+}
+
 uint32_t VulkanRenderer::find_memory_type(uint32_t type_bits,
                                           VkMemoryPropertyFlags props) const {
   VkPhysicalDeviceMemoryProperties mem_props;
@@ -686,6 +697,37 @@ void VulkanRenderer::upload_meshes() {
   meshes_dirty_ = false;
 }
 
+void VulkanRenderer::upload_preview() {
+  destroy_buffer(preview_vb_);
+  preview_vertex_count_ = 0;
+
+  if (!preview_edges_.positions.empty()) {
+    std::vector<AxisVertexGpu> verts(preview_edges_.positions.size());
+    constexpr float kR = 0.15f;
+    constexpr float kG = 0.85f;
+    constexpr float kB = 1.0f;
+    for (size_t i = 0; i < preview_edges_.positions.size(); ++i) {
+      verts[i].pos[0] = static_cast<float>(preview_edges_.positions[i].x());
+      verts[i].pos[1] = static_cast<float>(preview_edges_.positions[i].y());
+      verts[i].pos[2] = static_cast<float>(preview_edges_.positions[i].z());
+      verts[i].color[0] = kR;
+      verts[i].color[1] = kG;
+      verts[i].color[2] = kB;
+    }
+    const VkDeviceSize size = sizeof(AxisVertexGpu) * verts.size();
+    preview_vb_ = create_buffer(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    void* data = nullptr;
+    dev_->vkMapMemory(window_->device(), preview_vb_.memory, 0, size, 0, &data);
+    std::memcpy(data, verts.data(), static_cast<size_t>(size));
+    dev_->vkUnmapMemory(window_->device(), preview_vb_.memory);
+    preview_vertex_count_ = static_cast<uint32_t>(verts.size());
+  }
+
+  preview_dirty_ = false;
+}
+
 void VulkanRenderer::initSwapChainResources() {}
 
 void VulkanRenderer::releaseSwapChainResources() {}
@@ -698,9 +740,11 @@ void VulkanRenderer::releaseResources() {
   destroy_buffer(tri_ib_);
   destroy_buffer(line_vb_);
   destroy_buffer(axis_vb_);
+  destroy_buffer(preview_vb_);
   destroy_buffer(ubo_);
   destroy_buffer(axis_ubo_);
   destroy_texture(albedo_);
+  preview_vertex_count_ = 0;
 
   if (tri_pipeline_)
     dev_->vkDestroyPipeline(device, tri_pipeline_, nullptr);
@@ -757,6 +801,15 @@ void VulkanRenderer::startNextFrame() {
     } catch (const std::exception& ex) {
       BREP_ERROR("create_albedo_texture failed: {}", ex.what());
       material_dirty_ = false;
+    }
+  }
+
+  if (preview_dirty_) {
+    try {
+      upload_preview();
+    } catch (const std::exception& ex) {
+      BREP_ERROR("upload_preview failed: {}", ex.what());
+      preview_dirty_ = false;
     }
   }
 
@@ -841,6 +894,15 @@ void VulkanRenderer::startNextFrame() {
     VkDeviceSize offset = 0;
     dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &line_vb_.buffer, &offset);
     dev_->vkCmdDraw(cmd, line_vertex_count_, 1, 0, 0);
+  }
+
+  // Tool rubber-band (cyan). Uses axis vertex format + scene MVP; depth off so
+  // the preview stays readable while dragging.
+  if (preview_vertex_count_ > 0 && axis_pipeline_ && preview_vb_.buffer) {
+    dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);
+    VkDeviceSize offset = 0;
+    dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &preview_vb_.buffer, &offset);
+    dev_->vkCmdDraw(cmd, preview_vertex_count_, 1, 0, 0);
   }
 
   // Screen-space orientation triad (bottom-left). Uses a separate UBO so it
