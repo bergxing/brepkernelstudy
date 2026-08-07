@@ -5,13 +5,12 @@
 
 namespace brep::viewer {
 
-/// Frameless XCAD splash; paints branded art and masks the corner watermark.
+/// Frameless splash; shows full artwork for ~3s then emits finished().
 class SplashScreen final : public QWidget {
   Q_OBJECT
  public:
   explicit SplashScreen(QWidget* parent = nullptr);
 
-  /// Load splash art from viewer assets (build dir or next to exe).
   bool load_artwork();
 
  signals:
@@ -24,6 +23,7 @@ class SplashScreen final : public QWidget {
   void mousePressEvent(QMouseEvent* event) override;
 
  private:
+  void fit_to_artwork();
   void start_timer();
   void complete();
 

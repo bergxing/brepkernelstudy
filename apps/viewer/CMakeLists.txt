@@ -60,6 +60,7 @@ add_custom_target(brep_viewer_shaders DEPENDS ${VIEWER_SPV_OUTPUTS})
 qt_add_executable(brep_viewer
   main.cpp
   main_window.cpp
+  home_window.cpp
   document.cpp
   splash_screen.cpp
   view_cube.cpp

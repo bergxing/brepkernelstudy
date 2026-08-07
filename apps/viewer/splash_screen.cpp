@@ -1,5 +1,6 @@
 #include "splash_screen.hpp"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -13,9 +14,10 @@
 namespace brep::viewer {
 
 SplashScreen::SplashScreen(QWidget* parent) : QWidget(parent) {
-  setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::SplashScreen);
+  setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
+                 Qt::SplashScreen);
   setAttribute(Qt::WA_DeleteOnClose, false);
-  setFixedSize(960, 540);
+  setAttribute(Qt::WA_OpaquePaintEvent, true);
 }
 
 bool SplashScreen::load_artwork() {
@@ -29,10 +31,30 @@ bool SplashScreen::load_artwork() {
   for (const QString& path : candidates) {
     if (QFileInfo::exists(path)) {
       pixmap_ = QPixmap(path);
-      if (!pixmap_.isNull()) return true;
+      if (!pixmap_.isNull()) {
+        fit_to_artwork();
+        return true;
+      }
     }
   }
+  setFixedSize(960, 540);
   return false;
+}
+
+void SplashScreen::fit_to_artwork() {
+  if (pixmap_.isNull()) {
+    setFixedSize(960, 540);
+    return;
+  }
+
+  // Show the entire image (letterbox if needed). Cap to ~80% of screen.
+  QSize target = pixmap_.size();
+  if (const QScreen* screen = QApplication::primaryScreen()) {
+    const QSize avail = screen->availableGeometry().size() * 4 / 5;
+    target = target.scaled(avail, Qt::KeepAspectRatio);
+  }
+  // Prefer exact aspect of source so "CAD" / torus are not cropped.
+  setFixedSize(target);
 }
 
 void SplashScreen::showEvent(QShowEvent* event) {
@@ -73,22 +95,21 @@ void SplashScreen::paintEvent(QPaintEvent* event) {
   Q_UNUSED(event);
   QPainter p(this);
   p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+  p.fillRect(rect(), QColor(6, 18, 48));
 
   if (!pixmap_.isNull()) {
+    // KeepAspectRatio: never crop — full splash art visible.
     const QPixmap scaled =
-        pixmap_.scaled(size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        pixmap_.scaled(size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     const QPoint top_left((width() - scaled.width()) / 2,
                           (height() - scaled.height()) / 2);
     p.drawPixmap(top_left, scaled);
-
-    // Cover Doubao watermark in the source art (bottom-right corner).
-    const int cover_w = qMax(160, width() / 4);
-    const int cover_h = qMax(40, height() / 16);
-    p.fillRect(QRect(width() - cover_w, height() - cover_h, cover_w, cover_h),
-               QColor(8, 22, 58));
   } else {
-    p.fillRect(rect(), QColor(8, 24, 64));
-    p.setPen(Qt::white);
+    p.setPen(QColor(220, 230, 245));
+    QFont f = font();
+    f.setPointSize(36);
+    f.setBold(true);
+    p.setFont(f);
     p.drawText(rect(), Qt::AlignCenter, QStringLiteral("XCAD"));
   }
 }
