@@ -6,6 +6,8 @@
 #include "brep/mesh.hpp"
 #include "camera.hpp"
 
+#include <entt/entt.hpp>
+
 #include <string>
 
 namespace brep::viewer::ecs {
@@ -45,13 +47,24 @@ struct BodyRef {
   brep::Guid guid{};
 };
 
+/// Tag: currently selected renderable (single-selection for now).
+struct SelectedTag {};
+
+/// Active selection (stored in registry context).
+struct SelectionState {
+  entt::entity primary{entt::null};
+};
+
 /// Transient input state (stored in registry context, not on an entity).
 struct InputState {
-  enum class DragMode { None, Orbit, Pan };
+  /// Left-press starts as PendingSelect; crosses slop → Orbit. Click = select.
+  enum class DragMode { None, PendingSelect, Orbit, Pan };
 
   DragMode drag_mode{DragMode::None};
   float last_x{0.0f};
   float last_y{0.0f};
+  float press_x{0.0f};
+  float press_y{0.0f};
   bool camera_dirty{true};
 };
 

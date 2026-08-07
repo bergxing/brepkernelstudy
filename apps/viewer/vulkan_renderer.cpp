@@ -314,6 +314,31 @@ void VulkanRenderer::create_albedo_texture() {
   material_dirty_ = false;
 }
 
+void VulkanRenderer::update_albedo_descriptors() {
+  if (!dev_ || !desc_set_ || albedo_.view == VK_NULL_HANDLE ||
+      albedo_.sampler == VK_NULL_HANDLE) {
+    return;
+  }
+
+  VkDescriptorImageInfo ii{};
+  ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  ii.imageView = albedo_.view;
+  ii.sampler = albedo_.sampler;
+
+  VkWriteDescriptorSet writes[2]{};
+  writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writes[0].dstSet = desc_set_;
+  writes[0].dstBinding = 1;
+  writes[0].descriptorCount = 1;
+  writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  writes[0].pImageInfo = &ii;
+
+  writes[1] = writes[0];
+  writes[1].dstSet = axis_desc_set_;
+
+  dev_->vkUpdateDescriptorSets(window_->device(), 2, writes, 0, nullptr);
+}
+
 void VulkanRenderer::initResources() {
   try {
     dev_ = window_->vulkanInstance()->deviceFunctions(window_->device());
@@ -720,6 +745,18 @@ void VulkanRenderer::startNextFrame() {
     } catch (const std::exception& ex) {
       BREP_ERROR("upload_meshes failed: {}", ex.what());
       meshes_dirty_ = false;
+    }
+  }
+
+  // Blank scenes initialize with a solid fallback albedo; when the first body
+  // (or a selection highlight) sets a new Material, rebuild the GPU texture.
+  if (material_dirty_) {
+    try {
+      create_albedo_texture();
+      update_albedo_descriptors();
+    } catch (const std::exception& ex) {
+      BREP_ERROR("create_albedo_texture failed: {}", ex.what());
+      material_dirty_ = false;
     }
   }
 

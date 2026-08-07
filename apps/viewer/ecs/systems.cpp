@@ -1,11 +1,13 @@
 #include "ecs/systems.hpp"
 
+#include "commands/picking.hpp"
 #include "ecs/components.hpp"
 #include "vulkan_renderer.hpp"
 
 #include <qnamespace.h>
 
 #include <cmath>
+#include <limits>
 
 namespace brep::viewer::ecs {
 namespace {
@@ -22,14 +24,26 @@ InputState& input(entt::registry& registry) {
   return registry.ctx().get<InputState>();
 }
 
+SelectionState& selection(entt::registry& registry) {
+  if (!registry.ctx().contains<SelectionState>()) {
+    registry.ctx().emplace<SelectionState>();
+  }
+  return registry.ctx().get<SelectionState>();
+}
+
+constexpr float kSelectSlopPx = 5.0f;
+
 }  // namespace
 
 int input_on_press(entt::registry& registry, float x, float y, int button) {
   auto& state = input(registry);
   state.last_x = x;
   state.last_y = y;
+  state.press_x = x;
+  state.press_y = y;
   if (button == Qt::LeftButton) {
-    state.drag_mode = InputState::DragMode::Orbit;
+    // Click without drag → select; drag past slop → orbit.
+    state.drag_mode = InputState::DragMode::PendingSelect;
   } else if (button == Qt::RightButton || button == Qt::MiddleButton) {
     state.drag_mode = InputState::DragMode::Pan;
   } else {
@@ -42,12 +56,20 @@ void input_on_move(entt::registry& registry, float x, float y, int buttons) {
   auto& state = input(registry);
   if (state.drag_mode == InputState::DragMode::None) return;
 
-  if (buttons & Qt::LeftButton) {
+  if (state.drag_mode == InputState::DragMode::PendingSelect) {
+    if (!(buttons & Qt::LeftButton)) return;
+    const float dx = x - state.press_x;
+    const float dy = y - state.press_y;
+    if (dx * dx + dy * dy < kSelectSlopPx * kSelectSlopPx) {
+      state.last_x = x;
+      state.last_y = y;
+      return;
+    }
     state.drag_mode = InputState::DragMode::Orbit;
-  } else if (buttons & (Qt::RightButton | Qt::MiddleButton)) {
-    state.drag_mode = InputState::DragMode::Pan;
-  } else {
-    return;
+  } else if (state.drag_mode == InputState::DragMode::Orbit) {
+    if (!(buttons & Qt::LeftButton)) return;
+  } else if (state.drag_mode == InputState::DragMode::Pan) {
+    if (!(buttons & (Qt::RightButton | Qt::MiddleButton))) return;
   }
 
   const float dx = x - state.last_x;
@@ -57,7 +79,7 @@ void input_on_move(entt::registry& registry, float x, float y, int buttons) {
   if (auto* cam = main_camera(registry)) {
     if (state.drag_mode == InputState::DragMode::Orbit) {
       cam->camera.orbit(dx, dy);
-    } else {
+    } else if (state.drag_mode == InputState::DragMode::Pan) {
       cam->camera.pan(dx, dy);
     }
     state.camera_dirty = true;
@@ -66,8 +88,11 @@ void input_on_move(entt::registry& registry, float x, float y, int buttons) {
   state.last_y = y;
 }
 
-void input_on_release(entt::registry& registry) {
-  input(registry).drag_mode = InputState::DragMode::None;
+bool input_on_release(entt::registry& registry) {
+  auto& state = input(registry);
+  const bool click = state.drag_mode == InputState::DragMode::PendingSelect;
+  state.drag_mode = InputState::DragMode::None;
+  return click;
 }
 
 void input_on_wheel(entt::registry& registry, int angle_delta_y) {
@@ -112,9 +137,8 @@ void input_on_key(entt::registry& registry, int key) {
 }
 
 void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
-  // Camera → renderer (via VulkanWindow camera getter; renderer reads it each frame).
-  // Mesh / material push when dirty.
-  auto view = registry.view<MeshComponent, MaterialComponent, RenderableTag>();
+  auto view =
+      registry.view<MeshComponent, MaterialComponent, Transform, RenderableTag>();
   bool any = false;
   for (auto entity : view) {
     any = true;
@@ -125,7 +149,16 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
       mesh.dirty = false;
     }
     if (mat.dirty) {
-      renderer.set_material(mat.material);
+      Material upload = mat.material;
+      if (registry.all_of<SelectedTag>(entity)) {
+        // Solid highlight so selection is obvious even with textured albedo.
+        upload.name = "selected";
+        upload.albedo_path.clear();
+        upload.albedo_color[0] = 1.0f;
+        upload.albedo_color[1] = 0.62f;
+        upload.albedo_color[2] = 0.12f;
+      }
+      renderer.set_material(upload);
       mat.dirty = false;
     }
   }
@@ -140,6 +173,87 @@ bool consume_camera_dirty(entt::registry& registry) {
   const bool dirty = state.camera_dirty;
   state.camera_dirty = false;
   return dirty;
+}
+
+entt::entity pick_renderable(entt::registry& registry, const Camera& cam,
+                             int viewport_w, int viewport_h, float sx,
+                             float sy) {
+  Point3d origin;
+  Vector3d dir;
+  if (!commands::screen_to_ray(cam, viewport_w, viewport_h, sx, sy, origin,
+                               dir)) {
+    return entt::null;
+  }
+
+  entt::entity best = entt::null;
+  double best_t = std::numeric_limits<double>::infinity();
+
+  auto view = registry.view<MeshComponent, Transform, RenderableTag>();
+  for (auto entity : view) {
+    const auto& mesh = view.get<MeshComponent>(entity);
+    const auto& xform = view.get<Transform>(entity);
+    double t = 0.0;
+    if (!commands::intersect_mesh(origin, dir, mesh.triangles, xform.position,
+                                  t)) {
+      continue;
+    }
+    if (t < best_t) {
+      best_t = t;
+      best = entity;
+    }
+  }
+  return best;
+}
+
+void set_selection(entt::registry& registry, entt::entity entity) {
+  auto& sel = selection(registry);
+  if (sel.primary == entity) return;
+
+  if (sel.primary != entt::null && registry.valid(sel.primary)) {
+    registry.remove<SelectedTag>(sel.primary);
+    if (auto* mat = registry.try_get<MaterialComponent>(sel.primary)) {
+      mat->dirty = true;
+    }
+  }
+
+  sel.primary = entity;
+  if (entity == entt::null || !registry.valid(entity)) {
+    sel.primary = entt::null;
+    return;
+  }
+
+  registry.emplace_or_replace<SelectedTag>(entity);
+  if (auto* mat = registry.try_get<MaterialComponent>(entity)) {
+    mat->dirty = true;
+  }
+  // With the single-mesh renderer, make the selected body the active GPU mesh.
+  if (auto* mesh = registry.try_get<MeshComponent>(entity)) {
+    mesh->dirty = true;
+  }
+}
+
+void clear_selection(entt::registry& registry) {
+  set_selection(registry, entt::null);
+}
+
+entt::entity selected_entity(const entt::registry& registry) {
+  if (!registry.ctx().contains<SelectionState>()) return entt::null;
+  return registry.ctx().get<SelectionState>().primary;
+}
+
+std::string selection_label(const entt::registry& registry,
+                            entt::entity entity) {
+  if (entity == entt::null || !registry.valid(entity)) return {};
+  std::string label;
+  if (const auto* name = registry.try_get<Name>(entity)) {
+    label = name->value;
+  }
+  if (const auto* body = registry.try_get<BodyRef>(entity)) {
+    if (!label.empty()) label += "  ";
+    label += body->guid.to_string();
+  }
+  if (label.empty()) label = "entity";
+  return label;
 }
 
 }  // namespace brep::viewer::ecs

@@ -2,6 +2,7 @@
 
 #include "brep/log.hpp"
 #include "commands/command_palette.hpp"
+#include "ecs/systems.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -58,6 +59,18 @@ MainWindow::MainWindow(QWidget* parent)
   vulkan_window_->setVulkanInstance(vulkan_instance_.get());
   vulkan_window_->setSampleCount(1);
   vulkan_window_->set_world(&world_);
+  vulkan_window_->set_selection_callback([this](entt::entity entity) {
+    if (entity == entt::null) {
+      statusBar()->showMessage(QStringLiteral("已取消选择"), 3000);
+      return;
+    }
+    const std::string label =
+        ecs::selection_label(world_.registry(), entity);
+    statusBar()->showMessage(
+        QStringLiteral("已选中: %1")
+            .arg(QString::fromStdString(label)),
+        6000);
+  });
 
   document_.new_blank_document(world_);
   BREP_INFO("ECS scene ready: blank Document + Part + camera");
@@ -92,7 +105,7 @@ MainWindow::MainWindow(QWidget* parent)
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "XCAD | Ctrl+Shift+P 命令面板 | 立方体=两点创建 | ESC 取消工具"));
+      "XCAD | 左键单击选择 / 拖动旋转 | 立方体=两点创建 | ESC 取消工具"));
 }
 
 QString MainWindow::wood_albedo_path() const {
@@ -138,6 +151,10 @@ commands::CommandResult MainWindow::run_command(std::string_view command_id) {
   if (result.status == commands::CommandStatus::Failed &&
       !result.message.isEmpty()) {
     QMessageBox::warning(this, QStringLiteral("命令失败"), result.message);
+  }
+  if (vulkan_window_) {
+    vulkan_window_->set_selection_enabled(
+        !command_manager_.has_active_tool());
   }
   refresh_edit_actions();
   if (result.succeeded() || command_manager_.has_active_tool()) {
@@ -298,6 +315,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
   if (event->key() == Qt::Key_Escape && command_manager_.has_active_tool()) {
     auto ctx = make_command_context();
     command_manager_.cancel_active_tool(ctx);
+    if (vulkan_window_) vulkan_window_->set_selection_enabled(true);
     event->accept();
     return;
   }
@@ -315,6 +333,10 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
     if (!viewport_container_->rect().contains(local)) return false;
     if (command_manager_.tool_mouse_press(ctx, float(local.x()),
                                           float(local.y()), int(e->button()))) {
+      if (vulkan_window_) {
+        vulkan_window_->set_selection_enabled(
+            !command_manager_.has_active_tool());
+      }
       refresh_edit_actions();
       return true;
     }
@@ -339,6 +361,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     if (ke->key() == Qt::Key_Escape && command_manager_.has_active_tool()) {
       auto ctx = make_command_context();
       command_manager_.cancel_active_tool(ctx);
+      if (vulkan_window_) vulkan_window_->set_selection_enabled(true);
       return true;
     }
   }

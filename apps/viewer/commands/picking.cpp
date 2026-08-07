@@ -71,4 +71,54 @@ bool intersect_plane_y(const Point3d& origin, const Vector3d& dir, double plane_
   return true;
 }
 
+namespace {
+
+bool intersect_triangle(const Point3d& origin, const Vector3d& dir,
+                        const Point3d& v0, const Point3d& v1, const Point3d& v2,
+                        double& out_t) {
+  constexpr double kEps = 1e-9;
+  const Vector3d e1 = v1 - v0;
+  const Vector3d e2 = v2 - v0;
+  const Vector3d p = dir.cross(e2);
+  const double det = e1.dot(p);
+  if (std::abs(det) < kEps) return false;
+  const double inv = 1.0 / det;
+  const Vector3d tvec = origin - v0;
+  const double u = tvec.dot(p) * inv;
+  if (u < 0.0 || u > 1.0) return false;
+  const Vector3d q = tvec.cross(e1);
+  const double v = dir.dot(q) * inv;
+  if (v < 0.0 || u + v > 1.0) return false;
+  const double t = e2.dot(q) * inv;
+  if (t < kEps) return false;
+  out_t = t;
+  return true;
+}
+
+}  // namespace
+
+bool intersect_mesh(const Point3d& origin, const Vector3d& dir,
+                    const TriangleMesh& mesh, const Point3d& origin_offset,
+                    double& out_t) {
+  bool hit = false;
+  double best = 0.0;
+  const auto& idx = mesh.indices;
+  const auto& verts = mesh.vertices;
+  const Vector3d offset{origin_offset.x(), origin_offset.y(),
+                        origin_offset.z()};
+  for (std::size_t i = 0; i + 2 < idx.size(); i += 3) {
+    const Point3d v0 = verts[idx[i]].position + offset;
+    const Point3d v1 = verts[idx[i + 1]].position + offset;
+    const Point3d v2 = verts[idx[i + 2]].position + offset;
+    double t = 0.0;
+    if (!intersect_triangle(origin, dir, v0, v1, v2, t)) continue;
+    if (!hit || t < best) {
+      best = t;
+      hit = true;
+    }
+  }
+  if (hit) out_t = best;
+  return hit;
+}
+
 }  // namespace brep::viewer::commands

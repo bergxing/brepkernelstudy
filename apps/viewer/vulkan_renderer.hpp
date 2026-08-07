@@ -60,6 +60,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void upload_meshes();
   void upload_axes();
   void create_albedo_texture();
+  void update_albedo_descriptors();
   void destroy_texture(GpuTexture& tex);
   void transition_image_layout(VkImage image, VkImageLayout old_layout,
                                VkImageLayout new_layout);

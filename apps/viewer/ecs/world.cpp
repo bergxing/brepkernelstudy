@@ -1,11 +1,14 @@
 #include "ecs/world.hpp"
 
+#include "ecs/systems.hpp"
+
 #include "brep/brep.hpp"
 
 namespace brep::viewer::ecs {
 
 World::World() {
   registry_.ctx().emplace<InputState>();
+  registry_.ctx().emplace<SelectionState>();
 }
 
 brep::Model* World::model() noexcept {
@@ -26,6 +29,11 @@ void World::clear_scene() {
     registry_.ctx().emplace<InputState>();
   } else {
     registry_.ctx().get<InputState>() = InputState{};
+  }
+  if (!registry_.ctx().contains<SelectionState>()) {
+    registry_.ctx().emplace<SelectionState>();
+  } else {
+    registry_.ctx().get<SelectionState>() = SelectionState{};
   }
   document_.reset();
 }
@@ -75,6 +83,9 @@ entt::entity World::find_body_renderable(const brep::Guid& body_guid) const {
 bool World::destroy_body_renderable(const brep::Guid& body_guid) {
   const entt::entity e = find_body_renderable(body_guid);
   if (e == entt::null) return false;
+  if (selected_entity(registry_) == e) {
+    clear_selection(registry_);
+  }
   registry_.destroy(e);
   return true;
 }

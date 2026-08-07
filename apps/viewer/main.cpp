@@ -17,8 +17,7 @@ void open_workspace(QApplication& app) {
   try {
     auto* workspace = new brep::viewer::MainWindow();
     workspace->setAttribute(Qt::WA_DeleteOnClose);
-    QObject::connect(workspace, &QObject::destroyed, &app,
-                     [&app] { open_home_window(app); });
+    // Closing the workspace ends the application (do not return to Home).
 
     workspace->show();
     workspace->raise();

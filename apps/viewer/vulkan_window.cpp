@@ -38,6 +38,16 @@ QVulkanWindowRenderer* VulkanWindow::createRenderer() {
   return renderer_;
 }
 
+void VulkanWindow::maybe_select_at(float x, float y) {
+  if (!selection_enabled_ || !world_) return;
+  const QSize sz = size();
+  const entt::entity hit = ecs::pick_renderable(
+      world_->registry(), camera(), sz.width(), sz.height(), x, y);
+  ecs::set_selection(world_->registry(), hit);
+  requestUpdate();
+  if (selection_callback_) selection_callback_(hit);
+}
+
 void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
   if (!world_) return;
   const int mode = ecs::input_on_press(world_->registry(), float(pos.x()),
@@ -51,17 +61,26 @@ void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
 
 void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
   if (!world_) return;
+  auto& state = world_->registry().ctx().get<ecs::InputState>();
+  const auto before = state.drag_mode;
   ecs::input_on_move(world_->registry(), float(pos.x()), float(pos.y()),
                      int(buttons));
+  if (before == ecs::InputState::DragMode::PendingSelect &&
+      state.drag_mode == ecs::InputState::DragMode::Orbit) {
+    setCursor(Qt::ClosedHandCursor);
+  }
   if (ecs::consume_camera_dirty(world_->registry())) {
     requestUpdate();
   }
 }
 
-void VulkanWindow::pointer_release() {
+void VulkanWindow::pointer_release(QPointF pos) {
   if (!world_) return;
-  ecs::input_on_release(world_->registry());
+  const bool click = ecs::input_on_release(world_->registry());
   unsetCursor();
+  if (click) {
+    maybe_select_at(float(pos.x()), float(pos.y()));
+  }
 }
 
 void VulkanWindow::pointer_wheel(int angle_delta_y) {
@@ -86,7 +105,7 @@ void VulkanWindow::mousePressEvent(QMouseEvent* event) {
 }
 
 void VulkanWindow::mouseReleaseEvent(QMouseEvent* event) {
-  pointer_release();
+  pointer_release(event->position());
   event->accept();
 }
 
@@ -117,7 +136,8 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
       return true;
     }
     case QEvent::MouseButtonRelease: {
-      pointer_release();
+      auto* e = static_cast<QMouseEvent*>(event);
+      pointer_release(e->position());
       return true;
     }
     case QEvent::MouseMove: {
