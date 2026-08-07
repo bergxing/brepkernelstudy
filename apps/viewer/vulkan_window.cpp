@@ -62,6 +62,10 @@ void VulkanWindow::maybe_select_at(float x, float y) {
 
 void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
   if (!world_) return;
+  // Interactive tools own the left button (pick points); do not start
+  // select/orbit, and do not replace the application pick cursor.
+  if (!selection_enabled_ && button == Qt::LeftButton) return;
+
   const int mode = ecs::input_on_press(world_->registry(), float(pos.x()),
                                        float(pos.y()), int(button));
   if (mode == static_cast<int>(ecs::InputState::DragMode::Orbit)) {
@@ -73,11 +77,17 @@ void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
 
 void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
   if (!world_) return;
+  if (!selection_enabled_ && (buttons & Qt::LeftButton) &&
+      !(buttons & (Qt::RightButton | Qt::MiddleButton))) {
+    return;
+  }
+
   auto& state = world_->registry().ctx().get<ecs::InputState>();
   const auto before = state.drag_mode;
   ecs::input_on_move(world_->registry(), float(pos.x()), float(pos.y()),
                      int(buttons));
-  if (before == ecs::InputState::DragMode::PendingSelect &&
+  if (selection_enabled_ &&
+      before == ecs::InputState::DragMode::PendingSelect &&
       state.drag_mode == ecs::InputState::DragMode::Orbit) {
     setCursor(Qt::ClosedHandCursor);
   }
@@ -88,6 +98,12 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
 
 void VulkanWindow::pointer_release(QPointF pos) {
   if (!world_) return;
+  if (!selection_enabled_) {
+    // Reset any stray drag state, but keep the tool crosshair (override cursor).
+    (void)ecs::input_on_release(world_->registry());
+    return;
+  }
+
   const bool click = ecs::input_on_release(world_->registry());
   unsetCursor();
   if (click) {
@@ -144,16 +160,26 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
   switch (event->type()) {
     case QEvent::MouseButtonPress: {
       auto* e = static_cast<QMouseEvent*>(event);
+      if (!selection_enabled_ && e->button() == Qt::LeftButton) {
+        return false;  // let MainWindow / tool handle picking
+      }
       pointer_press(e->position(), e->button());
       return true;
     }
     case QEvent::MouseButtonRelease: {
       auto* e = static_cast<QMouseEvent*>(event);
+      if (!selection_enabled_ && e->button() == Qt::LeftButton) {
+        return false;
+      }
       pointer_release(e->position());
       return true;
     }
     case QEvent::MouseMove: {
       auto* e = static_cast<QMouseEvent*>(event);
+      if (!selection_enabled_ && (e->buttons() & Qt::LeftButton) &&
+          !(e->buttons() & (Qt::RightButton | Qt::MiddleButton))) {
+        return false;
+      }
       pointer_move(e->position(), e->buttons());
       return true;
     }

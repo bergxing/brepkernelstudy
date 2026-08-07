@@ -21,6 +21,7 @@ class MainWindow final : public QMainWindow {
   Q_OBJECT
  public:
   explicit MainWindow(QWidget* parent = nullptr);
+  ~MainWindow() override;
 
  protected:
   void showEvent(QShowEvent* event) override;
@@ -60,6 +61,7 @@ class MainWindow final : public QMainWindow {
   QToolBar* toolbar_{nullptr};
   QAction* act_undo_{nullptr};
   QAction* act_redo_{nullptr};
+  bool tool_cursor_overridden_{false};
 };
 
 }  // namespace brep::viewer

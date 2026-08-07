@@ -108,6 +108,13 @@ MainWindow::MainWindow(QWidget* parent)
       "XCAD | 左键单击选择 / 拖动旋转 | 立方体=三点创建 | ESC 取消工具"));
 }
 
+MainWindow::~MainWindow() {
+  if (tool_cursor_overridden_) {
+    QApplication::restoreOverrideCursor();
+    tool_cursor_overridden_ = false;
+  }
+}
+
 QString MainWindow::wood_albedo_path() const {
   QString wood_path = QStringLiteral(BREP_VIEWER_ASSETS_DIR "/wood.png");
   if (!QFileInfo::exists(wood_path)) {
@@ -156,18 +163,16 @@ void MainWindow::sync_tool_ui() {
   const bool tool = command_manager_.has_active_tool();
   if (vulkan_window_) {
     vulkan_window_->set_selection_enabled(!tool);
-    if (tool) {
-      vulkan_window_->setCursor(Qt::CrossCursor);
-    } else {
-      vulkan_window_->unsetCursor();
-    }
   }
-  if (viewport_container_) {
-    if (tool) {
-      viewport_container_->setCursor(Qt::CrossCursor);
-    } else {
-      viewport_container_->unsetCursor();
-    }
+
+  // Use the application override cursor so VulkanWindow::unsetCursor() (called
+  // on mouse-release after orbit/pan) cannot clear the pick crosshair.
+  if (tool && !tool_cursor_overridden_) {
+    QApplication::setOverrideCursor(Qt::CrossCursor);
+    tool_cursor_overridden_ = true;
+  } else if (!tool && tool_cursor_overridden_) {
+    QApplication::restoreOverrideCursor();
+    tool_cursor_overridden_ = false;
   }
 }
 
@@ -348,32 +353,46 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 bool MainWindow::handle_tool_mouse(QEvent* event) {
   if (!command_manager_.has_active_tool() || !viewport_container_) return false;
 
+  const QEvent::Type type = event->type();
+  if (type != QEvent::MouseButtonPress && type != QEvent::MouseButtonRelease &&
+      type != QEvent::MouseMove) {
+    return false;
+  }
+
+  auto* e = static_cast<QMouseEvent*>(event);
+  const QPoint local =
+      viewport_container_->mapFromGlobal(e->globalPosition().toPoint());
+  if (!viewport_container_->rect().contains(local)) return false;
+
   auto ctx = make_command_context();
-  if (event->type() == QEvent::MouseButtonPress) {
-    auto* e = static_cast<QMouseEvent*>(event);
-    const QPoint local = viewport_container_->mapFromGlobal(
-        e->globalPosition().toPoint());
-    if (!viewport_container_->rect().contains(local)) return false;
+  if (type == QEvent::MouseButtonPress) {
+    if (e->button() != Qt::LeftButton) return false;
     if (command_manager_.tool_mouse_press(ctx, float(local.x()),
                                           float(local.y()), int(e->button()))) {
       sync_tool_ui();
       refresh_edit_actions();
       return true;
     }
-  } else if (event->type() == QEvent::MouseMove) {
-    auto* e = static_cast<QMouseEvent*>(event);
-    const QPoint local = viewport_container_->mapFromGlobal(
-        e->globalPosition().toPoint());
-    command_manager_.tool_mouse_move(ctx, float(local.x()), float(local.y()));
-    // Consume move while a tool is active so the rubber-band updates smoothly
-    // and left-drag does not start orbit/select.
+    return false;
+  }
+
+  if (type == QEvent::MouseButtonRelease) {
+    // Swallow left-release so VulkanWindow cannot unsetCursor / start select.
+    if (e->button() != Qt::LeftButton) return false;
+    sync_tool_ui();
     return true;
   }
-  return false;
+
+  // MouseMove: update rubber-band. Only consume when not panning with RMB/MMB,
+  // otherwise orbit/pan handlers never see the drag.
+  command_manager_.tool_mouse_move(ctx, float(local.x()), float(local.y()));
+  if (e->buttons() & (Qt::RightButton | Qt::MiddleButton)) return false;
+  return true;
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
-  // Tool mouse before Vulkan orbit when left-clicking in interactive mode.
+  // Prefer the viewport filter; also handle via qApp so QWindow-direct events
+  // still reach the active tool. Only consume when the cursor is over the view.
   if (watched == viewport_container_ || watched == qApp) {
     if (handle_tool_mouse(event)) return true;
   }
