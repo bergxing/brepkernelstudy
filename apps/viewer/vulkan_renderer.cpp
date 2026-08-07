@@ -50,6 +50,26 @@ void VulkanRenderer::set_material(Material material) {
   material_dirty_ = true;
 }
 
+void VulkanRenderer::set_selection_mesh(TriangleMesh triangles, EdgeMesh edges,
+                                        Material material) {
+  selection_triangles_ = std::move(triangles);
+  selection_edges_ = std::move(edges);
+  selection_material_ = std::move(material);
+  selection_meshes_dirty_ = true;
+  selection_material_dirty_ = true;
+}
+
+void VulkanRenderer::clear_selection_mesh() {
+  if (selection_triangles_.indices.empty() &&
+      selection_edges_.positions.empty() && sel_index_count_ == 0 &&
+      sel_line_vertex_count_ == 0) {
+    return;
+  }
+  selection_triangles_ = {};
+  selection_edges_ = {};
+  selection_meshes_dirty_ = true;
+}
+
 void VulkanRenderer::set_preview_edges(EdgeMesh edges) {
   preview_edges_ = std::move(edges);
   preview_dirty_ = true;
@@ -338,29 +358,131 @@ void VulkanRenderer::create_albedo_texture() {
   material_dirty_ = false;
 }
 
-void VulkanRenderer::update_albedo_descriptors() {
-  if (!dev_ || !desc_set_ || albedo_.view == VK_NULL_HANDLE ||
-      albedo_.sampler == VK_NULL_HANDLE) {
+void VulkanRenderer::bind_albedo_to_desc(VkDescriptorSet set,
+                                         const GpuTexture& tex) {
+  if (!dev_ || set == VK_NULL_HANDLE || tex.view == VK_NULL_HANDLE ||
+      tex.sampler == VK_NULL_HANDLE) {
     return;
   }
-
   VkDescriptorImageInfo ii{};
   ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  ii.imageView = albedo_.view;
-  ii.sampler = albedo_.sampler;
+  ii.imageView = tex.view;
+  ii.sampler = tex.sampler;
 
-  VkWriteDescriptorSet writes[2]{};
-  writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  writes[0].dstSet = desc_set_;
-  writes[0].dstBinding = 1;
-  writes[0].descriptorCount = 1;
-  writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  writes[0].pImageInfo = &ii;
+  VkWriteDescriptorSet write{};
+  write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  write.dstSet = set;
+  write.dstBinding = 1;
+  write.descriptorCount = 1;
+  write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  write.pImageInfo = &ii;
+  dev_->vkUpdateDescriptorSets(window_->device(), 1, &write, 0, nullptr);
+}
 
-  writes[1] = writes[0];
-  writes[1].dstSet = axis_desc_set_;
+void VulkanRenderer::update_albedo_descriptors() {
+  bind_albedo_to_desc(desc_set_, albedo_);
+  bind_albedo_to_desc(axis_desc_set_, albedo_);
+  if (selection_desc_set_) {
+    bind_albedo_to_desc(selection_desc_set_, selection_albedo_);
+  }
+}
 
-  dev_->vkUpdateDescriptorSets(window_->device(), 2, writes, 0, nullptr);
+void VulkanRenderer::create_selection_albedo_texture() {
+  destroy_texture(selection_albedo_);
+
+  QImage image(2, 2, QImage::Format_RGBA8888);
+  const QRgb c = qRgba(int(selection_material_.albedo_color[0] * 255),
+                       int(selection_material_.albedo_color[1] * 255),
+                       int(selection_material_.albedo_color[2] * 255), 255);
+  image.fill(c);
+
+  const uint32_t width = 2;
+  const uint32_t height = 2;
+  const VkDeviceSize image_size = VkDeviceSize(width) * height * 4;
+  selection_albedo_.width = width;
+  selection_albedo_.height = height;
+
+  GpuBuffer staging = create_buffer(image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  void* data = nullptr;
+  dev_->vkMapMemory(window_->device(), staging.memory, 0, image_size, 0, &data);
+  std::memcpy(data, image.constBits(), static_cast<size_t>(image_size));
+  dev_->vkUnmapMemory(window_->device(), staging.memory);
+
+  const VkDevice device = window_->device();
+  VkImageCreateInfo ii{};
+  ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  ii.imageType = VK_IMAGE_TYPE_2D;
+  ii.extent = {width, height, 1};
+  ii.mipLevels = 1;
+  ii.arrayLayers = 1;
+  ii.format = VK_FORMAT_R8G8B8A8_UNORM;
+  ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+  ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+  ii.samples = VK_SAMPLE_COUNT_1_BIT;
+  ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  if (dev_->vkCreateImage(device, &ii, nullptr, &selection_albedo_.image) !=
+      VK_SUCCESS) {
+    destroy_buffer(staging);
+    throw std::runtime_error("vkCreateImage (selection) failed");
+  }
+
+  VkMemoryRequirements req{};
+  dev_->vkGetImageMemoryRequirements(device, selection_albedo_.image, &req);
+  VkMemoryAllocateInfo ai{};
+  ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  ai.allocationSize = req.size;
+  ai.memoryTypeIndex =
+      find_memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  if (dev_->vkAllocateMemory(device, &ai, nullptr, &selection_albedo_.memory) !=
+      VK_SUCCESS) {
+    destroy_buffer(staging);
+    throw std::runtime_error("vkAllocateMemory (selection image) failed");
+  }
+  dev_->vkBindImageMemory(device, selection_albedo_.image,
+                          selection_albedo_.memory, 0);
+
+  transition_image_layout(selection_albedo_.image, VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  copy_buffer_to_image(staging.buffer, selection_albedo_.image, width, height);
+  transition_image_layout(selection_albedo_.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  destroy_buffer(staging);
+
+  VkImageViewCreateInfo vi{};
+  vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  vi.image = selection_albedo_.image;
+  vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+  vi.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  vi.subresourceRange.levelCount = 1;
+  vi.subresourceRange.layerCount = 1;
+  if (dev_->vkCreateImageView(device, &vi, nullptr, &selection_albedo_.view) !=
+      VK_SUCCESS) {
+    throw std::runtime_error("vkCreateImageView (selection) failed");
+  }
+
+  VkSamplerCreateInfo si{};
+  si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  si.magFilter = VK_FILTER_LINEAR;
+  si.minFilter = VK_FILTER_LINEAR;
+  si.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  si.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  si.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  si.maxAnisotropy = 1.0f;
+  si.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  si.unnormalizedCoordinates = VK_FALSE;
+  si.compareEnable = VK_FALSE;
+  si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  if (dev_->vkCreateSampler(device, &si, nullptr, &selection_albedo_.sampler) !=
+      VK_SUCCESS) {
+    throw std::runtime_error("vkCreateSampler (selection) failed");
+  }
+
+  selection_material_dirty_ = false;
 }
 
 void VulkanRenderer::initResources() {
@@ -384,11 +506,20 @@ void VulkanRenderer::initResources() {
     ubo_ = create_buffer(sizeof(Ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    selection_ubo_ = create_buffer(sizeof(Ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     axis_ubo_ = create_buffer(sizeof(Ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
+    selection_material_.name = "selection";
+    selection_material_.albedo_color[0] = 1.0f;
+    selection_material_.albedo_color[1] = 0.45f;
+    selection_material_.albedo_color[2] = 0.08f;
+
     create_albedo_texture();
+    create_selection_albedo_texture();
     create_descriptors();
     create_pipelines();
     upload_axes();
@@ -420,49 +551,59 @@ void VulkanRenderer::create_descriptors() {
   lci.pBindings = bindings;
   dev_->vkCreateDescriptorSetLayout(device, &lci, nullptr, &desc_layout_);
 
-  // Two sets: scene UBO + axis/gizmo UBO. They cannot share one buffer —
-  // both draws are recorded into the same command buffer, and the GPU reads
-  // UBO contents at submit time (last CPU write would otherwise win).
+  // Three sets: scene, selection highlight, axis/gizmo. Each needs its own UBO
+  // buffer because draws share one command buffer.
   VkDescriptorPoolSize pool_sizes[2]{};
   pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  pool_sizes[0].descriptorCount = 2;
+  pool_sizes[0].descriptorCount = 3;
   pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  pool_sizes[1].descriptorCount = 2;
+  pool_sizes[1].descriptorCount = 3;
 
   VkDescriptorPoolCreateInfo pci{};
   pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  pci.maxSets = 2;
+  pci.maxSets = 3;
   pci.poolSizeCount = 2;
   pci.pPoolSizes = pool_sizes;
   dev_->vkCreateDescriptorPool(device, &pci, nullptr, &desc_pool_);
 
-  VkDescriptorSetLayout layouts[2] = {desc_layout_, desc_layout_};
+  VkDescriptorSetLayout layouts[3] = {desc_layout_, desc_layout_, desc_layout_};
   VkDescriptorSetAllocateInfo ai{};
   ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
   ai.descriptorPool = desc_pool_;
-  ai.descriptorSetCount = 2;
+  ai.descriptorSetCount = 3;
   ai.pSetLayouts = layouts;
-  VkDescriptorSet sets[2]{};
+  VkDescriptorSet sets[3]{};
   dev_->vkAllocateDescriptorSets(device, &ai, sets);
   desc_set_ = sets[0];
-  axis_desc_set_ = sets[1];
+  selection_desc_set_ = sets[1];
+  axis_desc_set_ = sets[2];
 
   VkDescriptorImageInfo ii{};
   ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   ii.imageView = albedo_.view;
   ii.sampler = albedo_.sampler;
 
+  VkDescriptorImageInfo sel_ii{};
+  sel_ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  sel_ii.imageView = selection_albedo_.view;
+  sel_ii.sampler = selection_albedo_.sampler;
+
   VkDescriptorBufferInfo scene_bi{};
   scene_bi.buffer = ubo_.buffer;
   scene_bi.offset = 0;
   scene_bi.range = sizeof(Ubo);
+
+  VkDescriptorBufferInfo sel_bi{};
+  sel_bi.buffer = selection_ubo_.buffer;
+  sel_bi.offset = 0;
+  sel_bi.range = sizeof(Ubo);
 
   VkDescriptorBufferInfo axis_bi{};
   axis_bi.buffer = axis_ubo_.buffer;
   axis_bi.offset = 0;
   axis_bi.range = sizeof(Ubo);
 
-  VkWriteDescriptorSet writes[4]{};
+  VkWriteDescriptorSet writes[6]{};
   writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   writes[0].dstSet = desc_set_;
   writes[0].dstBinding = 0;
@@ -478,20 +619,34 @@ void VulkanRenderer::create_descriptors() {
   writes[1].pImageInfo = &ii;
 
   writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  writes[2].dstSet = axis_desc_set_;
+  writes[2].dstSet = selection_desc_set_;
   writes[2].dstBinding = 0;
   writes[2].descriptorCount = 1;
   writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  writes[2].pBufferInfo = &axis_bi;
+  writes[2].pBufferInfo = &sel_bi;
 
   writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  writes[3].dstSet = axis_desc_set_;
+  writes[3].dstSet = selection_desc_set_;
   writes[3].dstBinding = 1;
   writes[3].descriptorCount = 1;
   writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  writes[3].pImageInfo = &ii;
+  writes[3].pImageInfo = &sel_ii;
 
-  dev_->vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+  writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writes[4].dstSet = axis_desc_set_;
+  writes[4].dstBinding = 0;
+  writes[4].descriptorCount = 1;
+  writes[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  writes[4].pBufferInfo = &axis_bi;
+
+  writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writes[5].dstSet = axis_desc_set_;
+  writes[5].dstBinding = 1;
+  writes[5].descriptorCount = 1;
+  writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  writes[5].pImageInfo = &ii;
+
+  dev_->vkUpdateDescriptorSets(device, 6, writes, 0, nullptr);
 }
 
 void VulkanRenderer::create_pipelines() {
@@ -710,6 +865,83 @@ void VulkanRenderer::upload_meshes() {
   meshes_dirty_ = false;
 }
 
+void VulkanRenderer::upload_selection_meshes() {
+  destroy_buffer(sel_tri_vb_);
+  destroy_buffer(sel_tri_ib_);
+  destroy_buffer(sel_line_vb_);
+  sel_index_count_ = 0;
+  sel_line_vertex_count_ = 0;
+
+  if (!selection_triangles_.indices.empty()) {
+    std::vector<TriVertexGpu> verts(selection_triangles_.vertices.size());
+    for (size_t i = 0; i < selection_triangles_.vertices.size(); ++i) {
+      verts[i].pos[0] =
+          static_cast<float>(selection_triangles_.vertices[i].position.x());
+      verts[i].pos[1] =
+          static_cast<float>(selection_triangles_.vertices[i].position.y());
+      verts[i].pos[2] =
+          static_cast<float>(selection_triangles_.vertices[i].position.z());
+      verts[i].nrm[0] =
+          static_cast<float>(selection_triangles_.vertices[i].normal.x());
+      verts[i].nrm[1] =
+          static_cast<float>(selection_triangles_.vertices[i].normal.y());
+      verts[i].nrm[2] =
+          static_cast<float>(selection_triangles_.vertices[i].normal.z());
+      verts[i].uv[0] =
+          static_cast<float>(selection_triangles_.vertices[i].uv.u());
+      verts[i].uv[1] =
+          static_cast<float>(selection_triangles_.vertices[i].uv.v());
+    }
+    const VkDeviceSize vb_size = sizeof(TriVertexGpu) * verts.size();
+    sel_tri_vb_ = create_buffer(vb_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    void* data = nullptr;
+    dev_->vkMapMemory(window_->device(), sel_tri_vb_.memory, 0, vb_size, 0,
+                      &data);
+    std::memcpy(data, verts.data(), static_cast<size_t>(vb_size));
+    dev_->vkUnmapMemory(window_->device(), sel_tri_vb_.memory);
+
+    const VkDeviceSize ib_size =
+        sizeof(uint32_t) * selection_triangles_.indices.size();
+    sel_tri_ib_ = create_buffer(ib_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    dev_->vkMapMemory(window_->device(), sel_tri_ib_.memory, 0, ib_size, 0,
+                      &data);
+    std::memcpy(data, selection_triangles_.indices.data(),
+                static_cast<size_t>(ib_size));
+    dev_->vkUnmapMemory(window_->device(), sel_tri_ib_.memory);
+    sel_index_count_ =
+        static_cast<uint32_t>(selection_triangles_.indices.size());
+  }
+
+  if (!selection_edges_.positions.empty()) {
+    std::vector<float> lines(selection_edges_.positions.size() * 3);
+    for (size_t i = 0; i < selection_edges_.positions.size(); ++i) {
+      lines[i * 3 + 0] =
+          static_cast<float>(selection_edges_.positions[i].x());
+      lines[i * 3 + 1] =
+          static_cast<float>(selection_edges_.positions[i].y());
+      lines[i * 3 + 2] =
+          static_cast<float>(selection_edges_.positions[i].z());
+    }
+    const VkDeviceSize size = sizeof(float) * lines.size();
+    sel_line_vb_ = create_buffer(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    void* data = nullptr;
+    dev_->vkMapMemory(window_->device(), sel_line_vb_.memory, 0, size, 0,
+                      &data);
+    std::memcpy(data, lines.data(), static_cast<size_t>(size));
+    dev_->vkUnmapMemory(window_->device(), sel_line_vb_.memory);
+    sel_line_vertex_count_ =
+        static_cast<uint32_t>(selection_edges_.positions.size());
+  }
+
+  selection_meshes_dirty_ = false;
+}
+
 void VulkanRenderer::upload_colored_edges(const EdgeMesh& edges, float r,
                                           float g, float b, GpuBuffer& vb,
                                           std::uint32_t& vertex_count) {
@@ -761,14 +993,22 @@ void VulkanRenderer::releaseResources() {
   destroy_buffer(tri_vb_);
   destroy_buffer(tri_ib_);
   destroy_buffer(line_vb_);
+  destroy_buffer(sel_tri_vb_);
+  destroy_buffer(sel_tri_ib_);
+  destroy_buffer(sel_line_vb_);
   destroy_buffer(axis_vb_);
   destroy_buffer(preview_vb_);
   destroy_buffer(highlight_vb_);
   destroy_buffer(ubo_);
+  destroy_buffer(selection_ubo_);
   destroy_buffer(axis_ubo_);
   destroy_texture(albedo_);
+  destroy_texture(selection_albedo_);
   preview_vertex_count_ = 0;
   highlight_vertex_count_ = 0;
+  sel_index_count_ = 0;
+  sel_line_vertex_count_ = 0;
+  selection_desc_set_ = VK_NULL_HANDLE;
 
   if (tri_pipeline_)
     dev_->vkDestroyPipeline(device, tri_pipeline_, nullptr);
@@ -790,7 +1030,7 @@ void VulkanRenderer::releaseResources() {
   pipeline_cache_ = VK_NULL_HANDLE;
   desc_pool_ = VK_NULL_HANDLE;
   desc_layout_ = VK_NULL_HANDLE;
-  desc_set_ = axis_desc_set_ = VK_NULL_HANDLE;
+  desc_set_ = selection_desc_set_ = axis_desc_set_ = VK_NULL_HANDLE;
   axis_vertex_count_ = 0;
 }
 
@@ -825,6 +1065,27 @@ void VulkanRenderer::startNextFrame() {
     } catch (const std::exception& ex) {
       BREP_ERROR("create_albedo_texture failed: {}", ex.what());
       material_dirty_ = false;
+    }
+  }
+
+  if (selection_meshes_dirty_) {
+    try {
+      upload_selection_meshes();
+    } catch (const std::exception& ex) {
+      BREP_ERROR("upload_selection_meshes failed: {}", ex.what());
+      selection_meshes_dirty_ = false;
+    }
+  }
+
+  if (selection_material_dirty_) {
+    try {
+      create_selection_albedo_texture();
+      if (selection_desc_set_) {
+        bind_albedo_to_desc(selection_desc_set_, selection_albedo_);
+      }
+    } catch (const std::exception& ex) {
+      BREP_ERROR("create_selection_albedo_texture failed: {}", ex.what());
+      selection_material_dirty_ = false;
     }
   }
 
@@ -882,6 +1143,20 @@ void VulkanRenderer::startNextFrame() {
   std::memcpy(data, &ubo, sizeof(Ubo));
   dev_->vkUnmapMemory(window_->device(), ubo_.memory);
 
+  // Selection uses the same MVP but its own albedo UBO + orange texture.
+  Ubo sel_ubo = ubo;
+  sel_ubo.albedo_color[0] = selection_material_.albedo_color[0];
+  sel_ubo.albedo_color[1] = selection_material_.albedo_color[1];
+  sel_ubo.albedo_color[2] = selection_material_.albedo_color[2];
+  sel_ubo.albedo_color[3] = selection_material_.uv_scale;
+  if (selection_ubo_.memory) {
+    void* sel_data = nullptr;
+    dev_->vkMapMemory(window_->device(), selection_ubo_.memory, 0, sizeof(Ubo),
+                      0, &sel_data);
+    std::memcpy(sel_data, &sel_ubo, sizeof(Ubo));
+    dev_->vkUnmapMemory(window_->device(), selection_ubo_.memory);
+  }
+
   VkClearValue clears[3]{};
   clears[0].color = {{0.12f, 0.13f, 0.15f, 1.0f}};
   clears[1].depthStencil = {1.0f, 0};
@@ -927,6 +1202,35 @@ void VulkanRenderer::startNextFrame() {
     VkDeviceSize offset = 0;
     dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &line_vb_.buffer, &offset);
     dev_->vkCmdDraw(cmd, line_vertex_count_, 1, 0, 0);
+  }
+
+  // Selected body — solid orange (separate descriptor set + UBO).
+  if (selection_desc_set_ &&
+      (sel_index_count_ > 0 || sel_line_vertex_count_ > 0)) {
+    dev_->vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  pipeline_layout_, 0, 1, &selection_desc_set_,
+                                  0, nullptr);
+    if (sel_index_count_ > 0 && tri_pipeline_ && sel_tri_vb_.buffer &&
+        sel_tri_ib_.buffer) {
+      dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              tri_pipeline_);
+      VkDeviceSize offset = 0;
+      dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &sel_tri_vb_.buffer, &offset);
+      dev_->vkCmdBindIndexBuffer(cmd, sel_tri_ib_.buffer, 0,
+                                 VK_INDEX_TYPE_UINT32);
+      dev_->vkCmdDrawIndexed(cmd, sel_index_count_, 1, 0, 0, 0);
+    }
+    if (sel_line_vertex_count_ > 0 && line_pipeline_ && sel_line_vb_.buffer) {
+      dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              line_pipeline_);
+      VkDeviceSize offset = 0;
+      dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &sel_line_vb_.buffer, &offset);
+      dev_->vkCmdDraw(cmd, sel_line_vertex_count_, 1, 0, 0);
+    }
+    // Restore scene descriptor set for subsequent overlay draws.
+    dev_->vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  pipeline_layout_, 0, 1, &desc_set_, 0,
+                                  nullptr);
   }
 
   // Selection outline (orange), then tool rubber-band (yellow).

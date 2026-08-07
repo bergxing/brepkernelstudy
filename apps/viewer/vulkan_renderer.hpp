@@ -20,6 +20,11 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void set_meshes(TriangleMesh triangles, EdgeMesh edges);
   void set_material(Material material);
 
+  /// Selected body drawn with a solid highlight material (separate GPU mesh).
+  void set_selection_mesh(TriangleMesh triangles, EdgeMesh edges,
+                          Material material);
+  void clear_selection_mesh();
+
   /// Temporary tool rubber-band (world-space line list). Does not replace scene.
   void set_preview_edges(EdgeMesh edges);
   void clear_preview();
@@ -66,11 +71,14 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void create_descriptors();
   void create_pipelines();
   void upload_meshes();
+  void upload_selection_meshes();
   void upload_axes();
   void upload_preview();
   void upload_highlight();
   void create_albedo_texture();
+  void create_selection_albedo_texture();
   void update_albedo_descriptors();
+  void bind_albedo_to_desc(VkDescriptorSet set, const GpuTexture& tex);
   void destroy_texture(GpuTexture& tex);
   void upload_colored_edges(const EdgeMesh& edges, float r, float g, float b,
                             GpuBuffer& vb, std::uint32_t& vertex_count);
@@ -86,27 +94,38 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
 
   TriangleMesh triangles_;
   EdgeMesh edges_;
+  TriangleMesh selection_triangles_;
+  EdgeMesh selection_edges_;
   EdgeMesh preview_edges_;
   EdgeMesh highlight_edges_;
   Material material_{};
+  Material selection_material_{};
   bool meshes_dirty_{true};
   bool material_dirty_{true};
+  bool selection_meshes_dirty_{false};
+  bool selection_material_dirty_{false};
   bool preview_dirty_{false};
   bool highlight_dirty_{false};
 
   GpuBuffer tri_vb_{};
   GpuBuffer tri_ib_{};
   GpuBuffer line_vb_{};
+  GpuBuffer sel_tri_vb_{};
+  GpuBuffer sel_tri_ib_{};
+  GpuBuffer sel_line_vb_{};
   GpuBuffer axis_vb_{};
   GpuBuffer preview_vb_{};
   GpuBuffer highlight_vb_{};
-  GpuBuffer ubo_{};       // scene MVP (mesh + edges)
-  GpuBuffer axis_ubo_{};  // screen-space gizmo MVP (must be separate!)
+  GpuBuffer ubo_{};             // scene MVP + wood albedo
+  GpuBuffer selection_ubo_{};   // same MVP + orange selection albedo
+  GpuBuffer axis_ubo_{};        // screen-space gizmo MVP (must be separate!)
   GpuTexture albedo_{};
+  GpuTexture selection_albedo_{};
 
   VkDescriptorPool desc_pool_{VK_NULL_HANDLE};
   VkDescriptorSetLayout desc_layout_{VK_NULL_HANDLE};
   VkDescriptorSet desc_set_{VK_NULL_HANDLE};
+  VkDescriptorSet selection_desc_set_{VK_NULL_HANDLE};
   VkDescriptorSet axis_desc_set_{VK_NULL_HANDLE};
 
   VkPipelineLayout pipeline_layout_{VK_NULL_HANDLE};
@@ -117,6 +136,8 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   VkPipelineCache pipeline_cache_{VK_NULL_HANDLE};
   std::uint32_t index_count_{0};
   std::uint32_t line_vertex_count_{0};
+  std::uint32_t sel_index_count_{0};
+  std::uint32_t sel_line_vertex_count_{0};
   std::uint32_t axis_vertex_count_{0};
   std::uint32_t preview_vertex_count_{0};
   std::uint32_t highlight_vertex_count_{0};

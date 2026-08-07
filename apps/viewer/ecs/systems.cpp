@@ -31,7 +31,52 @@ SelectionState& selection(entt::registry& registry) {
   return registry.ctx().get<SelectionState>();
 }
 
+RenderCache& render_cache(entt::registry& registry) {
+  if (!registry.ctx().contains<RenderCache>()) {
+    registry.ctx().emplace<RenderCache>();
+  }
+  return registry.ctx().get<RenderCache>();
+}
+
 constexpr float kSelectSlopPx = 5.0f;
+
+void append_transformed_mesh(TriangleMesh& dst, const TriangleMesh& src,
+                             const Point3d& offset) {
+  const auto base = static_cast<std::uint32_t>(dst.vertices.size());
+  dst.vertices.reserve(dst.vertices.size() + src.vertices.size());
+  for (const auto& v : src.vertices) {
+    MeshVertex out = v;
+    out.position = Point3d{v.position.x() + offset.x(),
+                           v.position.y() + offset.y(),
+                           v.position.z() + offset.z()};
+    dst.vertices.push_back(out);
+  }
+  dst.indices.reserve(dst.indices.size() + src.indices.size());
+  for (const auto idx : src.indices) {
+    dst.indices.push_back(base + idx);
+  }
+}
+
+void append_transformed_edges(EdgeMesh& dst, const EdgeMesh& src,
+                              const Point3d& offset) {
+  dst.positions.reserve(dst.positions.size() + src.positions.size());
+  for (const auto& p : src.positions) {
+    dst.positions.push_back(Point3d{p.x() + offset.x(), p.y() + offset.y(),
+                                    p.z() + offset.z()});
+  }
+}
+
+Material make_selection_material() {
+  Material m;
+  m.name = "selection";
+  m.albedo_path.clear();
+  m.uv_scale = 1.0f;
+  // Bright orange — clearly distinct from default blue fallback / wood.
+  m.albedo_color[0] = 1.0f;
+  m.albedo_color[1] = 0.45f;
+  m.albedo_color[2] = 0.08f;
+  return m;
+}
 
 }  // namespace
 
@@ -136,43 +181,6 @@ void input_on_key(entt::registry& registry, int key) {
   if (changed) input(registry).camera_dirty = true;
 }
 
-namespace {
-
-void append_transformed_mesh(TriangleMesh& dst, const TriangleMesh& src,
-                             const Point3d& offset) {
-  const auto base = static_cast<std::uint32_t>(dst.vertices.size());
-  dst.vertices.reserve(dst.vertices.size() + src.vertices.size());
-  for (const auto& v : src.vertices) {
-    MeshVertex out = v;
-    out.position = Point3d{v.position.x() + offset.x(),
-                           v.position.y() + offset.y(),
-                           v.position.z() + offset.z()};
-    dst.vertices.push_back(out);
-  }
-  dst.indices.reserve(dst.indices.size() + src.indices.size());
-  for (const auto idx : src.indices) {
-    dst.indices.push_back(base + idx);
-  }
-}
-
-void append_transformed_edges(EdgeMesh& dst, const EdgeMesh& src,
-                              const Point3d& offset) {
-  dst.positions.reserve(dst.positions.size() + src.positions.size());
-  for (const auto& p : src.positions) {
-    dst.positions.push_back(Point3d{p.x() + offset.x(), p.y() + offset.y(),
-                                    p.z() + offset.z()});
-  }
-}
-
-RenderCache& render_cache(entt::registry& registry) {
-  if (!registry.ctx().contains<RenderCache>()) {
-    registry.ctx().emplace<RenderCache>();
-  }
-  return registry.ctx().get<RenderCache>();
-}
-
-}  // namespace
-
 void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
   auto view =
       registry.view<MeshComponent, MaterialComponent, Transform, RenderableTag>();
@@ -191,13 +199,14 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
   const entt::entity sel = selected_entity(registry);
   const bool need_rebuild =
       any_component_dirty || count != cache.renderable_count ||
-      sel != cache.selection;
+      sel != cache.selection || cache.force_rebuild;
 
   if (!need_rebuild) return;
 
-  TriangleMesh combined_tri;
-  EdgeMesh combined_edges;
-  EdgeMesh highlight;
+  TriangleMesh scene_tri;
+  EdgeMesh scene_edges;
+  TriangleMesh selected_tri;
+  EdgeMesh selected_edges;
   Material scene_material{};
   bool have_material = false;
 
@@ -205,41 +214,58 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
     auto& mesh = view.get<MeshComponent>(entity);
     auto& mat = view.get<MaterialComponent>(entity);
     const auto& xform = view.get<Transform>(entity);
+    const bool selected = registry.all_of<SelectedTag>(entity);
 
-    append_transformed_mesh(combined_tri, mesh.triangles, xform.position);
-    append_transformed_edges(combined_edges, mesh.edges, xform.position);
-
-    if (!have_material) {
-      scene_material = mat.material;
-      have_material = true;
-    } else if (scene_material.albedo_path.empty() &&
-               !mat.material.albedo_path.empty()) {
-      scene_material = mat.material;
-    }
-
-    if (registry.all_of<SelectedTag>(entity)) {
-      append_transformed_edges(highlight, mesh.edges, xform.position);
+    if (selected) {
+      append_transformed_mesh(selected_tri, mesh.triangles, xform.position);
+      append_transformed_edges(selected_edges, mesh.edges, xform.position);
+    } else {
+      append_transformed_mesh(scene_tri, mesh.triangles, xform.position);
+      append_transformed_edges(scene_edges, mesh.edges, xform.position);
+      if (!have_material) {
+        scene_material = mat.material;
+        have_material = true;
+      } else if (scene_material.albedo_path.empty() &&
+                 !mat.material.albedo_path.empty()) {
+        scene_material = mat.material;
+      }
     }
 
     mesh.dirty = false;
     mat.dirty = false;
   }
 
-  if (count == 0) {
+  // If everything is selected (or only one body and it is selected), still
+  // keep a wood material ready for when selection clears.
+  if (!have_material) {
+    for (auto entity : view) {
+      scene_material = view.get<MaterialComponent>(entity).material;
+      have_material = true;
+      if (!scene_material.albedo_path.empty()) break;
+    }
+  }
+
+  if (scene_tri.indices.empty() && scene_edges.positions.empty()) {
     renderer.set_meshes({}, {});
+  } else {
+    renderer.set_meshes(std::move(scene_tri), std::move(scene_edges));
+    if (have_material) renderer.set_material(scene_material);
+  }
+
+  if (selected_tri.indices.empty() && selected_edges.positions.empty()) {
+    renderer.clear_selection_mesh();
     renderer.clear_highlight();
   } else {
-    renderer.set_meshes(std::move(combined_tri), std::move(combined_edges));
-    if (have_material) renderer.set_material(scene_material);
-    if (highlight.positions.empty()) {
-      renderer.clear_highlight();
-    } else {
-      renderer.set_highlight_edges(std::move(highlight));
-    }
+    EdgeMesh outline = selected_edges;  // copy wireframe before move
+    renderer.set_selection_mesh(std::move(selected_tri),
+                                std::move(selected_edges),
+                                make_selection_material());
+    renderer.set_highlight_edges(std::move(outline));
   }
 
   cache.renderable_count = count;
   cache.selection = sel;
+  cache.force_rebuild = false;
 }
 
 bool consume_camera_dirty(entt::registry& registry) {
@@ -294,8 +320,9 @@ void set_selection(entt::registry& registry, entt::entity entity) {
     registry.emplace_or_replace<SelectedTag>(entity);
   }
 
-  // Force scene rebuild so the orange highlight outline updates.
-  render_cache(registry).selection = entt::null;
+  // Must force rebuild: clearing selection sets both sel and cache to null,
+  // which would otherwise look like "no change".
+  render_cache(registry).force_rebuild = true;
 }
 
 void clear_selection(entt::registry& registry) {

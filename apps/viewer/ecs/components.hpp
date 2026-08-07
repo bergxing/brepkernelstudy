@@ -59,6 +59,7 @@ struct SelectionState {
 struct RenderCache {
   std::size_t renderable_count{0};
   entt::entity selection{entt::null};
+  bool force_rebuild{false};
 };
 
 /// Transient input state (stored in registry context, not on an entity).
