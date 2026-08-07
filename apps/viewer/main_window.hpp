@@ -1,5 +1,6 @@
 #pragma once
 
+#include "commands/command_manager.hpp"
 #include "commands/command_registry.hpp"
 #include "document.hpp"
 #include "ecs/world.hpp"
@@ -27,9 +28,11 @@ class MainWindow final : public QMainWindow {
   void moveEvent(QMoveEvent* event) override;
   void changeEvent(QEvent* event) override;
   bool eventFilter(QObject* watched, QEvent* event) override;
+  void keyPressEvent(QKeyEvent* event) override;
 
  private slots:
   void on_run_command();
+  void on_command_palette();
 
  private:
   void setup_menus();
@@ -37,20 +40,25 @@ class MainWindow final : public QMainWindow {
   void place_view_cube();
   void apply_wheel_zoom(int dy);
   void refresh_window_title();
+  void refresh_edit_actions();
   void rebind_view_cube_camera();
   void bind_action(QAction* action, const char* command_id);
   commands::CommandResult run_command(std::string_view command_id);
   [[nodiscard]] commands::CommandContext make_command_context();
   [[nodiscard]] QString wood_albedo_path() const;
+  bool handle_tool_mouse(QEvent* event);
 
   DocumentSession document_;
   ecs::World world_;
   commands::CommandRegistry commands_;
+  commands::CommandManager command_manager_;
   std::unique_ptr<QVulkanInstance> vulkan_instance_;
   VulkanWindow* vulkan_window_{nullptr};
   QWidget* viewport_container_{nullptr};
   ViewCubeWidget* view_cube_{nullptr};
   QToolBar* toolbar_{nullptr};
+  QAction* act_undo_{nullptr};
+  QAction* act_redo_{nullptr};
 };
 
 }  // namespace brep::viewer

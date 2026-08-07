@@ -41,6 +41,18 @@ class World {
                                  EdgeMesh edges, Material material,
                                  Point3d position = {});
 
+  /// Create renderable and attach BodyRef for Guid-based undo.
+  entt::entity create_body_renderable(std::string name, brep::Guid body_guid,
+                                      TriangleMesh triangles, EdgeMesh edges,
+                                      Material material,
+                                      Point3d position = {});
+
+  /// Destroy ECS renderable linked to a Body Guid (does not delete B-Rep).
+  bool destroy_body_renderable(const brep::Guid& body_guid);
+
+  [[nodiscard]] entt::entity find_body_renderable(
+      const brep::Guid& body_guid) const;
+
   /// New Document → Part → camera only (blank document, no bodies).
   void create_blank_scene();
 

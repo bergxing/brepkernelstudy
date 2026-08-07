@@ -1,4 +1,7 @@
 #include "commands/command_registry.hpp"
+#include "commands/document_history.hpp"
+#include "commands/itool.hpp"
+#include "commands/tools/create_box_tool.hpp"
 
 #include "brep/brep.hpp"
 #include "brep/log.hpp"
@@ -9,7 +12,6 @@
 #include <QFileDialog>
 #include <QMessageBox>
 
-#include <filesystem>
 #include <vector>
 
 namespace brep::viewer::commands {
@@ -23,15 +25,20 @@ class NewDocumentCommand final : public ICommand {
   [[nodiscard]] std::string_view title() const noexcept override {
     return "New Document";
   }
+  [[nodiscard]] CommandKind kind() const noexcept override {
+    return CommandKind::Instant;
+  }
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
     return ctx.world != nullptr && ctx.session != nullptr;
   }
 
   CommandResult execute(CommandContext& ctx) override {
+    if (ctx.history) ctx.history->clear();
     ctx.session->new_blank_document(*ctx.world);
     if (ctx.after_document_reset) ctx.after_document_reset();
     if (ctx.request_redraw) ctx.request_redraw();
+    if (ctx.refresh_ui) ctx.refresh_ui();
     const QString msg = QStringLiteral("已新建空白文档");
     if (ctx.report_status) ctx.report_status(msg);
     return CommandResult::ok(msg);
@@ -86,6 +93,7 @@ class ExportDxfCommand final : public ICommand {
     }
 
     ctx.session->set_export_path(path);
+    if (ctx.refresh_ui) ctx.refresh_ui();
     const QString msg = QStringLiteral("已导出 DXF 线框（%1 段）: %2")
                             .arg(segments.size())
                             .arg(path);
@@ -94,13 +102,38 @@ class ExportDxfCommand final : public ICommand {
   }
 };
 
+/// Interactive two-click box (Phase 3 tool).
 class CreateBoxCommand final : public ICommand {
  public:
   [[nodiscard]] std::string_view id() const noexcept override {
     return "part.create_box";
   }
   [[nodiscard]] std::string_view title() const noexcept override {
-    return "Create Box";
+    return "Create Box (interactive)";
+  }
+  [[nodiscard]] CommandKind kind() const noexcept override {
+    return CommandKind::Interactive;
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.world != nullptr && ctx.world->document() != nullptr &&
+           ctx.world->document()->main_part() != nullptr;
+  }
+
+  [[nodiscard]] std::unique_ptr<ITool> make_tool(
+      CommandContext& /*ctx*/) const override {
+    return std::make_unique<CreateBoxTool>();
+  }
+};
+
+/// One-shot default-size box (keeps a quick path).
+class CreateBoxInstantCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    return "part.create_box_instant";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override {
+    return "Create Box (instant)";
   }
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
@@ -111,10 +144,6 @@ class CreateBoxCommand final : public ICommand {
   CommandResult execute(CommandContext& ctx) override {
     using namespace brep;
     Part* part = ctx.world->document()->main_part();
-    if (!part) {
-      return CommandResult::failed(QStringLiteral("当前没有 Part"));
-    }
-
     Body* body = part->add_box(BoxSpec{
         .min = Point3d{0, 0, 0},
         .max = Point3d{2, 1, 3},
@@ -124,20 +153,111 @@ class CreateBoxCommand final : public ICommand {
     Material material = ctx.wood_albedo_path.empty()
                             ? Material{}
                             : make_wood_material(ctx.wood_albedo_path);
-
-    ctx.world->create_renderable(body->name, tessellate_body(*body),
-                                 extract_edges(*body), std::move(material),
-                                 Point3d{0, 0, 0});
-
+    ctx.world->create_body_renderable(body->name, body->guid,
+                                      tessellate_body(*body),
+                                      extract_edges(*body), std::move(material),
+                                      Point3d{0, 0, 0});
     if (ctx.session) ctx.session->mark_dirty();
     if (ctx.request_redraw) ctx.request_redraw();
 
+    const Guid guid = body->guid;
+    const std::string wood = ctx.wood_albedo_path;
+    ecs::World* world = ctx.world;
+    if (ctx.history) {
+      ctx.history->push({
+          .label = QStringLiteral("创建盒子"),
+          .undo =
+              [world, guid, session = ctx.session, redraw = ctx.request_redraw,
+               refresh = ctx.refresh_ui] {
+                if (!world) return;
+                world->destroy_body_renderable(guid);
+                if (auto* doc = world->document()) doc->registry().remove(guid);
+                if (session) session->mark_dirty();
+                if (redraw) redraw();
+                if (refresh) refresh();
+              },
+          .redo =
+              [world, guid, wood, session = ctx.session,
+               redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
+                if (!world || !world->document()) return;
+                Body* found = nullptr;
+                for (const auto& part : world->document()->parts()) {
+                  for (const auto& b : part->model().bodies()) {
+                    if (b && b->guid == guid) {
+                      found = b.get();
+                      break;
+                    }
+                  }
+                }
+                if (!found) return;
+                world->document()->registry().add(*found);
+                Material material = wood.empty() ? Material{}
+                                                 : make_wood_material(wood);
+                world->create_body_renderable(
+                    found->name, found->guid, tessellate_body(*found),
+                    extract_edges(*found), std::move(material), Point3d{});
+                if (session) session->mark_dirty();
+                if (redraw) redraw();
+                if (refresh) refresh();
+              },
+      });
+    }
+
+    if (ctx.refresh_ui) ctx.refresh_ui();
     const QString msg =
-        QStringLiteral("已创建 Body '%1' (%2)")
-            .arg(QString::fromStdString(body->name))
+        QStringLiteral("已创建 Body '%1'")
             .arg(QString::fromStdString(body->guid.to_string()));
     if (ctx.report_status) ctx.report_status(msg);
-    BREP_INFO("part.create_box guid={}", body->guid.to_string());
+    return CommandResult::ok(msg);
+  }
+};
+
+class UndoCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    return "edit.undo";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override {
+    return "Undo";
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.history && ctx.history->can_undo();
+  }
+
+  CommandResult execute(CommandContext& ctx) override {
+    const QString label = ctx.history->undo_label();
+    if (!ctx.history->undo()) {
+      return CommandResult::failed(QStringLiteral("没有可撤销的操作"));
+    }
+    if (ctx.refresh_ui) ctx.refresh_ui();
+    const QString msg = QStringLiteral("已撤销: %1").arg(label);
+    if (ctx.report_status) ctx.report_status(msg);
+    return CommandResult::ok(msg);
+  }
+};
+
+class RedoCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    return "edit.redo";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override {
+    return "Redo";
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.history && ctx.history->can_redo();
+  }
+
+  CommandResult execute(CommandContext& ctx) override {
+    const QString label = ctx.history->redo_label();
+    if (!ctx.history->redo()) {
+      return CommandResult::failed(QStringLiteral("没有可重做的操作"));
+    }
+    if (ctx.refresh_ui) ctx.refresh_ui();
+    const QString msg = QStringLiteral("已重做: %1").arg(label);
+    if (ctx.report_status) ctx.report_status(msg);
     return CommandResult::ok(msg);
   }
 };
@@ -154,6 +274,9 @@ void register_builtin_commands(CommandRegistry& registry) {
   add<NewDocumentCommand>(registry);
   add<ExportDxfCommand>(registry);
   add<CreateBoxCommand>(registry);
+  add<CreateBoxInstantCommand>(registry);
+  add<UndoCommand>(registry);
+  add<RedoCommand>(registry);
   BREP_INFO("registered builtin commands: {}", registry.ids().size());
 }
 

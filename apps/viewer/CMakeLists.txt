@@ -71,6 +71,11 @@ qt_add_executable(brep_viewer
   io/dxf_export.cpp
   commands/command_registry.cpp
   commands/builtin_commands.cpp
+  commands/command_manager.cpp
+  commands/document_history.cpp
+  commands/picking.cpp
+  commands/command_palette.cpp
+  commands/tools/create_box_tool.cpp
   ${VIEWER_SPV_OUTPUTS}
 )
 add_dependencies(brep_viewer brep_viewer_shaders)

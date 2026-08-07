@@ -30,7 +30,7 @@ class CommandRegistry {
   std::unordered_map<std::string, Factory> factories_;
 };
 
-/// Register Phase-1 builtins: doc.new, file.export_dxf, part.create_box.
+/// Register builtins (doc/file/part/edit + interactive create_box).
 void register_builtin_commands(CommandRegistry& registry);
 
 }  // namespace brep::viewer::commands

@@ -52,6 +52,33 @@ entt::entity World::create_renderable(std::string name, TriangleMesh triangles,
   return e;
 }
 
+entt::entity World::create_body_renderable(std::string name,
+                                           brep::Guid body_guid,
+                                           TriangleMesh triangles,
+                                           EdgeMesh edges, Material material,
+                                           Point3d position) {
+  const entt::entity e = create_renderable(
+      std::move(name), std::move(triangles), std::move(edges),
+      std::move(material), position);
+  registry_.emplace<BodyRef>(e, BodyRef{body_guid});
+  return e;
+}
+
+entt::entity World::find_body_renderable(const brep::Guid& body_guid) const {
+  auto view = registry_.view<BodyRef, RenderableTag>();
+  for (auto entity : view) {
+    if (view.get<BodyRef>(entity).guid == body_guid) return entity;
+  }
+  return entt::null;
+}
+
+bool World::destroy_body_renderable(const brep::Guid& body_guid) {
+  const entt::entity e = find_body_renderable(body_guid);
+  if (e == entt::null) return false;
+  registry_.destroy(e);
+  return true;
+}
+
 void World::create_blank_scene() {
   using namespace brep;
 

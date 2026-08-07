@@ -1,5 +1,6 @@
 #pragma once
 
+#include "brep/guid.hpp"
 #include "brep/material.hpp"
 #include "brep/math.hpp"
 #include "brep/mesh.hpp"
@@ -38,6 +39,11 @@ struct MainCameraTag {};
 
 /// Tag: entity should be drawn by the Vulkan render system.
 struct RenderableTag {};
+
+/// Links a renderable entity to a document Body Guid (for undo / selection).
+struct BodyRef {
+  brep::Guid guid{};
+};
 
 /// Transient input state (stored in registry context, not on an entity).
 struct InputState {

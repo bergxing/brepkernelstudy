@@ -1,16 +1,20 @@
 #include "main_window.hpp"
 
 #include "brep/log.hpp"
+#include "commands/command_palette.hpp"
 
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDialog>
 #include <QDir>
 #include <QEvent>
 #include <QFileInfo>
+#include <QKeyEvent>
 #include <QKeySequence>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QMoveEvent>
 #include <QResizeEvent>
 #include <QShowEvent>
@@ -21,6 +25,7 @@
 #include <QWheelEvent>
 #include <QWidget>
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace brep::viewer {
@@ -34,7 +39,8 @@ int wheel_delta_y(const QWheelEvent* event) {
 
 }  // namespace
 
-MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+MainWindow::MainWindow(QWidget* parent)
+    : QMainWindow(parent), command_manager_(commands_) {
   resize(1100, 720);
 
   commands::register_builtin_commands(commands_);
@@ -60,6 +66,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   viewport_container_->setFocusPolicy(Qt::StrongFocus);
   viewport_container_->setMouseTracking(true);
   viewport_container_->installEventFilter(vulkan_window_);
+  viewport_container_->installEventFilter(this);
   viewport_container_->setFocus();
   setCentralWidget(viewport_container_);
 
@@ -80,11 +87,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   setup_menus();
   setup_toolbar();
   refresh_window_title();
+  refresh_edit_actions();
 
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "XCAD | 命令: doc.new / part.create_box / file.export_dxf"));
+      "XCAD | Ctrl+Shift+P 命令面板 | 立方体=两点创建 | ESC 取消工具"));
 }
 
 QString MainWindow::wood_albedo_path() const {
@@ -100,10 +108,15 @@ commands::CommandContext MainWindow::make_command_context() {
   commands::CommandContext ctx;
   ctx.world = &world_;
   ctx.session = &document_;
+  ctx.history = &command_manager_.history();
   ctx.parent_widget = this;
   ctx.wood_albedo_path = wood_albedo_path().toStdString();
+  if (viewport_container_) {
+    ctx.viewport_w = std::max(1, viewport_container_->width());
+    ctx.viewport_h = std::max(1, viewport_container_->height());
+  }
   ctx.report_status = [this](const QString& msg) {
-    statusBar()->showMessage(msg, 5000);
+    statusBar()->showMessage(msg, 6000);
   };
   ctx.request_redraw = [this] {
     if (vulkan_window_) vulkan_window_->requestUpdate();
@@ -112,17 +125,22 @@ commands::CommandContext MainWindow::make_command_context() {
     rebind_view_cube_camera();
     refresh_window_title();
   };
+  ctx.refresh_ui = [this] {
+    refresh_window_title();
+    refresh_edit_actions();
+  };
   return ctx;
 }
 
 commands::CommandResult MainWindow::run_command(std::string_view command_id) {
   auto ctx = make_command_context();
-  auto result = commands_.execute(command_id, ctx);
+  auto result = command_manager_.run(command_id, ctx);
   if (result.status == commands::CommandStatus::Failed &&
       !result.message.isEmpty()) {
     QMessageBox::warning(this, QStringLiteral("命令失败"), result.message);
   }
-  if (result.succeeded()) {
+  refresh_edit_actions();
+  if (result.succeeded() || command_manager_.has_active_tool()) {
     refresh_window_title();
   }
   return result;
@@ -141,25 +159,67 @@ void MainWindow::on_run_command() {
   run_command(id.toStdString());
 }
 
+void MainWindow::on_command_palette() {
+  commands::CommandPalette palette(commands_, this);
+  if (palette.exec() != QDialog::Accepted) return;
+  const QString id = palette.selected_command_id();
+  if (!id.isEmpty()) run_command(id.toStdString());
+}
+
+void MainWindow::refresh_edit_actions() {
+  if (act_undo_) {
+    act_undo_->setEnabled(command_manager_.history().can_undo());
+    const QString label = command_manager_.history().undo_label();
+    act_undo_->setText(label.isEmpty()
+                           ? QStringLiteral("撤销(&U)")
+                           : QStringLiteral("撤销(&U) %1").arg(label));
+  }
+  if (act_redo_) {
+    act_redo_->setEnabled(command_manager_.history().can_redo());
+    const QString label = command_manager_.history().redo_label();
+    act_redo_->setText(label.isEmpty()
+                           ? QStringLiteral("重做(&R)")
+                           : QStringLiteral("重做(&R) %1").arg(label));
+  }
+}
+
 void MainWindow::setup_menus() {
   auto* file_menu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
 
   auto* act_new = file_menu->addAction(QStringLiteral("新建(&N)"));
   act_new->setShortcut(QKeySequence::New);
-  act_new->setToolTip(QStringLiteral("新建空白文档 (doc.new)"));
   bind_action(act_new, "doc.new");
 
   auto* act_export =
       file_menu->addAction(QStringLiteral("导出 DWG/DXF(&E)…"));
   act_export->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
-  act_export->setToolTip(QStringLiteral("导出 DXF (file.export_dxf)"));
   bind_action(act_export, "file.export_dxf");
 
+  auto* edit_menu = menuBar()->addMenu(QStringLiteral("编辑(&E)"));
+  act_undo_ = edit_menu->addAction(QStringLiteral("撤销(&U)"));
+  act_undo_->setShortcut(QKeySequence::Undo);
+  bind_action(act_undo_, "edit.undo");
+
+  act_redo_ = edit_menu->addAction(QStringLiteral("重做(&R)"));
+  act_redo_->setShortcut(QKeySequence::Redo);
+  bind_action(act_redo_, "edit.redo");
+
   auto* model_menu = menuBar()->addMenu(QStringLiteral("建模(&M)"));
-  auto* act_box = model_menu->addAction(QStringLiteral("创建立方体(&B)"));
+  auto* act_box = model_menu->addAction(QStringLiteral("创建立方体(&B)…"));
   act_box->setShortcut(QKeySequence(QStringLiteral("Ctrl+B")));
-  act_box->setToolTip(QStringLiteral("在当前 Part 上创建盒子 (part.create_box)"));
+  act_box->setToolTip(QStringLiteral("两点拾取创建（交互）"));
   bind_action(act_box, "part.create_box");
+
+  auto* act_box_fast =
+      model_menu->addAction(QStringLiteral("快速立方体（默认尺寸）"));
+  act_box_fast->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+B")));
+  bind_action(act_box_fast, "part.create_box_instant");
+
+  auto* tools_menu = menuBar()->addMenu(QStringLiteral("工具(&T)"));
+  auto* act_palette = tools_menu->addAction(QStringLiteral("命令面板(&P)…"));
+  act_palette->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+P")));
+  connect(act_palette, &QAction::triggered, this,
+          &MainWindow::on_command_palette);
 }
 
 void MainWindow::setup_toolbar() {
@@ -168,15 +228,13 @@ void MainWindow::setup_toolbar() {
   toolbar_->setIconSize(QSize(20, 20));
 
   auto* act_new = toolbar_->addAction(QStringLiteral("新建"));
-  act_new->setToolTip(QStringLiteral("新建空白文档 (Ctrl+N)"));
   bind_action(act_new, "doc.new");
 
   auto* act_box = toolbar_->addAction(QStringLiteral("立方体"));
-  act_box->setToolTip(QStringLiteral("创建盒子 (Ctrl+B)"));
+  act_box->setToolTip(QStringLiteral("两点创建盒子 (Ctrl+B)"));
   bind_action(act_box, "part.create_box");
 
   auto* act_export = toolbar_->addAction(QStringLiteral("导出 DXF"));
-  act_export->setToolTip(QStringLiteral("导出 DWG/DXF (Ctrl+E)"));
   bind_action(act_export, "file.export_dxf");
 }
 
@@ -230,51 +288,76 @@ void MainWindow::place_view_cube() {
 
 void MainWindow::apply_wheel_zoom(int dy) {
   if (dy == 0) return;
-
   Camera* cam = world_.main_camera();
-  if (!cam) {
-    BREP_ERROR("wheel zoom: main camera missing");
-    return;
-  }
-
-  const float dist0 = cam->distance;
-  const float half0 = cam->ortho_half_h;
-  const bool ortho0 = cam->ortho;
+  if (!cam) return;
   cam->zoom(dy > 0 ? 1.0f : -1.0f);
-
-  BREP_INFO(
-      "wheel zoom delta={} ortho={} dist {:.3f}->{:.3f} orthoHalf {:.3f}->{:.3f}",
-      dy, ortho0, dist0, cam->distance, half0, cam->ortho_half_h);
-
-  statusBar()->showMessage(
-      QStringLiteral("Zoom | dist=%1  orthoHalf=%2  mode=%3")
-          .arg(cam->distance, 0, 'f', 2)
-          .arg(cam->ortho_half_h, 0, 'f', 2)
-          .arg(cam->ortho ? QStringLiteral("ortho")
-                          : QStringLiteral("persp")));
-
   if (vulkan_window_) vulkan_window_->requestUpdate();
 }
 
+void MainWindow::keyPressEvent(QKeyEvent* event) {
+  if (event->key() == Qt::Key_Escape && command_manager_.has_active_tool()) {
+    auto ctx = make_command_context();
+    command_manager_.cancel_active_tool(ctx);
+    event->accept();
+    return;
+  }
+  QMainWindow::keyPressEvent(event);
+}
+
+bool MainWindow::handle_tool_mouse(QEvent* event) {
+  if (!command_manager_.has_active_tool() || !viewport_container_) return false;
+
+  auto ctx = make_command_context();
+  if (event->type() == QEvent::MouseButtonPress) {
+    auto* e = static_cast<QMouseEvent*>(event);
+    const QPoint local = viewport_container_->mapFromGlobal(
+        e->globalPosition().toPoint());
+    if (!viewport_container_->rect().contains(local)) return false;
+    if (command_manager_.tool_mouse_press(ctx, float(local.x()),
+                                          float(local.y()), int(e->button()))) {
+      refresh_edit_actions();
+      return true;
+    }
+  } else if (event->type() == QEvent::MouseMove) {
+    auto* e = static_cast<QMouseEvent*>(event);
+    const QPoint local = viewport_container_->mapFromGlobal(
+        e->globalPosition().toPoint());
+    command_manager_.tool_mouse_move(ctx, float(local.x()), float(local.y()));
+    // Do not consume move so orbit can still work with RMB if desired.
+  }
+  return false;
+}
+
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  // Tool mouse before Vulkan orbit when left-clicking in interactive mode.
+  if (watched == viewport_container_ || watched == qApp) {
+    if (handle_tool_mouse(event)) return true;
+  }
+
+  if (event->type() == QEvent::KeyPress) {
+    auto* ke = static_cast<QKeyEvent*>(event);
+    if (ke->key() == Qt::Key_Escape && command_manager_.has_active_tool()) {
+      auto ctx = make_command_context();
+      command_manager_.cancel_active_tool(ctx);
+      return true;
+    }
+  }
+
   if (event->type() == QEvent::Wheel && vulkan_window_ && viewport_container_) {
     auto* we = static_cast<QWheelEvent*>(event);
     const QPoint global = we->globalPosition().toPoint();
-
     const QRect viewport_global(
         viewport_container_->mapToGlobal(QPoint(0, 0)),
         viewport_container_->size());
     if (!viewport_global.contains(global)) {
       return QMainWindow::eventFilter(watched, event);
     }
-
     if (view_cube_ && view_cube_->isVisible()) {
       const QRect cube_global(view_cube_->pos(), view_cube_->size());
       if (cube_global.contains(global)) {
         return QMainWindow::eventFilter(watched, event);
       }
     }
-
     const int dy = wheel_delta_y(we);
     if (dy != 0) {
       apply_wheel_zoom(dy);
