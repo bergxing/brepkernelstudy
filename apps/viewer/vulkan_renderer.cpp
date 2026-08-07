@@ -34,6 +34,12 @@ struct AxisVertexGpu {
 VulkanRenderer::VulkanRenderer(VulkanWindow* window) : window_(window) {}
 
 void VulkanRenderer::set_meshes(TriangleMesh triangles, EdgeMesh edges) {
+  const bool incoming_empty =
+      triangles.indices.empty() && edges.positions.empty();
+  const bool current_empty =
+      triangles_.indices.empty() && edges_.positions.empty();
+  if (incoming_empty && current_empty) return;
+
   triangles_ = std::move(triangles);
   edges_ = std::move(edges);
   meshes_dirty_ = true;

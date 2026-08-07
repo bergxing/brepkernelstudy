@@ -14,16 +14,17 @@
 #include <QKeySequence>
 #include <QMenuBar>
 #include <QMessageBox>
-
-#include <filesystem>
 #include <QMoveEvent>
 #include <QResizeEvent>
+#include <QShowEvent>
 #include <QStatusBar>
+#include <QToolBar>
 #include <QVersionNumber>
 #include <QVulkanInstance>
 #include <QWheelEvent>
 #include <QWidget>
 
+#include <filesystem>
 #include <stdexcept>
 #include <vector>
 
@@ -31,7 +32,6 @@ namespace brep::viewer {
 namespace {
 
 int wheel_delta_y(const QWheelEvent* event) {
-  // Prefer angleDelta (mouse wheel notches). Fall back to pixelDelta (touchpad).
   if (event->angleDelta().y() != 0) return event->angleDelta().y();
   if (event->pixelDelta().y() != 0) return event->pixelDelta().y();
   return 0;
@@ -56,8 +56,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
   vulkan_window_->setSampleCount(1);
   vulkan_window_->set_world(&world_);
 
-  document_.new_document(world_, wood_albedo_path().toStdString());
-  BREP_INFO("ECS scene ready: camera + demo_box (wood)");
+  // Start with a blank document (no bodies).
+  document_.new_blank_document(world_);
+  BREP_INFO("ECS scene ready: blank Document + Part + camera");
 
   viewport_container_ = QWidget::createWindowContainer(vulkan_window_, this);
   viewport_container_->setFocusPolicy(Qt::StrongFocus);
@@ -78,18 +79,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     }
   });
   place_view_cube();
-  view_cube_->show();
+  view_cube_->hide();  // shown with MainWindow after splash
 
   setup_menus();
+  setup_toolbar();
   refresh_window_title();
 
-  // Catch wheel at the application level — QVulkanWindow / createWindowContainer
-  // often drops wheel events before they reach the QWindow on Windows.
   qApp->installEventFilter(this);
 
-  statusBar()->showMessage(QStringLiteral(
-      "File: New / Export DWG·DXF | Axes + ViewCube | Left-drag: rotate | "
-      "Right/Middle: pan | Wheel: zoom"));
+  statusBar()->showMessage(
+      QStringLiteral("XCAD | 新建空白文档 | 导出 DXF | ViewCube / 滚轮缩放"));
 }
 
 QString MainWindow::wood_albedo_path() const {
@@ -106,11 +105,28 @@ void MainWindow::setup_menus() {
 
   auto* act_new = file_menu->addAction(QStringLiteral("新建(&N)"));
   act_new->setShortcut(QKeySequence::New);
+  act_new->setToolTip(QStringLiteral("新建空白文档"));
   connect(act_new, &QAction::triggered, this, &MainWindow::on_new_document);
 
   auto* act_export =
       file_menu->addAction(QStringLiteral("导出 DWG/DXF(&E)…"));
   act_export->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
+  connect(act_export, &QAction::triggered, this,
+          &MainWindow::on_export_dwg_dxf);
+}
+
+void MainWindow::setup_toolbar() {
+  toolbar_ = addToolBar(QStringLiteral("主工具栏"));
+  toolbar_->setMovable(false);
+  toolbar_->setIconSize(QSize(20, 20));
+
+  auto* act_new = toolbar_->addAction(QStringLiteral("新建"));
+  act_new->setToolTip(QStringLiteral("新建空白文档 (Ctrl+N)"));
+  act_new->setShortcut(QKeySequence::New);
+  connect(act_new, &QAction::triggered, this, &MainWindow::on_new_document);
+
+  auto* act_export = toolbar_->addAction(QStringLiteral("导出 DXF"));
+  act_export->setToolTip(QStringLiteral("导出 DWG/DXF 线框 (Ctrl+E)"));
   connect(act_export, &QAction::triggered, this,
           &MainWindow::on_export_dwg_dxf);
 }
@@ -124,12 +140,12 @@ void MainWindow::rebind_view_cube_camera() {
 }
 
 void MainWindow::on_new_document() {
-  document_.new_document(world_, wood_albedo_path().toStdString());
+  document_.new_blank_document(world_);
   rebind_view_cube_camera();
   refresh_window_title();
   if (vulkan_window_) vulkan_window_->requestUpdate();
-  statusBar()->showMessage(QStringLiteral("已新建文档（demo 木盒）"), 4000);
-  BREP_INFO("document: new demo scene");
+  statusBar()->showMessage(QStringLiteral("已新建空白文档"), 4000);
+  BREP_INFO("document: new blank Document/Part");
 }
 
 void MainWindow::on_export_dwg_dxf() {
@@ -175,6 +191,14 @@ void MainWindow::on_export_dwg_dxf() {
             path.toStdString());
 }
 
+void MainWindow::showEvent(QShowEvent* event) {
+  QMainWindow::showEvent(event);
+  if (view_cube_) {
+    view_cube_->show();
+    place_view_cube();
+  }
+}
+
 void MainWindow::resizeEvent(QResizeEvent* event) {
   QMainWindow::resizeEvent(event);
   place_view_cube();
@@ -210,7 +234,6 @@ void MainWindow::place_view_cube() {
 void MainWindow::apply_wheel_zoom(int dy) {
   if (dy == 0) return;
 
-  // Mutate the ECS camera directly (same object the renderer reads every frame).
   Camera* cam = world_.main_camera();
   if (!cam) {
     BREP_ERROR("wheel zoom: main camera missing");
@@ -248,7 +271,6 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
       return QMainWindow::eventFilter(watched, event);
     }
 
-    // Let the ViewCube keep its own wheel (none today) / click area alone.
     if (view_cube_ && view_cube_->isVisible()) {
       const QRect cube_global(view_cube_->pos(), view_cube_->size());
       if (cube_global.contains(global)) {
@@ -259,7 +281,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     const int dy = wheel_delta_y(we);
     if (dy != 0) {
       apply_wheel_zoom(dy);
-      return true;  // consume — avoid double-handling by QWindow/container
+      return true;
     }
   }
   return QMainWindow::eventFilter(watched, event);

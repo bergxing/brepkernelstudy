@@ -16,14 +16,19 @@ class DocumentSession {
   void mark_dirty() noexcept { dirty_ = true; }
   void mark_clean() noexcept { dirty_ = false; }
 
+  /// New blank Document → Part (no geometry).
+  void new_blank_document(ecs::World& world);
+
   /// Reset session metadata and rebuild the demo scene.
-  void new_document(ecs::World& world, const std::string& wood_albedo_path);
+  void new_demo_document(ecs::World& world, const std::string& wood_albedo_path);
 
   void set_export_path(const QString& path);
 
   [[nodiscard]] QString window_title() const;
 
  private:
+  void sync_title_from_world(const ecs::World& world);
+
   QString title_{QStringLiteral("Untitled")};
   QString path_;
   bool dirty_{false};

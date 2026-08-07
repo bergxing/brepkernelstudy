@@ -115,7 +115,9 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
   // Camera → renderer (via VulkanWindow camera getter; renderer reads it each frame).
   // Mesh / material push when dirty.
   auto view = registry.view<MeshComponent, MaterialComponent, RenderableTag>();
+  bool any = false;
   for (auto entity : view) {
+    any = true;
     auto& mesh = view.get<MeshComponent>(entity);
     auto& mat = view.get<MaterialComponent>(entity);
     if (mesh.dirty) {
@@ -126,6 +128,10 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
       renderer.set_material(mat.material);
       mat.dirty = false;
     }
+  }
+  // Blank documents have no renderables — clear leftover GPU meshes.
+  if (!any) {
+    renderer.set_meshes({}, {});
   }
 }
 

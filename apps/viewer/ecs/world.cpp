@@ -52,6 +52,23 @@ entt::entity World::create_renderable(std::string name, TriangleMesh triangles,
   return e;
 }
 
+void World::create_blank_scene() {
+  using namespace brep;
+
+  clear_scene();
+
+  document_ = Document::create("Untitled");
+  Part& part = document_->add_part("MainPart");
+
+  Camera cam;
+  cam.target = Point3d{0.0, 0.0, 0.0};
+  cam.distance = 6.0f;
+  create_camera(cam);
+
+  BREP_INFO("blank scene: Document={} Part={} (no bodies)",
+            document_->guid.to_string(), part.guid.to_string());
+}
+
 void World::create_demo_box_scene(const std::string& wood_albedo_path) {
   using namespace brep;
 

@@ -61,6 +61,7 @@ qt_add_executable(brep_viewer
   main.cpp
   main_window.cpp
   document.cpp
+  splash_screen.cpp
   view_cube.cpp
   vulkan_window.cpp
   vulkan_renderer.cpp

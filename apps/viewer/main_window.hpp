@@ -10,6 +10,8 @@
 
 #include <memory>
 
+class QToolBar;
+
 namespace brep::viewer {
 
 class MainWindow final : public QMainWindow {
@@ -18,6 +20,7 @@ class MainWindow final : public QMainWindow {
   explicit MainWindow(QWidget* parent = nullptr);
 
  protected:
+  void showEvent(QShowEvent* event) override;
   void resizeEvent(QResizeEvent* event) override;
   void moveEvent(QMoveEvent* event) override;
   void changeEvent(QEvent* event) override;
@@ -29,6 +32,7 @@ class MainWindow final : public QMainWindow {
 
  private:
   void setup_menus();
+  void setup_toolbar();
   void place_view_cube();
   void apply_wheel_zoom(int dy);
   void refresh_window_title();
@@ -41,6 +45,7 @@ class MainWindow final : public QMainWindow {
   VulkanWindow* vulkan_window_{nullptr};
   QWidget* viewport_container_{nullptr};
   ViewCubeWidget* view_cube_{nullptr};
+  QToolBar* toolbar_{nullptr};
 };
 
 }  // namespace brep::viewer

@@ -41,6 +41,9 @@ class World {
                                  EdgeMesh edges, Material material,
                                  Point3d position = {});
 
+  /// New Document → Part → camera only (blank document, no bodies).
+  void create_blank_scene();
+
   /// New Document → Part → Body(demo box) + camera/renderables.
   void create_demo_box_scene(const std::string& wood_albedo_path);
 
