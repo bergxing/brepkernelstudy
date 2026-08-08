@@ -152,6 +152,38 @@ MainWindow::~MainWindow() {
     QApplication::restoreOverrideCursor();
     tool_cursor_overridden_ = false;
   }
+
+  // QObject children (MDI / QVulkanWindow) are destroyed in ~QObject, AFTER
+  // member unique_ptrs. QVulkanInstance must outlive every QVulkanWindow, so
+  // destroy Vulkan views here before vulkan_instance_ is reset/destroyed.
+  suppress_ensure_view_ = true;
+  if (view_cube_) {
+    BREP_INFO("MainWindow::~MainWindow: destroy ViewCube");
+    view_cube_->set_redraw_callback({});
+    view_cube_->set_camera(nullptr);
+    delete view_cube_;
+    view_cube_ = nullptr;
+  }
+  if (mdi_area_) {
+    BREP_INFO("MainWindow::~MainWindow: destroy {} MDI subwindow(s)",
+              mdi_area_->subWindowList().size());
+    const auto subs = mdi_area_->subWindowList();
+    for (auto* sub : subs) {
+      if (!sub) continue;
+      BREP_INFO("MainWindow::~MainWindow: delete subwindow '{}'",
+                sub->windowTitle().toStdString());
+      mdi_area_->removeSubWindow(sub);
+      delete sub;
+    }
+    view_windows_.clear();
+    BREP_INFO("MainWindow::~MainWindow: delete QMdiArea");
+    setCentralWidget(nullptr);
+    delete mdi_area_;
+    mdi_area_ = nullptr;
+  }
+
+  BREP_INFO("MainWindow::~MainWindow: reset QVulkanInstance");
+  vulkan_instance_.reset();
   BREP_INFO("MainWindow::~MainWindow end");
 }
 
