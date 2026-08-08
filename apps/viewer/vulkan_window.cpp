@@ -7,12 +7,15 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QWidget>
 
 namespace brep::viewer {
 
 VulkanWindow::VulkanWindow(QWindow* parent) : QVulkanWindow(parent) {
   setTitle(QStringLiteral("brep-kernel viewer"));
   setKeyboardGrabEnabled(false);
+  // Explicit arrow so we never inherit QMdiSubWindow's border resize cursor.
+  setCursor(Qt::ArrowCursor);
 }
 
 void VulkanWindow::sync_renderer() {
@@ -77,6 +80,14 @@ void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
   }
 }
 
+void VulkanWindow::restore_idle_cursor() {
+  // Do not call unsetCursor(): with MDI, that inherits the subwindow's last
+  // border resize shape (↔/↕) and leaves it stuck over the viewport.
+  if (selection_enabled_) {
+    setCursor(Qt::ArrowCursor);
+  }
+}
+
 void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
   // QWindow-direct moves (common with QWidget::createWindowContainer) must
   // still drive tool rubber-band previews.
@@ -98,6 +109,10 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
       before == ecs::InputState::DragMode::PendingSelect &&
       state.drag_mode == ecs::InputState::DragMode::Orbit) {
     setCursor(Qt::ClosedHandCursor);
+  } else if (selection_enabled_ &&
+             state.drag_mode == ecs::InputState::DragMode::None &&
+             buttons == Qt::NoButton) {
+    restore_idle_cursor();
   }
   if (ecs::consume_camera_dirty(world_->registry())) {
     requestUpdate();
@@ -113,7 +128,7 @@ void VulkanWindow::pointer_release(QPointF pos) {
   }
 
   const bool click = ecs::input_on_release(world_->registry());
-  unsetCursor();
+  restore_idle_cursor();
   if (click) {
     maybe_select_at(float(pos.x()), float(pos.y()));
   }
@@ -166,6 +181,13 @@ void VulkanWindow::keyPressEvent(QKeyEvent* event) {
 bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
   Q_UNUSED(watched);
   switch (event->type()) {
+    case QEvent::Enter:
+    case QEvent::HoverEnter:
+      restore_idle_cursor();
+      if (auto* w = qobject_cast<QWidget*>(watched)) {
+        w->setCursor(Qt::ArrowCursor);
+      }
+      break;
     case QEvent::MouseButtonPress: {
       auto* e = static_cast<QMouseEvent*>(event);
       pointer_press(e->position(), e->button());

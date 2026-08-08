@@ -180,6 +180,8 @@ VulkanWindow* MainWindow::create_view_window(const QString& title,
   container->setFocusPolicy(Qt::StrongFocus);
   container->setMouseTracking(true);
   container->setAttribute(Qt::WA_Hover, true);
+  // Break inheritance from QMdiSubWindow border resize cursors.
+  container->setCursor(Qt::ArrowCursor);
   container->installEventFilter(vulkan_window);
   container->installEventFilter(this);
   container->setMinimumSize(160, 120);

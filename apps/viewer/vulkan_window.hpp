@@ -67,6 +67,7 @@ class VulkanWindow final : public QVulkanWindow {
   void apply_key(int key);
   void sync_renderer();
   void maybe_select_at(float x, float y);
+  void restore_idle_cursor();
   [[nodiscard]] bool forward_tool_press(QPointF pos, Qt::MouseButton button);
 
   ecs::World* world_{nullptr};
