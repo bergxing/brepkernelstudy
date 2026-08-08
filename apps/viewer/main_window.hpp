@@ -15,6 +15,7 @@
 #include <memory>
 
 class QAction;
+class QCloseEvent;
 class QDockWidget;
 class QLabel;
 class QMdiArea;
@@ -34,6 +35,7 @@ class MainWindow final : public QMainWindow {
 
  protected:
   void showEvent(QShowEvent* event) override;
+  void closeEvent(QCloseEvent* event) override;
   void resizeEvent(QResizeEvent* event) override;
   void moveEvent(QMoveEvent* event) override;
   void changeEvent(QEvent* event) override;
@@ -77,6 +79,8 @@ class MainWindow final : public QMainWindow {
   void update_property_panel(entt::entity entity);
   void bind_action(QAction* action, const char* command_id);
   commands::CommandResult run_command(std::string_view command_id);
+  /// Returns false if the user cancelled closing (keep the window open).
+  [[nodiscard]] bool confirm_close_or_save();
   [[nodiscard]] commands::CommandContext make_command_context();
   [[nodiscard]] QString wood_albedo_path() const;
   [[nodiscard]] QString view_icon_path(const QString& filename) const;

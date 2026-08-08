@@ -7,8 +7,11 @@
 #include "ecs/systems.hpp"
 #include "view_mdi_subwindow.hpp"
 
+#include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
+#include <QCloseEvent>
+#include <QPushButton>
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDialog>
@@ -963,6 +966,49 @@ void MainWindow::update_property_panel(entt::entity entity) {
 
 void MainWindow::refresh_window_title() {
   setWindowTitle(document_.window_title());
+}
+
+bool MainWindow::confirm_close_or_save() {
+  if (command_manager_.has_active_tool()) {
+    auto ctx = make_command_context();
+    command_manager_.cancel_active_tool(ctx);
+    sync_tool_ui();
+  }
+
+  if (!document_.dirty()) return true;
+
+  QMessageBox box(this);
+  box.setIcon(QMessageBox::Warning);
+  box.setWindowTitle(QStringLiteral("保存文档"));
+  box.setText(QStringLiteral("文档“%1”已修改，是否保存？")
+                  .arg(document_.title()));
+  box.setInformativeText(
+      QStringLiteral("选择“保存”写入文件后退出；“不保存”直接退出；"
+                     "“取消”继续编辑。"));
+  QAbstractButton* btn_save =
+      box.addButton(QStringLiteral("保存"), QMessageBox::AcceptRole);
+  QAbstractButton* btn_discard =
+      box.addButton(QStringLiteral("不保存"), QMessageBox::DestructiveRole);
+  QAbstractButton* btn_cancel =
+      box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+  box.setDefaultButton(qobject_cast<QPushButton*>(btn_save));
+  box.setEscapeButton(btn_cancel);
+  box.exec();
+
+  if (box.clickedButton() == btn_cancel) return false;
+  if (box.clickedButton() == btn_discard) return true;
+
+  // Save then close. Abort close if the user cancels the save dialog / fails.
+  const auto result = run_command("file.save");
+  return result.succeeded();
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+  if (confirm_close_or_save()) {
+    event->accept();
+  } else {
+    event->ignore();
+  }
 }
 
 void MainWindow::rebind_view_cube_camera() {
