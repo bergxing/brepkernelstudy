@@ -57,8 +57,63 @@ endforeach()
 
 add_custom_target(brep_viewer_shaders DEPENDS ${VIEWER_SPV_OUTPUTS})
 
-qt_add_executable(brep_viewer
-  main.cpp
+# ---------------------------------------------------------------------------
+# Shared viewer paths (PUBLIC so all viewer_* libs see the same defines)
+# ---------------------------------------------------------------------------
+set(VIEWER_I18N_DIR ${CMAKE_CURRENT_SOURCE_DIR}/i18n)
+set(VIEWER_ASSETS_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets)
+file(MAKE_DIRECTORY ${VIEWER_ASSETS_DIR})
+
+function(brep_viewer_configure_lib target)
+  target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_definitions(${target} PUBLIC
+    BREP_VIEWER_SPV_DIR="${VIEWER_SPV_DIR}"
+    BREP_VIEWER_ASSETS_DIR="${VIEWER_ASSETS_DIR}"
+    BREP_VIEWER_I18N_DIR="${VIEWER_I18N_DIR}"
+  )
+endfunction()
+
+# ---------------------------------------------------------------------------
+# Phase 2: viewer static libraries (dependency: commands/scene/render → ui → exe)
+# Mutual refs (scene↔commands, scene↔render) resolve at the final link.
+# ---------------------------------------------------------------------------
+
+add_library(viewer_commands STATIC
+  commands/command_registry.cpp
+  commands/builtin_commands.cpp
+  commands/command_manager.cpp
+  commands/document_history.cpp
+  commands/picking.cpp
+  commands/command_palette.cpp
+  commands/tools/create_box_tool.cpp
+  commands/tools/copy_tool.cpp
+  io/dxf_export.cpp
+)
+brep_viewer_configure_lib(viewer_commands)
+target_link_libraries(viewer_commands PUBLIC brep EnTT::EnTT Qt6::Widgets)
+
+add_library(viewer_scene STATIC
+  ecs/world.cpp
+  ecs/systems.cpp
+)
+brep_viewer_configure_lib(viewer_scene)
+target_link_libraries(viewer_scene PUBLIC brep EnTT::EnTT Qt6::Gui Vulkan::Headers)
+
+add_library(viewer_render STATIC
+  vulkan_window.cpp
+  vulkan_renderer.cpp
+  render/vulkan_buffer.cpp
+  render/vulkan_renderer_textures.cpp
+  render/vulkan_pipeline.cpp
+  render/mesh_uploader.cpp
+  render/vulkan_draw.cpp
+  select_rect_overlay.cpp
+)
+brep_viewer_configure_lib(viewer_render)
+add_dependencies(viewer_render brep_viewer_shaders)
+target_link_libraries(viewer_render PUBLIC brep EnTT::EnTT Qt6::Widgets Qt6::Gui Vulkan::Headers)
+
+add_library(viewer_ui STATIC
   main_window.cpp
   ui/view_manager.cpp
   ui/cursor_tip.cpp
@@ -75,32 +130,29 @@ qt_add_executable(brep_viewer
   view_cube.cpp
   view_mdi_subwindow.cpp
   property_panel.cpp
-  vulkan_window.cpp
-  vulkan_renderer.cpp
-  render/vulkan_buffer.cpp
-  render/vulkan_renderer_textures.cpp
-  render/vulkan_pipeline.cpp
-  render/mesh_uploader.cpp
-  render/vulkan_draw.cpp
-  select_rect_overlay.cpp
   i18n/language_manager.cpp
-  ecs/world.cpp
-  ecs/systems.cpp
-  io/dxf_export.cpp
-  commands/command_registry.cpp
-  commands/builtin_commands.cpp
-  commands/command_manager.cpp
-  commands/document_history.cpp
-  commands/picking.cpp
-  commands/command_palette.cpp
-  commands/tools/create_box_tool.cpp
-  commands/tools/copy_tool.cpp
-  ${VIEWER_SPV_OUTPUTS}
 )
-add_dependencies(brep_viewer brep_viewer_shaders)
+brep_viewer_configure_lib(viewer_ui)
+target_link_libraries(viewer_ui PUBLIC
+  viewer_commands
+  viewer_scene
+  viewer_render
+  brep
+  EnTT::EnTT
+  Qt6::Widgets
+  Qt6::Gui
+)
 
-set(VIEWER_ASSETS_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets)
-file(MAKE_DIRECTORY ${VIEWER_ASSETS_DIR})
+# ---------------------------------------------------------------------------
+# Thin executable
+# ---------------------------------------------------------------------------
+qt_add_executable(brep_viewer main.cpp)
+target_link_libraries(brep_viewer PRIVATE viewer_ui)
+
+set_target_properties(brep_viewer PROPERTIES
+  WIN32_EXECUTABLE FALSE
+)
+
 add_custom_command(TARGET brep_viewer POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_CURRENT_SOURCE_DIR}/assets
@@ -110,14 +162,6 @@ add_custom_command(TARGET brep_viewer POST_BUILD
           $<TARGET_FILE_DIR:brep_viewer>/assets
   COMMENT "Copy viewer material assets"
   VERBATIM
-)
-
-target_include_directories(brep_viewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set(VIEWER_I18N_DIR ${CMAKE_CURRENT_SOURCE_DIR}/i18n)
-target_compile_definitions(brep_viewer PRIVATE
-  BREP_VIEWER_SPV_DIR="${VIEWER_SPV_DIR}"
-  BREP_VIEWER_ASSETS_DIR="${VIEWER_ASSETS_DIR}"
-  BREP_VIEWER_I18N_DIR="${VIEWER_I18N_DIR}"
 )
 
 # Compile .ts → .qm when lrelease is available; always deploy translations/.
@@ -149,18 +193,6 @@ add_custom_command(TARGET brep_viewer POST_BUILD
           $<TARGET_FILE_DIR:brep_viewer>/translations/xcad_zh_CN.qm
   COMMENT "Deploy viewer translations"
   VERBATIM
-)
-# Qt Gui links the platform Vulkan loader; headers come from the Vulkan-Headers submodule.
-target_link_libraries(brep_viewer PRIVATE
-  brep
-  EnTT::EnTT
-  Qt6::Widgets
-  Qt6::Gui
-  Vulkan::Headers
-)
-
-set_target_properties(brep_viewer PROPERTIES
-  WIN32_EXECUTABLE FALSE
 )
 
 # ---------------------------------------------------------------------------
