@@ -121,6 +121,7 @@ MainWindow::MainWindow(QWidget* parent)
   setup_menus();
   setup_toolbar();
   setup_property_dock();
+  setup_view_dock();
   refresh_window_title();
   refresh_edit_actions();
   update_property_panel(entt::null);
@@ -173,6 +174,10 @@ commands::CommandContext MainWindow::make_command_context() {
   };
   ctx.after_document_reset = [this] {
     rebind_view_cube_camera();
+    if (view_panel_) {
+      view_panel_->set_camera(world_.main_camera());
+      view_panel_->sync_from_camera();
+    }
     refresh_window_title();
     update_property_panel(entt::null);
   };
@@ -398,8 +403,29 @@ void MainWindow::setup_property_dock() {
         update_property_panel(ecs::selected_entity(world_.registry()));
       });
 
+}
+
+void MainWindow::setup_view_dock() {
+  view_dock_ = new QDockWidget(QStringLiteral("视图"), this);
+  view_dock_->setObjectName(QStringLiteral("ViewDock"));
+  view_dock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+  view_panel_ = new ViewPanel(view_dock_);
+  view_dock_->setWidget(view_panel_);
+  view_dock_->setMinimumWidth(160);
+  addDockWidget(Qt::LeftDockWidgetArea, view_dock_);
+
+  view_panel_->set_camera(world_.main_camera());
+  view_panel_->sync_from_camera();
+  view_panel_->set_redraw_callback([this] {
+    if (view_cube_) view_cube_->update();
+    if (vulkan_window_) vulkan_window_->requestUpdate();
+  });
+
   auto* view_menu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
-  view_menu->addAction(property_dock_->toggleViewAction());
+  if (property_dock_) {
+    view_menu->addAction(property_dock_->toggleViewAction());
+  }
+  view_menu->addAction(view_dock_->toggleViewAction());
 }
 
 void MainWindow::update_property_panel(entt::entity entity) {
@@ -417,6 +443,10 @@ void MainWindow::refresh_window_title() {
 
 void MainWindow::rebind_view_cube_camera() {
   if (view_cube_) view_cube_->set_camera(world_.main_camera());
+  if (view_panel_) {
+    view_panel_->set_camera(world_.main_camera());
+    view_panel_->sync_from_camera();
+  }
 }
 
 void MainWindow::showEvent(QShowEvent* event) {
