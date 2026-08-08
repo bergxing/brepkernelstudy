@@ -4,6 +4,7 @@
 #include "brep/log.hpp"
 #include "commands/command_palette.hpp"
 #include "ecs/systems.hpp"
+#include "view_mdi_subwindow.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -26,6 +27,7 @@
 #include <QShowEvent>
 #include <QSignalBlocker>
 #include <QStatusBar>
+#include <QTimer>
 #include <QToolBar>
 #include <QVersionNumber>
 #include <QVulkanInstance>
@@ -197,13 +199,25 @@ void MainWindow::wire_vulkan_window(VulkanWindow* window) {
   });
 }
 
+void MainWindow::clear_view_fill_states() {
+  for (auto* sub : mdi_area_ ? mdi_area_->subWindowList()
+                             : QList<QMdiSubWindow*>{}) {
+    if (auto* view = qobject_cast<ViewMdiSubWindow*>(sub)) {
+      view->clear_fill();
+    }
+  }
+}
+
 VulkanWindow* MainWindow::create_view_window(const QString& title,
-                                             char standard_view) {
+                                             char standard_view,
+                                             bool fill_workspace) {
   auto* vulkan_window = new VulkanWindow();
   vulkan_window->setVulkanInstance(vulkan_instance_.get());
   vulkan_window->setSampleCount(1);
   vulkan_window->set_world(&world_);
   vulkan_window->camera().set_standard_view(standard_view);
+  // Avoid leaking the QWindow title into the MDI caption.
+  vulkan_window->setTitle(QString());
   wire_vulkan_window(vulkan_window);
   if (command_manager_.has_active_tool()) {
     vulkan_window->set_selection_enabled(false);
@@ -220,13 +234,14 @@ VulkanWindow* MainWindow::create_view_window(const QString& title,
   container->installEventFilter(this);
   container->setMinimumSize(160, 120);
 
-  auto* sub = mdi_area_->addSubWindow(container);
+  auto* sub = new ViewMdiSubWindow(mdi_area_);
+  sub->setWidget(container);
+  mdi_area_->addSubWindow(sub);
   const QString numbered =
       title.isEmpty()
           ? QStringLiteral("视图 %1").arg(++view_serial_)
           : QStringLiteral("%1 (%2)").arg(title).arg(++view_serial_);
   sub->setWindowTitle(numbered);
-  sub->setAttribute(Qt::WA_DeleteOnClose);
   sub->installEventFilter(this);
   view_windows_.insert(sub, vulkan_window);
 
@@ -238,6 +253,14 @@ VulkanWindow* MainWindow::create_view_window(const QString& title,
   sub->resize(720, 480);
   sub->show();
   mdi_area_->setActiveSubWindow(sub);
+  if (fill_workspace) {
+    // Defer until the MDI viewport has a real size.
+    QTimer::singleShot(0, this, [this, sub] {
+      if (!sub) return;
+      sub->fill_workspace();
+      place_view_cube();
+    });
+  }
   container->setFocus();
   rebind_view_cube_camera();
   place_view_cube();
@@ -295,8 +318,10 @@ void MainWindow::on_sub_window_activated(QMdiSubWindow* sub) {
 }
 
 void MainWindow::on_new_view() {
-  create_view_window(title_for_standard_view('h'), 'h');
+  clear_view_fill_states();
+  create_view_window(title_for_standard_view('h'), 'h', false);
   mdi_area_->tileSubWindows();
+  place_view_cube();
 }
 
 void MainWindow::on_quad_views() {
@@ -313,18 +338,21 @@ void MainWindow::on_quad_views() {
 
   const char faces[] = {'f', 't', 'r', 'h'};
   for (char face : faces) {
-    create_view_window(title_for_standard_view(face), face);
+    create_view_window(title_for_standard_view(face), face, false);
   }
+  clear_view_fill_states();
   mdi_area_->tileSubWindows();
   place_view_cube();
 }
 
 void MainWindow::on_tile_views() {
+  clear_view_fill_states();
   if (mdi_area_) mdi_area_->tileSubWindows();
   place_view_cube();
 }
 
 void MainWindow::on_cascade_views() {
+  clear_view_fill_states();
   if (mdi_area_) mdi_area_->cascadeSubWindows();
   place_view_cube();
 }

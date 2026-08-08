@@ -50,7 +50,9 @@ class MainWindow final : public QMainWindow {
   void on_close_active_view();
 
  private:
-  VulkanWindow* create_view_window(const QString& title, char standard_view);
+  VulkanWindow* create_view_window(const QString& title, char standard_view,
+                                   bool fill_workspace = true);
+  void clear_view_fill_states();
   [[nodiscard]] VulkanWindow* active_vulkan_window() const;
   [[nodiscard]] QWidget* active_viewport_container() const;
   [[nodiscard]] VulkanWindow* vulkan_window_for_sub(QMdiSubWindow* sub) const;
