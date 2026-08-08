@@ -98,6 +98,18 @@ add_library(brep
   src/object_registry.cpp
   src/part.cpp
   src/document.cpp
+  src/param/parameter.cpp
+  src/feat/feature_tree.cpp
+  src/feat/regenerator.cpp
+  src/feat/box_feature.cpp
+  src/feat/feature_history.cpp
+  src/feat/context.cpp
+  src/feat/sketch_feature.cpp
+  src/feat/extrude_feature.cpp
+  src/sketch/sketch.cpp
+  src/solve2d/solver.cpp
+  src/ops/extrude.cpp
+  src/asm/assembly.cpp
 )
 target_include_directories(brep
   PUBLIC
@@ -116,9 +128,13 @@ target_link_libraries(box_demo PRIVATE brep)
 add_executable(smoke examples/smoke.cpp)
 target_link_libraries(smoke PRIVATE brep)
 
+add_executable(parametric_smoke examples/parametric_smoke.cpp)
+target_link_libraries(parametric_smoke PRIVATE brep)
+
 enable_testing()
 add_test(NAME box_demo COMMAND box_demo)
 add_test(NAME smoke COMMAND smoke)
+add_test(NAME parametric_smoke COMMAND parametric_smoke)
 
 # ---------------------------------------------------------------------------
 # Local Qt6 discovery (kit matches the active compiler: MinGW vs MSVC)

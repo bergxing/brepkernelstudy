@@ -1,5 +1,6 @@
 #include "property_panel.hpp"
 
+#include "brep/feat/box_feature.hpp"
 #include "brep/math.hpp"
 
 #include <QAbstractSpinBox>
@@ -10,50 +11,21 @@
 #include <QLineEdit>
 #include <QVBoxLayout>
 
-#include <algorithm>
 #include <cmath>
 
 namespace brep::viewer {
 namespace {
 
-struct Aabb {
-  Point3d min{};
-  Point3d max{};
-  bool valid{false};
-};
-
-Aabb mesh_aabb(const TriangleMesh& mesh, const Point3d& offset) {
-  Aabb box;
-  if (mesh.vertices.empty()) return box;
-
-  box.min = Point3d{mesh.vertices.front().position.x() + offset.x(),
-                    mesh.vertices.front().position.y() + offset.y(),
-                    mesh.vertices.front().position.z() + offset.z()};
-  box.max = box.min;
-  for (const auto& v : mesh.vertices) {
-    const double x = v.position.x() + offset.x();
-    const double y = v.position.y() + offset.y();
-    const double z = v.position.z() + offset.z();
-    box.min.x() = std::min(box.min.x(), x);
-    box.min.y() = std::min(box.min.y(), y);
-    box.min.z() = std::min(box.min.z(), z);
-    box.max.x() = std::max(box.max.x(), x);
-    box.max.y() = std::max(box.max.y(), y);
-    box.max.z() = std::max(box.max.z(), z);
-  }
-  box.valid = true;
-  return box;
-}
-
-QDoubleSpinBox* make_dim_spin(QWidget* parent) {
+QDoubleSpinBox* make_dim_spin(QWidget* parent, bool editable) {
   auto* spin = new QDoubleSpinBox(parent);
   spin->setDecimals(4);
-  spin->setRange(0.0, 1.0e9);
+  spin->setRange(1.0e-4, 1.0e9);
   spin->setSingleStep(0.1);
-  spin->setSuffix(QStringLiteral(""));
-  spin->setReadOnly(true);
-  spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
   spin->setAlignment(Qt::AlignRight);
+  if (!editable) {
+    spin->setReadOnly(true);
+    spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+  }
   return spin;
 }
 
@@ -86,19 +58,36 @@ PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent) {
   id_form->addRow(QStringLiteral("GUID"), guid_edit_);
   form_layout->addWidget(identity);
 
-  auto* dims = new QGroupBox(QStringLiteral("尺寸 (AABB)"), form_host_);
+  auto* dims = new QGroupBox(QStringLiteral("尺寸 (参数)"), form_host_);
   auto* dim_form = new QFormLayout(dims);
-  length_spin_ = make_dim_spin(dims);
-  width_spin_ = make_dim_spin(dims);
-  height_spin_ = make_dim_spin(dims);
+  length_spin_ = make_dim_spin(dims, true);
+  width_spin_ = make_dim_spin(dims, true);
+  height_spin_ = make_dim_spin(dims, true);
   dim_form->addRow(QStringLiteral("长 (X)"), length_spin_);
   dim_form->addRow(QStringLiteral("宽 (Z)"), width_spin_);
   dim_form->addRow(QStringLiteral("高 (Y)"), height_spin_);
+  dims_hint_ = new QLabel(QStringLiteral("修改后自动再生"), dims);
+  dims_hint_->setStyleSheet(QStringLiteral("color:#888;"));
+  dim_form->addRow(dims_hint_);
   form_layout->addWidget(dims);
   form_layout->addStretch(1);
 
   root->addWidget(form_host_, 1);
+
+  QObject::connect(length_spin_, qOverload<double>(&QDoubleSpinBox::valueChanged),
+                   this, [this](double) { on_dim_edited(); });
+  QObject::connect(width_spin_, qOverload<double>(&QDoubleSpinBox::valueChanged),
+                   this, [this](double) { on_dim_edited(); });
+  QObject::connect(height_spin_, qOverload<double>(&QDoubleSpinBox::valueChanged),
+                   this, [this](double) { on_dim_edited(); });
+
   clear();
+}
+
+void PropertyPanel::block_dim_signals(bool block) {
+  length_spin_->blockSignals(block);
+  width_spin_->blockSignals(block);
+  height_spin_->blockSignals(block);
 }
 
 void PropertyPanel::set_enabled(bool enabled) {
@@ -108,12 +97,18 @@ void PropertyPanel::set_enabled(bool enabled) {
 
 void PropertyPanel::clear() {
   set_enabled(false);
+  current_feature_ = {};
   name_edit_->clear();
   type_edit_->clear();
   guid_edit_->clear();
+  block_dim_signals(true);
   length_spin_->setValue(0.0);
   width_spin_->setValue(0.0);
   height_spin_->setValue(0.0);
+  block_dim_signals(false);
+  length_spin_->setEnabled(false);
+  width_spin_->setEnabled(false);
+  height_spin_->setEnabled(false);
 }
 
 void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
@@ -130,9 +125,30 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
     name_edit_->setText(QStringLiteral("(unnamed)"));
   }
 
-  type_edit_->setText(registry.all_of<ecs::BodyRef>(entity)
-                          ? QStringLiteral("长方体 / Body")
-                          : QStringLiteral("Renderable"));
+  current_feature_ = {};
+  const feat::BoxFeature* box = nullptr;
+  if (part_) {
+    if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity)) {
+      current_feature_ = feat::FeatureId{fref->feature_guid};
+      if (auto* f = part_->features().find(current_feature_)) {
+        if (f->type_name() == "Box") {
+          box = static_cast<const feat::BoxFeature*>(f);
+        }
+      }
+    } else if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
+      if (auto* f = part_->features().find_by_body(body->guid)) {
+        current_feature_ = f->id();
+        if (f->type_name() == "Box") {
+          box = static_cast<const feat::BoxFeature*>(f);
+        }
+      }
+    }
+  }
+
+  type_edit_->setText(box ? QStringLiteral("BoxFeature")
+                          : (registry.all_of<ecs::BodyRef>(entity)
+                                 ? QStringLiteral("Body")
+                                 : QStringLiteral("Renderable")));
 
   if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
     guid_edit_->setText(QString::fromStdString(body->guid.to_string()));
@@ -140,28 +156,41 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
     guid_edit_->clear();
   }
 
-  const auto* mesh = registry.try_get<ecs::MeshComponent>(entity);
-  const auto* xform = registry.try_get<ecs::Transform>(entity);
-  if (!mesh) {
+  block_dim_signals(true);
+  if (box) {
+    const auto& params = part_->parameters();
+    length_spin_->setValue(params.get(box->length_id()).value_or(0.0));
+    width_spin_->setValue(params.get(box->width_id()).value_or(0.0));
+    height_spin_->setValue(params.get(box->height_id()).value_or(0.0));
+    length_spin_->setEnabled(true);
+    width_spin_->setEnabled(true);
+    height_spin_->setEnabled(true);
+    dims_hint_->setText(QStringLiteral("参数驱动 · 修改后自动再生"));
+  } else {
     length_spin_->setValue(0.0);
     width_spin_->setValue(0.0);
     height_spin_->setValue(0.0);
-    return;
+    length_spin_->setEnabled(false);
+    width_spin_->setEnabled(false);
+    height_spin_->setEnabled(false);
+    dims_hint_->setText(QStringLiteral("无 Box 参数"));
   }
+  block_dim_signals(false);
+}
 
-  const Point3d offset = xform ? xform->position : Point3d{};
-  const Aabb box = mesh_aabb(mesh->triangles, offset);
-  if (!box.valid) {
-    length_spin_->setValue(0.0);
-    width_spin_->setValue(0.0);
-    height_spin_->setValue(0.0);
-    return;
-  }
+void PropertyPanel::on_dim_edited() {
+  if (updating_ui_ || !part_ || current_feature_.is_nil()) return;
+  auto* f = part_->features().find(current_feature_);
+  if (!f || f->type_name() != "Box") return;
 
-  // Ground-plane boxes: length along X, width along Z, height along Y.
-  length_spin_->setValue(std::abs(box.max.x() - box.min.x()));
-  width_spin_->setValue(std::abs(box.max.z() - box.min.z()));
-  height_spin_->setValue(std::abs(box.max.y() - box.min.y()));
+  updating_ui_ = true;
+  part_->edit_feature_params(current_feature_,
+                             {{"Length", length_spin_->value()},
+                              {"Width", width_spin_->value()},
+                              {"Height", height_spin_->value()}});
+  updating_ui_ = false;
+
+  if (on_params_changed_) on_params_changed_(current_feature_);
 }
 
 }  // namespace brep::viewer

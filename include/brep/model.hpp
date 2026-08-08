@@ -52,6 +52,9 @@ class Model {
     return bodies_;
   }
 
+  /// Remove a Body from the ownership pool (geometry/topology orphans remain).
+  bool remove_body(const Guid& guid);
+
   [[nodiscard]] Id next_id() noexcept { return ++id_counter_; }
 
  private:

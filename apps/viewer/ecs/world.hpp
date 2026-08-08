@@ -45,13 +45,21 @@ class World {
   entt::entity create_body_renderable(std::string name, brep::Guid body_guid,
                                       TriangleMesh triangles, EdgeMesh edges,
                                       Material material,
-                                      Point3d position = {});
+                                      Point3d position = {},
+                                      brep::Guid feature_guid = {});
 
   /// Destroy ECS renderable linked to a Body Guid (does not delete B-Rep).
   bool destroy_body_renderable(const brep::Guid& body_guid);
 
   [[nodiscard]] entt::entity find_body_renderable(
       const brep::Guid& body_guid) const;
+
+  /// Refresh triangle/edge mesh for an existing body renderable.
+  bool update_body_renderable(const brep::Guid& body_guid, TriangleMesh triangles,
+                              EdgeMesh edges);
+
+  /// Reconcile ECS renderables with Part bodies after regenerate / history.
+  void sync_part_bodies(brep::Part& part, Material material);
 
   /// New Document → Part → camera only (blank document, no bodies).
   void create_blank_scene();

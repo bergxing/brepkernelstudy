@@ -142,6 +142,17 @@ Body* Model::make_body(BodyType type, std::string name) {
   return b;
 }
 
+bool Model::remove_body(const Guid& guid) {
+  for (auto it = bodies_.begin(); it != bodies_.end(); ++it) {
+    if (*it && (*it)->guid == guid) {
+      BREP_INFO("remove_body guid={} name='{}'", guid.to_string(), (*it)->name);
+      bodies_.erase(it);
+      return true;
+    }
+  }
+  return false;
+}
+
 void Model::link_loop(Loop* loop, std::span<CoEdge* const> coedges) {
   if (!loop) {
     BREP_ERROR("link_loop: null loop");

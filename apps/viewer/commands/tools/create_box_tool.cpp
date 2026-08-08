@@ -14,26 +14,6 @@
 namespace brep::viewer::commands {
 namespace {
 
-brep::Body* find_body(brep::Document& doc, const brep::Guid& guid) {
-  for (const auto& part : doc.parts()) {
-    for (const auto& body : part->model().bodies()) {
-      if (body && body->guid == guid) return body.get();
-    }
-  }
-  return nullptr;
-}
-
-void show_body(CommandContext& ctx, brep::Body& body) {
-  using namespace brep;
-  Material material = ctx.wood_albedo_path.empty()
-                          ? Material{}
-                          : make_wood_material(ctx.wood_albedo_path);
-  ctx.world->create_body_renderable(body.name, body.guid, tessellate_body(body),
-                                    extract_edges(body), std::move(material),
-                                    Point3d{0, 0, 0});
-  if (ctx.request_redraw) ctx.request_redraw();
-}
-
 void push_seg(EdgeMesh& mesh, const Point3d& a, const Point3d& b) {
   mesh.positions.push_back(a);
   mesh.positions.push_back(b);
@@ -233,46 +213,69 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height) {
       "max=({:.4f},{:.4f},{:.4f})",
       minx, miny, minz, maxx, maxy, maxz);
 
-  Body* body = part->add_box(BoxSpec{
+  BoxSpec spec{
       .min = Point3d{minx, miny, minz},
       .max = Point3d{maxx, maxy, maxz},
       .name = "box",
-  });
-  show_body(ctx, *body);
+  };
+  Body* body = part->add_box(spec);
+  if (!body) {
+    result_ = CommandResult::failed(QStringLiteral("创建盒子失败（再生错误）"));
+    finished_ = true;
+    return;
+  }
+
+  Guid feature_guid{};
+  if (const auto* feature = part->features().find_by_body(body->guid)) {
+    feature_guid = feature->id().guid;
+    feat::FeatureTransaction tx;
+    tx.kind = feat::TxKind::AppendFeature;
+    tx.feature = feature->id();
+    tx.feature_type = "Box";
+    tx.box_spec = spec;
+    part->feature_history().record(std::move(tx));
+  }
+
+  Material material = ctx.wood_albedo_path.empty()
+                          ? Material{}
+                          : make_wood_material(ctx.wood_albedo_path);
+  ctx.world->create_body_renderable(body->name, body->guid,
+                                    tessellate_body(*body),
+                                    extract_edges(*body), material, Point3d{},
+                                    feature_guid);
+  if (ctx.request_redraw) ctx.request_redraw();
   if (ctx.session) ctx.session->mark_dirty();
 
   const Guid guid = body->guid;
   const std::string wood = ctx.wood_albedo_path;
   ecs::World* world = ctx.world;
+  Part* part_ptr = part;
 
   if (ctx.history) {
     ctx.history->push(DocumentHistory::Entry{
         .label = QStringLiteral("创建盒子"),
         .undo =
-            [world, guid, session = ctx.session, redraw = ctx.request_redraw,
-             refresh = ctx.refresh_ui] {
-              if (!world) return;
-              world->destroy_body_renderable(guid);
-              if (auto* doc = world->document()) {
-                doc->registry().remove(guid);
-              }
+            [world, part_ptr, wood, session = ctx.session,
+             redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
+              if (!world || !part_ptr) return;
+              part_ptr->feature_history().undo(*part_ptr);
+              Material material =
+                  wood.empty() ? Material{} : make_wood_material(wood);
+              world->sync_part_bodies(*part_ptr, std::move(material));
               if (session) session->mark_dirty();
               if (redraw) redraw();
               if (refresh) refresh();
             },
         .redo =
-            [world, guid, wood, session = ctx.session,
+            [world, part_ptr, wood, session = ctx.session,
              redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
-              if (!world || !world->document()) return;
-              Body* body = find_body(*world->document(), guid);
-              if (!body) return;
-              world->document()->registry().add(*body);
-              CommandContext tmp;
-              tmp.world = world;
-              tmp.wood_albedo_path = wood;
-              tmp.request_redraw = redraw;
-              show_body(tmp, *body);
+              if (!world || !part_ptr) return;
+              part_ptr->feature_history().redo(*part_ptr);
+              Material material =
+                  wood.empty() ? Material{} : make_wood_material(wood);
+              world->sync_part_bodies(*part_ptr, std::move(material));
               if (session) session->mark_dirty();
+              if (redraw) redraw();
               if (refresh) refresh();
             },
     });

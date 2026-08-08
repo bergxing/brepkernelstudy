@@ -47,6 +47,11 @@ struct BodyRef {
   brep::Guid guid{};
 };
 
+/// Links a renderable to a parametric feature (optional).
+struct FeatureRef {
+  brep::Guid feature_guid{};
+};
+
 /// Tag: currently selected renderable (single-selection for now).
 struct SelectedTag {};
 

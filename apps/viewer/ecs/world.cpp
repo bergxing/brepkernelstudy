@@ -4,6 +4,8 @@
 
 #include "brep/brep.hpp"
 
+#include <vector>
+
 namespace brep::viewer::ecs {
 
 World::World() {
@@ -70,12 +72,77 @@ entt::entity World::create_body_renderable(std::string name,
                                            brep::Guid body_guid,
                                            TriangleMesh triangles,
                                            EdgeMesh edges, Material material,
-                                           Point3d position) {
+                                           Point3d position,
+                                           brep::Guid feature_guid) {
   const entt::entity e = create_renderable(
       std::move(name), std::move(triangles), std::move(edges),
       std::move(material), position);
   registry_.emplace<BodyRef>(e, BodyRef{body_guid});
+  if (!feature_guid.is_nil()) {
+    registry_.emplace<FeatureRef>(e, FeatureRef{feature_guid});
+  }
   return e;
+}
+
+bool World::update_body_renderable(const brep::Guid& body_guid,
+                                   TriangleMesh triangles, EdgeMesh edges) {
+  const entt::entity e = find_body_renderable(body_guid);
+  if (e == entt::null) return false;
+  auto& mesh = registry_.get<MeshComponent>(e);
+  mesh.triangles = std::move(triangles);
+  mesh.edges = std::move(edges);
+  mesh.dirty = true;
+  if (auto* cache = registry_.ctx().find<RenderCache>()) {
+    cache->force_rebuild = true;
+  }
+  return true;
+}
+
+void World::sync_part_bodies(brep::Part& part, Material material) {
+  using namespace brep;
+  std::vector<Guid> live;
+  for (const auto& body : part.model().bodies()) {
+    if (!body) continue;
+    live.push_back(body->guid);
+    Guid feature_guid{};
+    if (const auto* f = part.features().find_by_body(body->guid)) {
+      feature_guid = f->id().guid;
+    }
+    const entt::entity existing = find_body_renderable(body->guid);
+    if (existing == entt::null) {
+      create_body_renderable(body->name, body->guid, tessellate_body(*body),
+                             extract_edges(*body), material, Point3d{},
+                             feature_guid);
+    } else {
+      update_body_renderable(body->guid, tessellate_body(*body),
+                             extract_edges(*body));
+      if (!feature_guid.is_nil()) {
+        if (registry_.all_of<FeatureRef>(existing)) {
+          registry_.get<FeatureRef>(existing).feature_guid = feature_guid;
+        } else {
+          registry_.emplace<FeatureRef>(existing, FeatureRef{feature_guid});
+        }
+      }
+    }
+  }
+
+  std::vector<entt::entity> stale;
+  auto view = registry_.view<BodyRef, RenderableTag>();
+  for (auto entity : view) {
+    const Guid g = view.get<BodyRef>(entity).guid;
+    bool found = false;
+    for (const auto& live_g : live) {
+      if (live_g == g) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) stale.push_back(entity);
+  }
+  for (auto entity : stale) {
+    if (selected_entity(registry_) == entity) clear_selection(registry_);
+    registry_.destroy(entity);
+  }
 }
 
 entt::entity World::find_body_renderable(const brep::Guid& body_guid) const {
@@ -130,9 +197,16 @@ void World::create_demo_box_scene(const std::string& wood_albedo_path) {
   cam.target = Point3d{1.0, 0.5, 1.5};
   create_camera(cam);
 
-  create_renderable("demo_box", tessellate_body(*body), extract_edges(*body),
-                    make_wood_material(wood_albedo_path),
-                    Point3d{0, 0, 0});
+  Guid feature_guid{};
+  if (body) {
+    if (const auto* f = part.features().find_by_body(body->guid)) {
+      feature_guid = f->id().guid;
+    }
+    create_body_renderable("demo_box", body->guid, tessellate_body(*body),
+                           extract_edges(*body),
+                           make_wood_material(wood_albedo_path), Point3d{},
+                           feature_guid);
+  }
 
   BREP_INFO(
       "demo scene: Document={} Part={} Body={} (guid={})",

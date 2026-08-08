@@ -144,58 +144,63 @@ class CreateBoxInstantCommand final : public ICommand {
   CommandResult execute(CommandContext& ctx) override {
     using namespace brep;
     Part* part = ctx.world->document()->main_part();
-    Body* body = part->add_box(BoxSpec{
+    BoxSpec spec{
         .min = Point3d{0, 0, 0},
         .max = Point3d{2, 1, 3},
         .name = "box",
-    });
+    };
+    Body* body = part->add_box(spec);
+    if (!body) {
+      return CommandResult::failed(QStringLiteral("创建盒子失败"));
+    }
+
+    Guid feature_guid{};
+    if (const auto* feature = part->features().find_by_body(body->guid)) {
+      feature_guid = feature->id().guid;
+      feat::FeatureTransaction tx;
+      tx.kind = feat::TxKind::AppendFeature;
+      tx.feature = feature->id();
+      tx.feature_type = "Box";
+      tx.box_spec = spec;
+      part->feature_history().record(std::move(tx));
+    }
 
     Material material = ctx.wood_albedo_path.empty()
                             ? Material{}
                             : make_wood_material(ctx.wood_albedo_path);
     ctx.world->create_body_renderable(body->name, body->guid,
                                       tessellate_body(*body),
-                                      extract_edges(*body), std::move(material),
-                                      Point3d{0, 0, 0});
+                                      extract_edges(*body), material,
+                                      Point3d{}, feature_guid);
     if (ctx.session) ctx.session->mark_dirty();
     if (ctx.request_redraw) ctx.request_redraw();
 
-    const Guid guid = body->guid;
     const std::string wood = ctx.wood_albedo_path;
     ecs::World* world = ctx.world;
+    Part* part_ptr = part;
     if (ctx.history) {
       ctx.history->push({
           .label = QStringLiteral("创建盒子"),
           .undo =
-              [world, guid, session = ctx.session, redraw = ctx.request_redraw,
-               refresh = ctx.refresh_ui] {
-                if (!world) return;
-                world->destroy_body_renderable(guid);
-                if (auto* doc = world->document()) doc->registry().remove(guid);
+              [world, part_ptr, wood, session = ctx.session,
+               redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
+                if (!world || !part_ptr) return;
+                part_ptr->feature_history().undo(*part_ptr);
+                Material mat =
+                    wood.empty() ? Material{} : make_wood_material(wood);
+                world->sync_part_bodies(*part_ptr, std::move(mat));
                 if (session) session->mark_dirty();
                 if (redraw) redraw();
                 if (refresh) refresh();
               },
           .redo =
-              [world, guid, wood, session = ctx.session,
+              [world, part_ptr, wood, session = ctx.session,
                redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
-                if (!world || !world->document()) return;
-                Body* found = nullptr;
-                for (const auto& part : world->document()->parts()) {
-                  for (const auto& b : part->model().bodies()) {
-                    if (b && b->guid == guid) {
-                      found = b.get();
-                      break;
-                    }
-                  }
-                }
-                if (!found) return;
-                world->document()->registry().add(*found);
-                Material material = wood.empty() ? Material{}
-                                                 : make_wood_material(wood);
-                world->create_body_renderable(
-                    found->name, found->guid, tessellate_body(*found),
-                    extract_edges(*found), std::move(material), Point3d{});
+                if (!world || !part_ptr) return;
+                part_ptr->feature_history().redo(*part_ptr);
+                Material mat =
+                    wood.empty() ? Material{} : make_wood_material(wood);
+                world->sync_part_bodies(*part_ptr, std::move(mat));
                 if (session) session->mark_dirty();
                 if (redraw) redraw();
                 if (refresh) refresh();
