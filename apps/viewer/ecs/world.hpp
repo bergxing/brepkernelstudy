@@ -3,6 +3,7 @@
 #include "ecs/components.hpp"
 
 #include "brep/document.hpp"
+#include "brep/io/bks_cache.hpp"
 
 #include <entt/entt.hpp>
 
@@ -59,7 +60,9 @@ class World {
                               EdgeMesh edges);
 
   /// Reconcile ECS renderables with Part bodies after regenerate / history.
-  void sync_part_bodies(brep::Part& part, Material material);
+  /// If cache is provided and contains a body Guid, tessellation is skipped.
+  void sync_part_bodies(brep::Part& part, Material material,
+                        const brep::io::BodyMeshCache* cache = nullptr);
 
   /// New Document → Part → camera only (blank document, no bodies).
   void create_blank_scene();
@@ -69,7 +72,8 @@ class World {
 
   /// Replace the active Document (e.g. after .xl load) and rebuild view.
   void adopt_document(std::unique_ptr<brep::Document> document,
-                      Material material);
+                      Material material,
+                      const brep::io::BodyMeshCache* cache = nullptr);
 
   [[nodiscard]] Camera* main_camera() noexcept;
   [[nodiscard]] const Camera* main_camera() const noexcept;

@@ -98,7 +98,8 @@ bool World::update_body_renderable(const brep::Guid& body_guid,
   return true;
 }
 
-void World::sync_part_bodies(brep::Part& part, Material material) {
+void World::sync_part_bodies(brep::Part& part, Material material,
+                             const brep::io::BodyMeshCache* cache) {
   using namespace brep;
   std::vector<Guid> live;
   for (const auto& body : part.model().bodies()) {
@@ -108,14 +109,24 @@ void World::sync_part_bodies(brep::Part& part, Material material) {
     if (const auto* f = part.features().find_by_body(body->guid)) {
       feature_guid = f->id().guid;
     }
+
+    TriangleMesh tris;
+    EdgeMesh edges;
+    if (cache && cache->has(body->guid)) {
+      tris = cache->triangles.at(body->guid);
+      edges = cache->edges.at(body->guid);
+    } else {
+      tris = tessellate_body(*body);
+      edges = extract_edges(*body);
+    }
+
     const entt::entity existing = find_body_renderable(body->guid);
     if (existing == entt::null) {
-      create_body_renderable(body->name, body->guid, tessellate_body(*body),
-                             extract_edges(*body), material, Point3d{},
+      create_body_renderable(body->name, body->guid, std::move(tris),
+                             std::move(edges), material, Point3d{},
                              feature_guid);
     } else {
-      update_body_renderable(body->guid, tessellate_body(*body),
-                             extract_edges(*body));
+      update_body_renderable(body->guid, std::move(tris), std::move(edges));
       if (!feature_guid.is_nil()) {
         if (registry_.all_of<FeatureRef>(existing)) {
           registry_.get<FeatureRef>(existing).feature_guid = feature_guid;
@@ -215,7 +226,8 @@ void World::create_demo_box_scene(const std::string& wood_albedo_path) {
 }
 
 void World::adopt_document(std::unique_ptr<brep::Document> document,
-                           Material material) {
+                           Material material,
+                           const brep::io::BodyMeshCache* cache) {
   using namespace brep;
   if (!document) return;
 
@@ -248,13 +260,14 @@ void World::adopt_document(std::unique_ptr<brep::Document> document,
       cam.target = Point3d{1.0, 0.5, 1.5};
     }
     create_camera(cam);
-    sync_part_bodies(*part, std::move(material));
+    sync_part_bodies(*part, std::move(material), cache);
   } else {
     create_camera(cam);
   }
 
-  BREP_INFO("adopted Document={} parts={}", document_->guid.to_string(),
-            document_->parts().size());
+  BREP_INFO("adopted Document={} parts={} occurrences={}",
+            document_->guid.to_string(), document_->parts().size(),
+            document_->assembly().occurrences().size());
 }
 
 Camera* World::main_camera() noexcept {

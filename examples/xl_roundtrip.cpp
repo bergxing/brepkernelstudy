@@ -11,28 +11,53 @@ int main() {
 
   auto doc = Document::create("xl_roundtrip");
   Part& part = doc->add_part("MainPart");
+
+  // Box + params
   Body* body = part.add_box(BoxSpec{
       .min = Point3d{0, 0, 0},
       .max = Point3d{2, 1, 3},
       .name = "box",
   });
-  if (!body) {
-    std::cerr << "add_box failed\n";
-    return 1;
-  }
+  if (!body) return 1;
   const Guid body_guid = body->guid;
   auto* feature = part.features().find_by_body(body_guid);
-  if (!feature) {
-    std::cerr << "missing feature\n";
-    return 1;
-  }
+  if (!feature) return 1;
   part.edit_feature_params(feature->id(),
                            {{"Length", 4.0}, {"Width", 5.0}, {"Height", 2.5}});
+
+  // V1.1: Sketch + Extrude
+  const auto sk =
+      part.add_rectangle_sketch("BaseSketch", Point2d{0, 0}, Point2d{1.5, 1.0});
+  Body* pad = part.add_extrude(sk, 0.75, "Pad");
+  if (!pad) {
+    std::cerr << "extrude failed\n";
+    return 1;
+  }
+  const Guid pad_guid = pad->guid;
+
+  // V2: Assembly / Mate / TopologyRef
+  const auto o1 = doc->assembly().add_occurrence(part.guid, {}, "occ1");
+  RigidTransform xf;
+  xf.translation = Point3d{0, 0, 0};
+  const auto o2 = doc->assembly().add_occurrence(part.guid, xf, "occ2");
+  asm_::Mate mate;
+  mate.kind = asm_::MateKind::Distance;
+  mate.a = o1;
+  mate.b = o2;
+  mate.aux = 3.0;
+  mate.face_ref_a = naming::TopologyRef{feature->id(), "end_face"};
+  mate.face_ref_b = naming::TopologyRef{sk, "profile"};
+  doc->assembly().add_mate(mate);
+  asm_::MateSolver::solve(doc->assembly(), &part.parameters());
 
   const fs::path path = fs::temp_directory_path() / "brep_xl_roundtrip.xl";
   auto saved = io::save_xl(*doc, path);
   if (!saved.ok) {
     std::cerr << "save failed: " << saved.error << "\n";
+    return 1;
+  }
+  if (!fs::exists(io::bks_cache_path_for(path))) {
+    std::cerr << "expected .bks.cache sidecar\n";
     return 1;
   }
 
@@ -43,36 +68,46 @@ int main() {
   }
 
   Part* p2 = loaded.document->main_part();
-  if (!p2) {
-    std::cerr << "no part\n";
+  if (!p2) return 1;
+  if (!p2->find_body(body_guid) || !p2->find_body(pad_guid)) {
+    std::cerr << "body guids not restored\n";
     return 1;
   }
-  Body* b2 = p2->find_body(body_guid);
-  if (!b2) {
-    std::cerr << "body guid not restored\n";
+
+  bool has_sketch = false;
+  bool has_extrude = false;
+  for (const auto& f : p2->features().features()) {
+    if (f->type_name() == "Sketch") has_sketch = true;
+    if (f->type_name() == "Extrude") has_extrude = true;
+  }
+  if (!has_sketch || !has_extrude) {
+    std::cerr << "sketch/extrude missing after load\n";
     return 1;
   }
-  auto* f2 = p2->features().find_by_body(body_guid);
-  if (!f2 || f2->type_name() != "Box") {
-    std::cerr << "box feature missing after load\n";
+
+  if (loaded.document->assembly().occurrences().size() != 2 ||
+      loaded.document->assembly().mates().size() != 1) {
+    std::cerr << "assembly not restored\n";
     return 1;
   }
-  auto* box = static_cast<feat::BoxFeature*>(f2);
-  const double len = p2->parameters().get(box->length_id()).value_or(0);
-  const double wid = p2->parameters().get(box->width_id()).value_or(0);
-  const double hei = p2->parameters().get(box->height_id()).value_or(0);
-  if (std::abs(len - 4.0) > 1e-9 || std::abs(wid - 5.0) > 1e-9 ||
-      std::abs(hei - 2.5) > 1e-9) {
-    std::cerr << "param mismatch after load\n";
+  const auto& mate2 = loaded.document->assembly().mates().front();
+  if (mate2.face_ref_a.local_name != "end_face" ||
+      std::abs(mate2.aux - 3.0) > 1e-9) {
+    std::cerr << "mate/topology ref mismatch\n";
+    return 1;
+  }
+
+  auto cache = io::load_bks_cache(path, loaded.document->guid);
+  if (!cache.ok || !cache.cache.has(body_guid) || !cache.cache.has(pad_guid)) {
+    std::cerr << "cache load failed: " << cache.error << "\n";
     return 1;
   }
 
   // Tamper CRC and expect failure.
   {
     std::fstream f(path, std::ios::binary | std::ios::in | std::ios::out);
-    f.seekp(-1, std::ios::end);
-    char c = 0;
     f.seekg(-1, std::ios::end);
+    char c = 0;
     f.read(&c, 1);
     c ^= 0x5A;
     f.seekp(-1, std::ios::end);
@@ -85,6 +120,7 @@ int main() {
   }
 
   fs::remove(path);
-  std::cout << "xl_roundtrip ok\n";
+  fs::remove(io::bks_cache_path_for(path));
+  std::cout << "xl_roundtrip ok (v1.1 sketch/extrude + v2 assembly + cache)\n";
   return 0;
 }

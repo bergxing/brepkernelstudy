@@ -3,6 +3,7 @@
 #include "brep/feat/box_feature.hpp"
 #include "brep/feat/extrude_feature.hpp"
 #include "brep/feat/sketch_feature.hpp"
+#include "brep/io/bks_cache.hpp"
 #include "brep/log.hpp"
 
 #include <cstring>
@@ -338,6 +339,97 @@ bool read_feature(BinReader& r, Part& part) {
   return false;
 }
 
+void write_xform(BinWriter& w, const RigidTransform& t) {
+  w.f64(t.translation.x());
+  w.f64(t.translation.y());
+  w.f64(t.translation.z());
+  w.f64(t.x_axis.x());
+  w.f64(t.x_axis.y());
+  w.f64(t.x_axis.z());
+  w.f64(t.y_axis.x());
+  w.f64(t.y_axis.y());
+  w.f64(t.y_axis.z());
+  w.f64(t.z_axis.x());
+  w.f64(t.z_axis.y());
+  w.f64(t.z_axis.z());
+}
+
+RigidTransform read_xform(BinReader& r) {
+  RigidTransform t;
+  t.translation = Point3d{r.f64(), r.f64(), r.f64()};
+  t.x_axis = Vector3d{r.f64(), r.f64(), r.f64()};
+  t.y_axis = Vector3d{r.f64(), r.f64(), r.f64()};
+  t.z_axis = Vector3d{r.f64(), r.f64(), r.f64()};
+  return t;
+}
+
+void write_topo_ref(BinWriter& w, const naming::TopologyRef& ref) {
+  w.guid(ref.feature.guid);
+  w.str(ref.local_name);
+}
+
+naming::TopologyRef read_topo_ref(BinReader& r) {
+  naming::TopologyRef ref;
+  ref.feature.guid = r.guid();
+  ref.local_name = r.str();
+  return ref;
+}
+
+void write_assembly(BinWriter& w, const asm_::Assembly& assembly) {
+  w.u32(static_cast<std::uint32_t>(assembly.occurrences().size()));
+  for (const auto& occ : assembly.occurrences()) {
+    w.guid(occ.id.guid);
+    w.guid(occ.part_guid);
+    w.str(occ.name);
+    write_xform(w, occ.transform);
+  }
+  w.u32(static_cast<std::uint32_t>(assembly.mates().size()));
+  for (const auto& mate : assembly.mates()) {
+    w.guid(mate.id);
+    w.u8(static_cast<std::uint8_t>(mate.kind));
+    w.guid(mate.a.guid);
+    w.guid(mate.b.guid);
+    write_topo_ref(w, mate.face_ref_a);
+    write_topo_ref(w, mate.face_ref_b);
+    w.guid(mate.dim.guid);
+    w.f64(mate.aux);
+  }
+}
+
+bool read_assembly(BinReader& r, asm_::Assembly& assembly, std::string& err) {
+  const std::uint32_t noc = r.u32();
+  for (std::uint32_t i = 0; i < noc; ++i) {
+    asm_::Occurrence occ;
+    occ.id.guid = r.guid();
+    occ.part_guid = r.guid();
+    occ.name = r.str();
+    occ.transform = read_xform(r);
+    if (!r.ok()) {
+      err = r.error();
+      return false;
+    }
+    assembly.occurrences().push_back(std::move(occ));
+  }
+  const std::uint32_t nm = r.u32();
+  for (std::uint32_t i = 0; i < nm; ++i) {
+    asm_::Mate mate;
+    mate.id = r.guid();
+    mate.kind = static_cast<asm_::MateKind>(r.u8());
+    mate.a.guid = r.guid();
+    mate.b.guid = r.guid();
+    mate.face_ref_a = read_topo_ref(r);
+    mate.face_ref_b = read_topo_ref(r);
+    mate.dim.guid = r.guid();
+    mate.aux = r.f64();
+    if (!r.ok()) {
+      err = r.error();
+      return false;
+    }
+    assembly.mates().push_back(std::move(mate));
+  }
+  return true;
+}
+
 std::vector<std::uint8_t> encode_payload(const Document& doc) {
   BinWriter w;
   w.guid(doc.guid);
@@ -364,11 +456,13 @@ std::vector<std::uint8_t> encode_payload(const Document& doc) {
       if (f) write_feature(w, *f);
     }
   }
+  // schema v2+: assembly / mates / topology refs
+  write_assembly(w, doc.assembly());
   return w.data();
 }
 
 std::unique_ptr<Document> decode_payload(const std::vector<std::uint8_t>& payload,
-                                         std::string& err) {
+                                         std::uint32_t schema, std::string& err) {
   BinReader r(payload);
   const Guid doc_guid = r.guid();
   const std::string doc_name = r.str();
@@ -426,6 +520,14 @@ std::unique_ptr<Document> decode_payload(const std::vector<std::uint8_t>& payloa
     }
   }
 
+  if (schema >= 2) {
+    if (!read_assembly(r, doc->assembly(), err)) return nullptr;
+    // Re-apply mates so transforms match solved state.
+    param::ParameterStore* params = nullptr;
+    if (Part* main = doc->main_part()) params = &main->parameters();
+    asm_::MateSolver::solve(doc->assembly(), params);
+  }
+
   if (!r.ok()) {
     err = r.error();
     return nullptr;
@@ -471,9 +573,16 @@ XlSaveResult save_xl(const Document& doc, const std::filesystem::path& path) {
       return result;
     }
 
+    // Optional mesh sidecar for faster viewer open.
+    const auto cache = save_bks_cache(doc, path);
+    if (!cache.ok) {
+      BREP_WARN("xl: mesh cache not written: {}", cache.error);
+    }
+
     result.ok = true;
     g_last_error.clear();
-    BREP_INFO("saved .xl '{}' ({} bytes payload)", path.string(), payload.size());
+    BREP_INFO("saved .xl '{}' ({} bytes payload, schema={})", path.string(),
+              payload.size(), kXlSchemaVersion);
     return result;
   } catch (const std::exception& ex) {
     result.error = ex.what();
@@ -518,7 +627,7 @@ XlLoadResult load_xl(const std::filesystem::path& path) {
       set_error(result.error);
       return result;
     }
-    if (schema != kXlSchemaVersion) {
+    if (schema < kXlSchemaVersionMin || schema > kXlSchemaVersion) {
       result.error = "unsupported schema_version " + std::to_string(schema);
       set_error(result.error);
       return result;
@@ -546,7 +655,7 @@ XlLoadResult load_xl(const std::filesystem::path& path) {
     }
 
     std::string err;
-    result.document = decode_payload(payload, err);
+    result.document = decode_payload(payload, schema, err);
     if (!result.document) {
       result.error = err.empty() ? "decode failed" : err;
       set_error(result.error);
@@ -555,8 +664,9 @@ XlLoadResult load_xl(const std::filesystem::path& path) {
 
     result.document->set_path(path.string());
     g_last_error.clear();
-    BREP_INFO("loaded .xl '{}' parts={}", path.string(),
-              result.document->parts().size());
+    BREP_INFO("loaded .xl '{}' parts={} occurrences={} schema={}",
+              path.string(), result.document->parts().size(),
+              result.document->assembly().occurrences().size(), schema);
     return result;
   } catch (const std::exception& ex) {
     result.error = ex.what();

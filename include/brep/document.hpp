@@ -1,5 +1,6 @@
 #pragma once
 
+#include "brep/asm/assembly.hpp"
 #include "brep/iobject.hpp"
 #include "brep/object_registry.hpp"
 #include "brep/part.hpp"
@@ -10,7 +11,7 @@
 
 namespace brep {
 
-/// Document owns Parts and the Guid registry.
+/// Document owns Parts, an Assembly, and the Guid registry.
 class Document final : public IObject {
  public:
   [[nodiscard]] static std::unique_ptr<Document> create(
@@ -42,12 +43,18 @@ class Document final : public IObject {
     return parts_;
   }
 
-  /// Drop all parts and registry entries; keep this Document's Guid/name.
+  [[nodiscard]] asm_::Assembly& assembly() noexcept { return assembly_; }
+  [[nodiscard]] const asm_::Assembly& assembly() const noexcept {
+    return assembly_;
+  }
+
+  /// Drop all parts/assembly and registry entries; keep this Document's Guid/name.
   void clear();
 
  private:
   ObjectRegistry registry_;
   std::vector<std::unique_ptr<Part>> parts_;
+  asm_::Assembly assembly_;
   std::string path_;
   bool dirty_{false};
 };

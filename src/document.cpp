@@ -36,6 +36,7 @@ const Part* Document::main_part() const noexcept {
 void Document::clear() {
   registry_.clear();
   parts_.clear();
+  assembly_ = asm_::Assembly{};
   registry_.add(*this);
   path_.clear();
   dirty_ = false;

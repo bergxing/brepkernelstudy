@@ -13,6 +13,7 @@
 #include "brep/feat/sketch_feature.hpp"
 #include "brep/geometry.hpp"
 #include "brep/guid.hpp"
+#include "brep/io/bks_cache.hpp"
 #include "brep/io/xl_document.hpp"
 #include "brep/iobject.hpp"
 #include "brep/log.hpp"

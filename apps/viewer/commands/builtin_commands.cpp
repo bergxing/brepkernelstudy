@@ -140,7 +140,19 @@ class OpenXlCommand final : public ICommand {
     Material material = ctx.wood_albedo_path.empty()
                             ? Material{}
                             : make_wood_material(ctx.wood_albedo_path);
-    ctx.world->adopt_document(std::move(loaded.document), std::move(material));
+
+    // Prefer sidecar mesh cache when present and matching document Guid.
+    brep::io::BodyMeshCache mesh_cache;
+    const brep::io::BodyMeshCache* cache_ptr = nullptr;
+    auto cache_loaded =
+        brep::io::load_bks_cache(path.toStdString(), loaded.document->guid);
+    if (cache_loaded.ok) {
+      mesh_cache = std::move(cache_loaded.cache);
+      cache_ptr = &mesh_cache;
+    }
+
+    ctx.world->adopt_document(std::move(loaded.document), std::move(material),
+                              cache_ptr);
     ctx.session->set_document_path(path);
     if (ctx.after_document_reset) ctx.after_document_reset();
     if (ctx.request_redraw) ctx.request_redraw();

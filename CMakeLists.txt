@@ -111,6 +111,7 @@ add_library(brep
   src/ops/extrude.cpp
   src/asm/assembly.cpp
   src/io/xl_document.cpp
+  src/io/bks_cache.cpp
 )
 target_include_directories(brep
   PUBLIC
