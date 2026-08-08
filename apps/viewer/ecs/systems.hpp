@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace brep::viewer {
 class VulkanRenderer;
@@ -42,6 +43,12 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
                                            const Camera& cam, int viewport_w,
                                            int viewport_h, float sx, float sy);
 
+/// Box pick in screen space. Left→right (x0<=x1): window (fully inside).
+/// Right→left: crossing (screen AABB intersects rect).
+[[nodiscard]] std::vector<entt::entity> pick_renderables_in_rect(
+    entt::registry& registry, const Camera& cam, int viewport_w,
+    int viewport_h, float x0, float y0, float x1, float y1);
+
 /// World AABB of all renderables. Returns false when the scene is empty.
 [[nodiscard]] bool scene_aabb(const entt::registry& registry, Point3d& out_min,
                               Point3d& out_max);
@@ -55,6 +62,9 @@ void fit_camera_to_scene(const entt::registry& registry, Camera& camera,
 void set_selection(entt::registry& registry, entt::entity entity);
 /// Ctrl+click: toggle entity in/out of the selection set.
 void toggle_selection(entt::registry& registry, entt::entity entity);
+/// Replace or union-select a set of entities (box select).
+void select_entities(entt::registry& registry,
+                     const std::vector<entt::entity>& entities, bool additive);
 void clear_selection(entt::registry& registry);
 [[nodiscard]] entt::entity selected_entity(const entt::registry& registry);
 [[nodiscard]] std::size_t selected_count(const entt::registry& registry);

@@ -6,8 +6,11 @@
 
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QRubberBand>
 #include <QWheelEvent>
 #include <QWidget>
+
+#include <algorithm>
 
 namespace brep::viewer {
 
@@ -41,6 +44,44 @@ QVulkanWindowRenderer* VulkanWindow::createRenderer() {
   return renderer_;
 }
 
+QRect VulkanWindow::rubber_band_geometry(float x0, float y0, float x1,
+                                         float y1) const {
+  if (!rubber_host_) return {};
+  const int cw = std::max(1, rubber_host_->width());
+  const int ch = std::max(1, rubber_host_->height());
+  const int vw = std::max(1, width());
+  const int vh = std::max(1, height());
+  const float sx = float(cw) / float(vw);
+  const float sy = float(ch) / float(vh);
+  const int left = int(std::floor(std::min(x0, x1) * sx));
+  const int top = int(std::floor(std::min(y0, y1) * sy));
+  const int right = int(std::ceil(std::max(x0, x1) * sx));
+  const int bottom = int(std::ceil(std::max(y0, y1) * sy));
+  return QRect(QPoint(left, top), QPoint(right, bottom)).normalized();
+}
+
+void VulkanWindow::update_rubber_band(float x0, float y0, float x1, float y1) {
+  if (!rubber_host_) return;
+  if (!rubber_band_) {
+    rubber_band_ = new QRubberBand(QRubberBand::Rectangle, rubber_host_);
+  }
+  const bool crossing = x1 < x0;
+  rubber_band_->setStyleSheet(
+      crossing ? QStringLiteral(
+                     "QRubberBand { border: 1px dashed #2ecc71; "
+                     "background-color: rgba(46, 204, 113, 40); }")
+               : QStringLiteral(
+                     "QRubberBand { border: 1px solid #3498db; "
+                     "background-color: rgba(52, 152, 219, 40); }"));
+  rubber_band_->setGeometry(rubber_band_geometry(x0, y0, x1, y1));
+  rubber_band_->show();
+  rubber_band_->raise();
+}
+
+void VulkanWindow::hide_rubber_band() {
+  if (rubber_band_) rubber_band_->hide();
+}
+
 void VulkanWindow::maybe_select_at(float x, float y, bool multi) {
   if (!selection_enabled_ || !world_) return;
   const QSize sz = size();
@@ -53,6 +94,19 @@ void VulkanWindow::maybe_select_at(float x, float y, bool multi) {
   } else {
     ecs::set_selection(world_->registry(), hit);
   }
+  requestUpdate();
+  if (selection_callback_) {
+    selection_callback_(ecs::selected_entity(world_->registry()));
+  }
+}
+
+void VulkanWindow::maybe_box_select(float x0, float y0, float x1, float y1,
+                                    bool multi) {
+  if (!selection_enabled_ || !world_) return;
+  const QSize sz = size();
+  const auto hits = ecs::pick_renderables_in_rect(
+      world_->registry(), camera_, sz.width(), sz.height(), x0, y0, x1, y1);
+  ecs::select_entities(world_->registry(), hits, multi);
   requestUpdate();
   if (selection_callback_) {
     selection_callback_(ecs::selected_entity(world_->registry()));
@@ -77,6 +131,7 @@ void VulkanWindow::fit_view_to_scene() {
     world_->registry().ctx().get<ecs::InputState>().drag_mode =
         ecs::InputState::DragMode::None;
   }
+  hide_rubber_band();
   restore_idle_cursor();
   requestUpdate();
 }
@@ -133,9 +188,15 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
   auto& state = world_->registry().ctx().get<ecs::InputState>();
   ecs::input_on_move(world_->registry(), camera_, float(pos.x()), float(pos.y()),
                      int(buttons));
+
   if (selection_enabled_ &&
-      (state.drag_mode == ecs::InputState::DragMode::None ||
-       state.drag_mode == ecs::InputState::DragMode::Cancelled) &&
+      state.drag_mode == ecs::InputState::DragMode::BoxSelect) {
+    update_rubber_band(state.press_x, state.press_y, state.last_x,
+                       state.last_y);
+  }
+
+  if (selection_enabled_ &&
+      state.drag_mode == ecs::InputState::DragMode::None &&
       buttons == Qt::NoButton) {
     restore_idle_cursor();
   }
@@ -149,13 +210,22 @@ void VulkanWindow::pointer_release(QPointF pos) {
   if (!selection_enabled_) {
     // Reset any stray drag state, but keep the tool crosshair (override cursor).
     (void)ecs::input_on_release(world_->registry());
+    hide_rubber_band();
     return;
   }
 
-  const bool multi = ecs::pending_click_is_multi(world_->registry());
+  auto& state = world_->registry().ctx().get<ecs::InputState>();
+  const bool multi = state.multi_select;
+  const bool is_box = state.drag_mode == ecs::InputState::DragMode::BoxSelect;
+  const float x0 = state.press_x;
+  const float y0 = state.press_y;
   const bool click = ecs::input_on_release(world_->registry());
+  hide_rubber_band();
   restore_idle_cursor();
-  if (click) {
+
+  if (is_box) {
+    maybe_box_select(x0, y0, float(pos.x()), float(pos.y()), multi);
+  } else if (click) {
     maybe_select_at(float(pos.x()), float(pos.y()), multi);
   }
 }

@@ -101,10 +101,7 @@ int input_on_press(entt::registry& registry, float x, float y, int button,
 void input_on_move(entt::registry& registry, Camera& camera, float x, float y,
                    int buttons) {
   auto& state = input(registry);
-  if (state.drag_mode == InputState::DragMode::None ||
-      state.drag_mode == InputState::DragMode::Cancelled) {
-    return;
-  }
+  if (state.drag_mode == InputState::DragMode::None) return;
 
   if (state.drag_mode == InputState::DragMode::PendingSelect) {
     if (!(buttons & Qt::LeftButton)) return;
@@ -115,8 +112,15 @@ void input_on_move(entt::registry& registry, Camera& camera, float x, float y,
       state.last_y = y;
       return;
     }
-    // Dragged with LMB: cancel pick, do not orbit.
-    state.drag_mode = InputState::DragMode::Cancelled;
+    // Dragged with LMB: start rubber-band box select.
+    state.drag_mode = InputState::DragMode::BoxSelect;
+    state.last_x = x;
+    state.last_y = y;
+    return;
+  } else if (state.drag_mode == InputState::DragMode::BoxSelect) {
+    if (!(buttons & Qt::LeftButton)) return;
+    state.last_x = x;
+    state.last_y = y;
     return;
   } else if (state.drag_mode == InputState::DragMode::Orbit) {
     if (!(buttons & Qt::MiddleButton)) return;
@@ -384,6 +388,108 @@ entt::entity pick_renderable(entt::registry& registry, const Camera& cam,
 
 namespace {
 
+bool entity_world_aabb(const MeshComponent& mesh, const Transform& xform,
+                       Point3d& out_min, Point3d& out_max) {
+  if (mesh.triangles.vertices.empty()) return false;
+  bool any = false;
+  for (const auto& v : mesh.triangles.vertices) {
+    const Point3d p{v.position.x() + xform.position.x(),
+                    v.position.y() + xform.position.y(),
+                    v.position.z() + xform.position.z()};
+    if (!any) {
+      out_min = out_max = p;
+      any = true;
+    } else {
+      out_min = Point3d{std::min(out_min.x(), p.x()),
+                        std::min(out_min.y(), p.y()),
+                        std::min(out_min.z(), p.z())};
+      out_max = Point3d{std::max(out_max.x(), p.x()),
+                        std::max(out_max.y(), p.y()),
+                        std::max(out_max.z(), p.z())};
+    }
+  }
+  return any;
+}
+
+bool project_aabb_to_screen(const Camera& cam, int viewport_w, int viewport_h,
+                            const Point3d& bmin, const Point3d& bmax,
+                            float& out_min_x, float& out_min_y,
+                            float& out_max_x, float& out_max_y) {
+  const Point3d corners[8] = {
+      {bmin.x(), bmin.y(), bmin.z()}, {bmax.x(), bmin.y(), bmin.z()},
+      {bmin.x(), bmax.y(), bmin.z()}, {bmax.x(), bmax.y(), bmin.z()},
+      {bmin.x(), bmin.y(), bmax.z()}, {bmax.x(), bmin.y(), bmax.z()},
+      {bmin.x(), bmax.y(), bmax.z()}, {bmax.x(), bmax.y(), bmax.z()},
+  };
+  bool any = false;
+  for (const auto& c : corners) {
+    float sx = 0.0f;
+    float sy = 0.0f;
+    if (!commands::world_to_screen(cam, viewport_w, viewport_h, c, sx, sy)) {
+      continue;
+    }
+    if (!any) {
+      out_min_x = out_max_x = sx;
+      out_min_y = out_max_y = sy;
+      any = true;
+    } else {
+      out_min_x = std::min(out_min_x, sx);
+      out_max_x = std::max(out_max_x, sx);
+      out_min_y = std::min(out_min_y, sy);
+      out_max_y = std::max(out_max_y, sy);
+    }
+  }
+  return any;
+}
+
+}  // namespace
+
+std::vector<entt::entity> pick_renderables_in_rect(
+    entt::registry& registry, const Camera& cam, int viewport_w,
+    int viewport_h, float x0, float y0, float x1, float y1) {
+  std::vector<entt::entity> hits;
+  const float sel_min_x = std::min(x0, x1);
+  const float sel_max_x = std::max(x0, x1);
+  const float sel_min_y = std::min(y0, y1);
+  const float sel_max_y = std::max(y0, y1);
+  if (sel_max_x - sel_min_x < 1.0f || sel_max_y - sel_min_y < 1.0f) {
+    return hits;
+  }
+
+  // Left→right: window (fully inside). Right→left: crossing (intersects).
+  const bool window_mode = x1 >= x0;
+
+  auto view = registry.view<MeshComponent, Transform, RenderableTag>();
+  for (auto entity : view) {
+    Point3d bmin;
+    Point3d bmax;
+    if (!entity_world_aabb(view.get<MeshComponent>(entity),
+                           view.get<Transform>(entity), bmin, bmax)) {
+      continue;
+    }
+    float omin_x = 0, omin_y = 0, omax_x = 0, omax_y = 0;
+    if (!project_aabb_to_screen(cam, viewport_w, viewport_h, bmin, bmax, omin_x,
+                                omin_y, omax_x, omax_y)) {
+      continue;
+    }
+
+    const bool intersects =
+        !(omax_x < sel_min_x || omin_x > sel_max_x || omax_y < sel_min_y ||
+          omin_y > sel_max_y);
+    if (!intersects) continue;
+
+    if (window_mode) {
+      const bool contained = omin_x >= sel_min_x && omax_x <= sel_max_x &&
+                             omin_y >= sel_min_y && omax_y <= sel_max_y;
+      if (!contained) continue;
+    }
+    hits.push_back(entity);
+  }
+  return hits;
+}
+
+namespace {
+
 void clear_selected_tags(entt::registry& registry) {
   auto view = registry.view<SelectedTag>();
   std::vector<entt::entity> tagged;
@@ -428,6 +534,28 @@ void toggle_selection(entt::registry& registry, entt::entity entity) {
   } else {
     registry.emplace<SelectedTag>(entity);
     sel.primary = entity;
+  }
+  render_cache(registry).force_rebuild = true;
+}
+
+void select_entities(entt::registry& registry,
+                     const std::vector<entt::entity>& entities, bool additive) {
+  auto& sel = selection(registry);
+  if (!additive) {
+    clear_selected_tags(registry);
+    sel.primary = entt::null;
+  }
+
+  for (auto entity : entities) {
+    if (entity == entt::null || !registry.valid(entity)) continue;
+    if (!registry.all_of<SelectedTag>(entity)) {
+      registry.emplace<SelectedTag>(entity);
+    }
+    sel.primary = entity;
+  }
+
+  if (!additive && entities.empty()) {
+    sel.primary = entt::null;
   }
   render_cache(registry).force_rebuild = true;
 }

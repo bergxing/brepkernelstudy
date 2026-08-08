@@ -123,7 +123,7 @@ MainWindow::MainWindow(QWidget* parent)
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "XCAD | 左键选择 | Ctrl+左键多选 | 中键平移 | Ctrl+中键旋转 | "
+      "XCAD | 左键选择/框选 | Ctrl+追加 | 中键平移 | Ctrl+中键旋转 | "
       "双击中键缩放到全部 | ESC 取消工具"));
 }
 
@@ -189,6 +189,7 @@ VulkanWindow* MainWindow::create_view_window(const QString& title,
   container->setAttribute(Qt::WA_Hover, true);
   // Break inheritance from QMdiSubWindow border resize cursors.
   container->setCursor(Qt::ArrowCursor);
+  vulkan_window->set_rubber_band_host(container);
   container->installEventFilter(vulkan_window);
   container->installEventFilter(this);
   container->setMinimumSize(160, 120);

@@ -19,6 +19,39 @@ Eigen::Matrix4f to_eigen(const float m[16]) {
 
 }  // namespace
 
+bool world_to_screen(const Camera& cam, int viewport_w, int viewport_h,
+                     const Point3d& world, float& out_sx, float& out_sy) {
+  if (viewport_w <= 0 || viewport_h <= 0) return false;
+
+  const float aspect = float(viewport_w) / float(viewport_h);
+  float view[16];
+  float proj[16];
+  cam.view_matrix(view);
+  if (cam.ortho) {
+    const float half_h = cam.ortho_half_h;
+    const float half_w = half_h * aspect;
+    Camera::ortho_matrix(half_w, half_h, 0.05f, 500.0f, proj);
+  } else {
+    Camera::perspective(cam.fov_deg, aspect, 0.05f, 500.0f, proj);
+  }
+
+  const Eigen::Matrix4f V = to_eigen(view);
+  const Eigen::Matrix4f P = to_eigen(proj);
+  const Eigen::Matrix4f mvp = P * V;
+  Eigen::Vector4f clip =
+      mvp * Eigen::Vector4f(float(world.x()), float(world.y()),
+                            float(world.z()), 1.0f);
+  if (std::abs(clip.w()) < 1e-8f) return false;
+  // Behind camera (perspective) or outside ortho depth.
+  if (clip.w() < 0.0f) return false;
+  const float inv_w = 1.0f / clip.w();
+  const float ndc_x = clip.x() * inv_w;
+  const float ndc_y = clip.y() * inv_w;
+  out_sx = (ndc_x + 1.0f) * 0.5f * float(viewport_w);
+  out_sy = (ndc_y + 1.0f) * 0.5f * float(viewport_h);
+  return true;
+}
+
 bool screen_to_ray(const Camera& cam, int viewport_w, int viewport_h, float sx,
                    float sy, Point3d& out_origin, Vector3d& out_dir) {
   if (viewport_w <= 0 || viewport_h <= 0) return false;

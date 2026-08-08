@@ -11,6 +11,11 @@ namespace brep::viewer::commands {
 bool screen_to_ray(const Camera& cam, int viewport_w, int viewport_h, float sx,
                    float sy, Point3d& out_origin, Vector3d& out_dir);
 
+/// World point → screen pixel (same convention as screen_to_ray).
+/// Returns false when behind the camera / not projectable.
+bool world_to_screen(const Camera& cam, int viewport_w, int viewport_h,
+                     const Point3d& world, float& out_sx, float& out_sy);
+
 /// Intersect ray with plane y = plane_y. Returns false if parallel / behind.
 bool intersect_plane_y(const Point3d& origin, const Vector3d& dir, double plane_y,
                        Point3d& out_hit);

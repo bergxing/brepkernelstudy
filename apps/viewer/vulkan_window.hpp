@@ -7,6 +7,9 @@
 
 #include <functional>
 
+class QRubberBand;
+class QWidget;
+
 namespace brep::viewer {
 
 class VulkanWindow final : public QVulkanWindow {
@@ -16,6 +19,9 @@ class VulkanWindow final : public QVulkanWindow {
 
   void set_world(ecs::World* world) noexcept { world_ = world; }
   [[nodiscard]] ecs::World* world() noexcept { return world_; }
+
+  /// Host widget for the QRubberBand overlay (window container).
+  void set_rubber_band_host(QWidget* host) noexcept { rubber_host_ = host; }
 
   /// When false, left-click will not change selection (e.g. interactive tool).
   void set_selection_enabled(bool enabled) noexcept {
@@ -70,13 +76,20 @@ class VulkanWindow final : public QVulkanWindow {
   void apply_key(int key);
   void sync_renderer();
   void maybe_select_at(float x, float y, bool multi);
+  void maybe_box_select(float x0, float y0, float x1, float y1, bool multi);
+  void update_rubber_band(float x0, float y0, float x1, float y1);
+  void hide_rubber_band();
   void restore_idle_cursor();
   void fit_view_to_scene();
   [[nodiscard]] bool forward_tool_press(QPointF pos, Qt::MouseButton button);
+  [[nodiscard]] QRect rubber_band_geometry(float x0, float y0, float x1,
+                                           float y1) const;
 
   ecs::World* world_{nullptr};
   Camera camera_{};
   VulkanRenderer* renderer_{nullptr};
+  QWidget* rubber_host_{nullptr};
+  QRubberBand* rubber_band_{nullptr};  // child of rubber_host_
   bool selection_enabled_{true};
   SelectionCallback selection_callback_;
   ToolMotionCallback tool_motion_callback_;

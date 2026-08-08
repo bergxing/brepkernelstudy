@@ -83,9 +83,9 @@ struct RenderCache {
 
 /// Transient input state (stored in registry context, not on an entity).
 struct InputState {
-  /// Left: PendingSelect → click select, or Cancelled if dragged.
+  /// Left: PendingSelect → click, or BoxSelect if dragged.
   /// Ctrl+Middle: Orbit. Middle/Right: Pan.
-  enum class DragMode { None, PendingSelect, Orbit, Pan, Cancelled };
+  enum class DragMode { None, PendingSelect, Orbit, Pan, BoxSelect };
 
   DragMode drag_mode{DragMode::None};
   float last_x{0.0f};
