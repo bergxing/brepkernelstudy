@@ -143,6 +143,23 @@ add_test(NAME parametric_smoke COMMAND parametric_smoke)
 add_test(NAME xl_roundtrip COMMAND xl_roundtrip)
 
 # ---------------------------------------------------------------------------
+# GoogleTest unit tests (optional)
+# ---------------------------------------------------------------------------
+option(BREP_BUILD_TESTS "Build GoogleTest unit tests" ON)
+if(BREP_BUILD_TESTS)
+  include(FetchContent)
+  FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  )
+  # For Windows: prevent overriding parent project's compiler/linker settings.
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+  add_subdirectory(tests)
+endif()
+
+# ---------------------------------------------------------------------------
 # Local Qt6 discovery (kit matches the active compiler: MinGW vs MSVC)
 # ---------------------------------------------------------------------------
 set(BREP_QT_ROOT "C:/Qt6" CACHE PATH "Qt install root (contains <version>/<kit>)")
