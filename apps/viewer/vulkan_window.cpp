@@ -27,8 +27,12 @@ void VulkanWindow::sync_renderer() {
 }
 
 void VulkanWindow::set_preview_edges(EdgeMesh edges) {
+  set_preview(std::move(edges), {});
+}
+
+void VulkanWindow::set_preview(EdgeMesh edges, TriangleMesh solid) {
   if (!renderer_) return;
-  renderer_->set_preview_edges(std::move(edges));
+  renderer_->set_preview(std::move(edges), std::move(solid));
   requestUpdate();
 }
 

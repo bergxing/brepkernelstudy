@@ -466,6 +466,11 @@ commands::CommandContext MainWindow::make_command_context() {
       active->set_preview_edges(std::move(edges));
     }
   };
+  ctx.set_preview = [this](EdgeMesh edges, TriangleMesh solid) {
+    if (auto* active = active_vulkan_window()) {
+      active->set_preview(std::move(edges), std::move(solid));
+    }
+  };
   ctx.clear_preview = [this] {
     if (auto* active = active_vulkan_window()) {
       active->clear_preview();

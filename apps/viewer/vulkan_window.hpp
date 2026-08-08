@@ -63,6 +63,7 @@ class VulkanWindow final : public QVulkanWindow {
   void handle_wheel(int angle_delta_y) { pointer_wheel(angle_delta_y); }
 
   void set_preview_edges(EdgeMesh edges);
+  void set_preview(EdgeMesh edges, TriangleMesh solid);
   void clear_preview();
 
  protected:

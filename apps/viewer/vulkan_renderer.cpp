@@ -26,7 +26,7 @@ struct TriVertexGpu {
 
 struct AxisVertexGpu {
   float pos[3];
-  float color[3];
+  float color[4];
 };
 
 }  // namespace
@@ -71,13 +71,22 @@ void VulkanRenderer::clear_selection_mesh() {
 }
 
 void VulkanRenderer::set_preview_edges(EdgeMesh edges) {
+  set_preview(std::move(edges), {});
+}
+
+void VulkanRenderer::set_preview(EdgeMesh edges, TriangleMesh solid) {
   preview_edges_ = std::move(edges);
+  preview_solid_ = std::move(solid);
   preview_dirty_ = true;
 }
 
 void VulkanRenderer::clear_preview() {
-  if (preview_edges_.positions.empty() && preview_vertex_count_ == 0) return;
+  if (preview_edges_.positions.empty() && preview_solid_.indices.empty() &&
+      preview_vertex_count_ == 0 && preview_solid_vertex_count_ == 0) {
+    return;
+  }
   preview_edges_ = {};
+  preview_solid_ = {};
   preview_dirty_ = true;
 }
 
@@ -666,7 +675,7 @@ void VulkanRenderer::create_pipelines() {
   plci.pSetLayouts = &desc_layout_;
   dev_->vkCreatePipelineLayout(device, &plci, nullptr, &pipeline_layout_);
 
-  enum class PipeKind { Mesh, Line, Axis };
+  enum class PipeKind { Mesh, Line, Axis, PreviewFill };
   auto make_pipeline = [&](VkShaderModule vs, VkShaderModule fs, PipeKind kind,
                            VkPipeline* out) {
     VkVertexInputBindingDescription binding{};
@@ -677,12 +686,12 @@ void VulkanRenderer::create_pipelines() {
     if (kind == PipeKind::Line) {
       binding.stride = sizeof(float) * 3;
       attrs.push_back({0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0});
-    } else if (kind == PipeKind::Axis) {
+    } else if (kind == PipeKind::Axis || kind == PipeKind::PreviewFill) {
       binding.stride = sizeof(AxisVertexGpu);
       attrs.push_back(
           {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(AxisVertexGpu, pos)});
       attrs.push_back(
-          {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(AxisVertexGpu, color)});
+          {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(AxisVertexGpu, color)});
     } else {
       binding.stride = sizeof(TriVertexGpu);
       attrs.push_back({0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(TriVertexGpu, pos)});
@@ -697,7 +706,7 @@ void VulkanRenderer::create_pipelines() {
     vi.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrs.size());
     vi.pVertexAttributeDescriptions = attrs.data();
 
-    const bool lines = kind != PipeKind::Mesh;
+    const bool lines = kind == PipeKind::Line || kind == PipeKind::Axis;
     VkPipelineInputAssemblyStateCreateInfo ia{};
     ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     ia.topology = lines ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST
@@ -711,7 +720,8 @@ void VulkanRenderer::create_pipelines() {
     VkPipelineRasterizationStateCreateInfo rs{};
     rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = lines ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+    rs.cullMode = (kind == PipeKind::Mesh) ? VK_CULL_MODE_BACK_BIT
+                                           : VK_CULL_MODE_NONE;
     rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rs.lineWidth = 1.0f;
 
@@ -728,6 +738,15 @@ void VulkanRenderer::create_pipelines() {
 
     VkPipelineColorBlendAttachmentState blend_att{};
     blend_att.colorWriteMask = 0xF;
+    if (kind == PipeKind::PreviewFill) {
+      blend_att.blendEnable = VK_TRUE;
+      blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+      blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      blend_att.colorBlendOp = VK_BLEND_OP_ADD;
+      blend_att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      blend_att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      blend_att.alphaBlendOp = VK_BLEND_OP_ADD;
+    }
     VkPipelineColorBlendStateCreateInfo cb{};
     cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     cb.attachmentCount = 1;
@@ -774,6 +793,8 @@ void VulkanRenderer::create_pipelines() {
   make_pipeline(vert, frag, PipeKind::Mesh, &tri_pipeline_);
   make_pipeline(line_vert, line_frag, PipeKind::Line, &line_pipeline_);
   make_pipeline(axis_vert, axis_frag, PipeKind::Axis, &axis_pipeline_);
+  make_pipeline(axis_vert, axis_frag, PipeKind::PreviewFill,
+                &preview_fill_pipeline_);
 
   dev_->vkDestroyShaderModule(device, vert, nullptr);
   dev_->vkDestroyShaderModule(device, frag, nullptr);
@@ -790,9 +811,12 @@ void VulkanRenderer::upload_axes() {
   // Unit triad for the screen-space corner gizmo (not world-anchored).
   constexpr float L = 1.0f;
   const AxisVertexGpu axes[] = {
-      {{0, 0, 0}, {1.0f, 0.15f, 0.15f}}, {{L, 0, 0}, {1.0f, 0.15f, 0.15f}},  // X
-      {{0, 0, 0}, {0.2f, 0.9f, 0.25f}},  {{0, L, 0}, {0.2f, 0.9f, 0.25f}},   // Y
-      {{0, 0, 0}, {0.25f, 0.45f, 1.0f}}, {{0, 0, L}, {0.25f, 0.45f, 1.0f}},  // Z
+      {{0, 0, 0}, {1.0f, 0.15f, 0.15f, 1.0f}},
+      {{L, 0, 0}, {1.0f, 0.15f, 0.15f, 1.0f}},  // X
+      {{0, 0, 0}, {0.2f, 0.9f, 0.25f, 1.0f}},
+      {{0, L, 0}, {0.2f, 0.9f, 0.25f, 1.0f}},  // Y
+      {{0, 0, 0}, {0.25f, 0.45f, 1.0f, 1.0f}},
+      {{0, 0, L}, {0.25f, 0.45f, 1.0f, 1.0f}},  // Z
   };
 
   const VkDeviceSize size = sizeof(axes);
@@ -957,6 +981,7 @@ void VulkanRenderer::upload_colored_edges(const EdgeMesh& edges, float r,
     verts[i].color[0] = r;
     verts[i].color[1] = g;
     verts[i].color[2] = b;
+    verts[i].color[3] = 1.0f;
   }
   const VkDeviceSize size = sizeof(AxisVertexGpu) * verts.size();
   vb = create_buffer(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -969,9 +994,49 @@ void VulkanRenderer::upload_colored_edges(const EdgeMesh& edges, float r,
   vertex_count = static_cast<uint32_t>(verts.size());
 }
 
+void VulkanRenderer::upload_preview_solid() {
+  destroy_buffer(preview_solid_vb_);
+  preview_solid_vertex_count_ = 0;
+  if (preview_solid_.indices.empty() || preview_solid_.vertices.empty()) return;
+
+  std::vector<AxisVertexGpu> verts;
+  verts.reserve(preview_solid_.indices.size());
+  constexpr float kR = 1.0f;
+  constexpr float kG = 0.92f;
+  constexpr float kB = 0.15f;
+  constexpr float kA = 0.28f;
+  for (std::uint32_t idx : preview_solid_.indices) {
+    if (idx >= preview_solid_.vertices.size()) continue;
+    const auto& v = preview_solid_.vertices[idx];
+    AxisVertexGpu g{};
+    g.pos[0] = static_cast<float>(v.position.x());
+    g.pos[1] = static_cast<float>(v.position.y());
+    g.pos[2] = static_cast<float>(v.position.z());
+    g.color[0] = kR;
+    g.color[1] = kG;
+    g.color[2] = kB;
+    g.color[3] = kA;
+    verts.push_back(g);
+  }
+  if (verts.empty()) return;
+
+  const VkDeviceSize size = sizeof(AxisVertexGpu) * verts.size();
+  preview_solid_vb_ =
+      create_buffer(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  void* data = nullptr;
+  dev_->vkMapMemory(window_->device(), preview_solid_vb_.memory, 0, size, 0,
+                    &data);
+  std::memcpy(data, verts.data(), static_cast<size_t>(size));
+  dev_->vkUnmapMemory(window_->device(), preview_solid_vb_.memory);
+  preview_solid_vertex_count_ = static_cast<uint32_t>(verts.size());
+}
+
 void VulkanRenderer::upload_preview() {
   upload_colored_edges(preview_edges_, 1.0f, 0.92f, 0.15f, preview_vb_,
                        preview_vertex_count_);
+  upload_preview_solid();
   preview_dirty_ = false;
 }
 
@@ -998,6 +1063,7 @@ void VulkanRenderer::releaseResources() {
   destroy_buffer(sel_line_vb_);
   destroy_buffer(axis_vb_);
   destroy_buffer(preview_vb_);
+  destroy_buffer(preview_solid_vb_);
   destroy_buffer(highlight_vb_);
   destroy_buffer(ubo_);
   destroy_buffer(selection_ubo_);
@@ -1005,6 +1071,7 @@ void VulkanRenderer::releaseResources() {
   destroy_texture(albedo_);
   destroy_texture(selection_albedo_);
   preview_vertex_count_ = 0;
+  preview_solid_vertex_count_ = 0;
   highlight_vertex_count_ = 0;
   sel_index_count_ = 0;
   sel_line_vertex_count_ = 0;
@@ -1016,6 +1083,8 @@ void VulkanRenderer::releaseResources() {
     dev_->vkDestroyPipeline(device, line_pipeline_, nullptr);
   if (axis_pipeline_)
     dev_->vkDestroyPipeline(device, axis_pipeline_, nullptr);
+  if (preview_fill_pipeline_)
+    dev_->vkDestroyPipeline(device, preview_fill_pipeline_, nullptr);
   if (pipeline_layout_)
     dev_->vkDestroyPipelineLayout(device, pipeline_layout_, nullptr);
   if (pipeline_cache_)
@@ -1025,7 +1094,8 @@ void VulkanRenderer::releaseResources() {
   if (desc_layout_)
     dev_->vkDestroyDescriptorSetLayout(device, desc_layout_, nullptr);
 
-  tri_pipeline_ = line_pipeline_ = axis_pipeline_ = VK_NULL_HANDLE;
+  tri_pipeline_ = line_pipeline_ = axis_pipeline_ = preview_fill_pipeline_ =
+      VK_NULL_HANDLE;
   pipeline_layout_ = VK_NULL_HANDLE;
   pipeline_cache_ = VK_NULL_HANDLE;
   desc_pool_ = VK_NULL_HANDLE;
@@ -1236,12 +1306,20 @@ void VulkanRenderer::startNextFrame() {
                                   nullptr);
   }
 
-  // Selection outline (orange), then tool rubber-band (yellow).
+  // Selection outline (orange), then tool preview fill + wire (yellow).
   if (highlight_vertex_count_ > 0 && axis_pipeline_ && highlight_vb_.buffer) {
     dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);
     VkDeviceSize offset = 0;
     dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &highlight_vb_.buffer, &offset);
     dev_->vkCmdDraw(cmd, highlight_vertex_count_, 1, 0, 0);
+  }
+  if (preview_solid_vertex_count_ > 0 && preview_fill_pipeline_ &&
+      preview_solid_vb_.buffer) {
+    dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            preview_fill_pipeline_);
+    VkDeviceSize offset = 0;
+    dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &preview_solid_vb_.buffer, &offset);
+    dev_->vkCmdDraw(cmd, preview_solid_vertex_count_, 1, 0, 0);
   }
   if (preview_vertex_count_ > 0 && axis_pipeline_ && preview_vb_.buffer) {
     dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);

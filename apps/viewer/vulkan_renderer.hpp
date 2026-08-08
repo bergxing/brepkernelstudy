@@ -29,8 +29,9 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
                           Material material);
   void clear_selection_mesh();
 
-  /// Temporary tool rubber-band (world-space line list). Does not replace scene.
+  /// Temporary tool preview: wire edges + optional translucent solid fill.
   void set_preview_edges(EdgeMesh edges);
+  void set_preview(EdgeMesh edges, TriangleMesh solid);
   void clear_preview();
 
   /// Selection outline (drawn on top of scene meshes, under tool preview).
@@ -78,6 +79,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void upload_selection_meshes();
   void upload_axes();
   void upload_preview();
+  void upload_preview_solid();
   void upload_highlight();
   void create_albedo_texture();
   void create_selection_albedo_texture();
@@ -101,6 +103,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   TriangleMesh selection_triangles_;
   EdgeMesh selection_edges_;
   EdgeMesh preview_edges_;
+  TriangleMesh preview_solid_;
   EdgeMesh highlight_edges_;
   Material material_{};
   Material selection_material_{};
@@ -120,6 +123,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   GpuBuffer sel_line_vb_{};
   GpuBuffer axis_vb_{};
   GpuBuffer preview_vb_{};
+  GpuBuffer preview_solid_vb_{};
   GpuBuffer highlight_vb_{};
   GpuBuffer ubo_{};             // scene MVP + wood albedo
   GpuBuffer selection_ubo_{};   // same MVP + orange selection albedo
@@ -137,6 +141,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   VkPipeline tri_pipeline_{VK_NULL_HANDLE};
   VkPipeline line_pipeline_{VK_NULL_HANDLE};
   VkPipeline axis_pipeline_{VK_NULL_HANDLE};
+  VkPipeline preview_fill_pipeline_{VK_NULL_HANDLE};
 
   VkPipelineCache pipeline_cache_{VK_NULL_HANDLE};
   std::uint32_t index_count_{0};
@@ -145,6 +150,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   std::uint32_t sel_line_vertex_count_{0};
   std::uint32_t axis_vertex_count_{0};
   std::uint32_t preview_vertex_count_{0};
+  std::uint32_t preview_solid_vertex_count_{0};
   std::uint32_t highlight_vertex_count_{0};
 };
 

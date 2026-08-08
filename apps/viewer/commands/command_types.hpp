@@ -67,6 +67,8 @@ struct CommandContext {
   std::function<void()> after_document_reset;
   std::function<void()> refresh_ui;
   std::function<void(EdgeMesh)> set_preview_edges;
+  /// Wire + optional translucent solid fill for interactive tool previews.
+  std::function<void(EdgeMesh, TriangleMesh)> set_preview;
   std::function<void()> clear_preview;
 };
 

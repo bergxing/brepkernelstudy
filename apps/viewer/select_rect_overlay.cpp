@@ -26,12 +26,11 @@ void SelectRectOverlay::paintEvent(QPaintEvent* event) {
   Q_UNUSED(event);
   QPainter p(this);
   p.setRenderHint(QPainter::Antialiasing, false);
+  p.setBrush(Qt::NoBrush);
   if (crossing_) {
     p.setPen(QPen(QColor(46, 204, 113), 1, Qt::DashLine));
-    p.setBrush(QColor(46, 204, 113, 45));
   } else {
     p.setPen(QPen(QColor(52, 152, 219), 1, Qt::SolidLine));
-    p.setBrush(QColor(52, 152, 219, 45));
   }
   p.drawRect(rect().adjusted(0, 0, -1, -1));
 }

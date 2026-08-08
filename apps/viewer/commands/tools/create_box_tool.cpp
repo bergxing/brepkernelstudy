@@ -73,6 +73,59 @@ EdgeMesh make_box_wire(double minx, double miny, double minz, double maxx,
   return mesh;
 }
 
+void push_tri(TriangleMesh& mesh, const Point3d& a, const Point3d& b,
+              const Point3d& c, const Vector3d& n) {
+  const std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
+  mesh.vertices.push_back(MeshVertex{a, n, {}});
+  mesh.vertices.push_back(MeshVertex{b, n, {}});
+  mesh.vertices.push_back(MeshVertex{c, n, {}});
+  mesh.indices.push_back(base);
+  mesh.indices.push_back(base + 1);
+  mesh.indices.push_back(base + 2);
+}
+
+TriangleMesh make_rect_solid(double minx, double minz, double maxx, double maxz,
+                             double y) {
+  TriangleMesh mesh;
+  const Point3d p00{minx, y, minz};
+  const Point3d p10{maxx, y, minz};
+  const Point3d p11{maxx, y, maxz};
+  const Point3d p01{minx, y, maxz};
+  const Vector3d n{0.0, 1.0, 0.0};
+  push_tri(mesh, p00, p10, p11, n);
+  push_tri(mesh, p00, p11, p01, n);
+  return mesh;
+}
+
+TriangleMesh make_box_solid(double minx, double miny, double minz, double maxx,
+                            double maxy, double maxz) {
+  TriangleMesh mesh;
+  const Point3d p000{minx, miny, minz};
+  const Point3d p100{maxx, miny, minz};
+  const Point3d p110{maxx, miny, maxz};
+  const Point3d p010{minx, miny, maxz};
+  const Point3d p001{minx, maxy, minz};
+  const Point3d p101{maxx, maxy, minz};
+  const Point3d p111{maxx, maxy, maxz};
+  const Point3d p011{minx, maxy, maxz};
+  // -Y / +Y
+  push_tri(mesh, p000, p100, p110, Vector3d{0.0, -1.0, 0.0});
+  push_tri(mesh, p000, p110, p010, Vector3d{0.0, -1.0, 0.0});
+  push_tri(mesh, p001, p011, p111, Vector3d{0.0, 1.0, 0.0});
+  push_tri(mesh, p001, p111, p101, Vector3d{0.0, 1.0, 0.0});
+  // -Z / +Z
+  push_tri(mesh, p000, p001, p101, Vector3d{0.0, 0.0, -1.0});
+  push_tri(mesh, p000, p101, p100, Vector3d{0.0, 0.0, -1.0});
+  push_tri(mesh, p010, p110, p111, Vector3d{0.0, 0.0, 1.0});
+  push_tri(mesh, p010, p111, p011, Vector3d{0.0, 0.0, 1.0});
+  // -X / +X
+  push_tri(mesh, p000, p010, p011, Vector3d{-1.0, 0.0, 0.0});
+  push_tri(mesh, p000, p011, p001, Vector3d{-1.0, 0.0, 0.0});
+  push_tri(mesh, p100, p101, p111, Vector3d{1.0, 0.0, 0.0});
+  push_tri(mesh, p100, p111, p110, Vector3d{1.0, 0.0, 0.0});
+  return mesh;
+}
+
 void base_bounds(const Point3d& a, const Point3d& b, double& minx, double& maxx,
                  double& minz, double& maxz) {
   minx = std::min(a.x(), b.x());
@@ -151,16 +204,23 @@ bool CreateBoxTool::pick_height(CommandContext& ctx, float x, float y,
 }
 
 void CreateBoxTool::update_preview(CommandContext& ctx, float x, float y) {
-  if (!ctx.set_preview_edges) {
-    BREP_WARN("CreateBoxTool: set_preview_edges callback is empty");
+  if (!ctx.set_preview && !ctx.set_preview_edges) {
+    BREP_WARN("CreateBoxTool: preview callback is empty");
     return;
   }
+  const auto push_preview = [&](EdgeMesh wire, TriangleMesh solid) {
+    if (ctx.set_preview) {
+      ctx.set_preview(std::move(wire), std::move(solid));
+    } else {
+      ctx.set_preview_edges(std::move(wire));
+    }
+  };
 
   if (step_ == 1) {
     Point3d hit;
     if (!pick_ground(ctx, x, y, hit)) {
       // Keep the first-point marker visible even if the ray misses.
-      ctx.set_preview_edges(make_point_marker(corner_a_));
+      push_preview(make_point_marker(corner_a_), {});
       if (ctx.request_redraw) ctx.request_redraw();
       return;
     }
@@ -171,7 +231,7 @@ void CreateBoxTool::update_preview(CommandContext& ctx, float x, float y) {
     EdgeMesh marker = make_point_marker(corner_a_);
     wire.positions.insert(wire.positions.end(), marker.positions.begin(),
                           marker.positions.end());
-    ctx.set_preview_edges(std::move(wire));
+    push_preview(std::move(wire), make_rect_solid(minx, minz, maxx, maxz, 0.0));
     if (ctx.request_redraw) ctx.request_redraw();
     return;
   }
@@ -184,7 +244,8 @@ void CreateBoxTool::update_preview(CommandContext& ctx, float x, float y) {
     base_bounds(corner_a_, corner_b_, minx, maxx, minz, maxz);
     const double miny = std::min(0.0, height);
     const double maxy = std::max(0.0, height);
-    ctx.set_preview_edges(make_box_wire(minx, miny, minz, maxx, maxy, maxz));
+    push_preview(make_box_wire(minx, miny, minz, maxx, maxy, maxz),
+                 make_box_solid(minx, miny, minz, maxx, maxy, maxz));
     if (ctx.request_redraw) ctx.request_redraw();
   }
 }
