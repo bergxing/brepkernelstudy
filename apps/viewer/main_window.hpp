@@ -4,6 +4,7 @@
 #include "commands/command_registry.hpp"
 #include "document.hpp"
 #include "ecs/world.hpp"
+#include "property_panel.hpp"
 #include "view_cube.hpp"
 #include "vulkan_window.hpp"
 
@@ -13,6 +14,7 @@
 #include <memory>
 
 class QAction;
+class QDockWidget;
 class QToolBar;
 
 namespace brep::viewer {
@@ -44,6 +46,8 @@ class MainWindow final : public QMainWindow {
   void refresh_edit_actions();
   void rebind_view_cube_camera();
   void sync_tool_ui();
+  void setup_property_dock();
+  void update_property_panel(entt::entity entity);
   void bind_action(QAction* action, const char* command_id);
   commands::CommandResult run_command(std::string_view command_id);
   [[nodiscard]] commands::CommandContext make_command_context();
@@ -59,6 +63,8 @@ class MainWindow final : public QMainWindow {
   QWidget* viewport_container_{nullptr};
   ViewCubeWidget* view_cube_{nullptr};
   QToolBar* toolbar_{nullptr};
+  QDockWidget* property_dock_{nullptr};
+  PropertyPanel* property_panel_{nullptr};
   QAction* act_undo_{nullptr};
   QAction* act_redo_{nullptr};
   bool tool_cursor_overridden_{false};

@@ -9,6 +9,7 @@
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDir>
+#include <QDockWidget>
 #include <QEvent>
 #include <QFileInfo>
 #include <QKeyEvent>
@@ -60,6 +61,7 @@ MainWindow::MainWindow(QWidget* parent)
   vulkan_window_->setSampleCount(1);
   vulkan_window_->set_world(&world_);
   vulkan_window_->set_selection_callback([this](entt::entity entity) {
+    update_property_panel(entity);
     if (entity == entt::null) {
       statusBar()->showMessage(QStringLiteral("已取消选择"), 3000);
       return;
@@ -117,8 +119,10 @@ MainWindow::MainWindow(QWidget* parent)
 
   setup_menus();
   setup_toolbar();
+  setup_property_dock();
   refresh_window_title();
   refresh_edit_actions();
+  update_property_panel(entt::null);
 
   qApp->installEventFilter(this);
 
@@ -209,6 +213,7 @@ commands::CommandResult MainWindow::run_command(std::string_view command_id) {
   }
   sync_tool_ui();
   refresh_edit_actions();
+  update_property_panel(ecs::selected_entity(world_.registry()));
   if (result.succeeded() || command_manager_.has_active_tool()) {
     refresh_window_title();
   }
@@ -305,6 +310,25 @@ void MainWindow::setup_toolbar() {
 
   auto* act_export = toolbar_->addAction(QStringLiteral("导出 DXF"));
   bind_action(act_export, "file.export_dxf");
+}
+
+void MainWindow::setup_property_dock() {
+  property_dock_ = new QDockWidget(QStringLiteral("属性"), this);
+  property_dock_->setObjectName(QStringLiteral("PropertyDock"));
+  property_dock_->setAllowedAreas(Qt::LeftDockWidgetArea |
+                                  Qt::RightDockWidgetArea);
+  property_panel_ = new PropertyPanel(property_dock_);
+  property_dock_->setWidget(property_panel_);
+  property_dock_->setMinimumWidth(240);
+  addDockWidget(Qt::RightDockWidgetArea, property_dock_);
+
+  auto* view_menu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
+  view_menu->addAction(property_dock_->toggleViewAction());
+}
+
+void MainWindow::update_property_panel(entt::entity entity) {
+  if (!property_panel_) return;
+  property_panel_->show_entity(world_.registry(), entity);
 }
 
 void MainWindow::refresh_window_title() {
@@ -404,6 +428,7 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
     if (command_manager_.tool_mouse_press(ctx, sx, sy, int(e->button()))) {
       sync_tool_ui();
       refresh_edit_actions();
+      update_property_panel(ecs::selected_entity(world_.registry()));
       return true;
     }
     return false;
