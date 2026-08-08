@@ -9,7 +9,9 @@
 
 namespace brep::viewer::commands {
 
-/// Copy: select objects → Space → base point → place point → translated copies.
+/// Copy boxes with two entry paths:
+/// - pre-select then Copy → base → place
+/// - Copy then select → Space → base → place
 class CopyTool final : public ITool {
  public:
   [[nodiscard]] std::string_view id() const noexcept override {

@@ -133,6 +133,17 @@ void CopyTool::on_start(CommandContext& ctx) {
   result_ = CommandResult::cancelled();
   sources_.clear();
   clear_preview(ctx);
+
+  // Path A: objects already selected → skip select step, go to base point.
+  sources_ = collect_selected_box_specs(ctx);
+  if (!sources_.empty()) {
+    step_ = 1;
+    if (ctx.report_status) ctx.report_status(prompt());
+    BREP_INFO("CopyTool start with {} pre-selected box(es)", sources_.size());
+    return;
+  }
+
+  // Path B: no selection → pick objects, Space to confirm.
   if (ctx.report_status) ctx.report_status(prompt());
   BREP_INFO("CopyTool start (select objects, then Space)");
 }
