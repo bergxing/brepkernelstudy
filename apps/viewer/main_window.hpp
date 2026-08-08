@@ -16,6 +16,7 @@
 
 class QAction;
 class QDockWidget;
+class QLabel;
 class QMdiArea;
 class QMdiSubWindow;
 class QToolBar;
@@ -81,6 +82,15 @@ class MainWindow final : public QMainWindow {
   [[nodiscard]] QString view_icon_path(const QString& filename) const;
   bool handle_tool_mouse(QEvent* event);
   void show_viewport_context_menu(VulkanWindow* window, float x, float y);
+  void setup_cursor_tip();
+  void hide_cursor_tip();
+  void refresh_cursor_tip();
+  void update_cursor_tip_at_global(const QPoint& global);
+  [[nodiscard]] QString resolve_cursor_tip_text(VulkanWindow* window, float x,
+                                                float y);
+  [[nodiscard]] bool map_global_to_viewport(const QPoint& global,
+                                            VulkanWindow*& out_window,
+                                            float& out_x, float& out_y) const;
 
   DocumentSession document_;
   ecs::World world_;
@@ -92,6 +102,7 @@ class MainWindow final : public QMainWindow {
   int view_serial_{0};
   bool suppress_ensure_view_{false};
   ViewCubeWidget* view_cube_{nullptr};
+  QLabel* cursor_tip_{nullptr};
   QToolBar* toolbar_{nullptr};
   QToolBar* view_toolbar_{nullptr};
   QDockWidget* property_dock_{nullptr};

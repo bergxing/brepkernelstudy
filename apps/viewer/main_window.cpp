@@ -16,9 +16,11 @@
 #include <QDockWidget>
 #include <QEvent>
 #include <QFileInfo>
+#include <QHoverEvent>
 #include <QIcon>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QLabel>
 #include <QMdiArea>
 #include <QMdiSubWindow>
 #include <QMenu>
@@ -121,6 +123,7 @@ MainWindow::MainWindow(QWidget* parent)
   place_view_cube();
   view_cube_->hide();
 
+  setup_cursor_tip();
   setup_menus();
   setup_toolbar();
   setup_view_toolbar();
@@ -430,6 +433,7 @@ commands::CommandContext MainWindow::make_command_context() {
 
   ctx.report_status = [this](const QString& msg) {
     statusBar()->showMessage(msg);
+    refresh_cursor_tip();
   };
   ctx.request_redraw = [this] { request_all_views_update(); };
   ctx.after_document_reset = [this] {
@@ -472,6 +476,7 @@ void MainWindow::sync_tool_ui() {
     QApplication::restoreOverrideCursor();
     tool_cursor_overridden_ = false;
   }
+  refresh_cursor_tip();
 }
 
 commands::CommandResult MainWindow::run_command(std::string_view command_id) {
@@ -527,6 +532,137 @@ void MainWindow::refresh_edit_actions() {
   }
 }
 
+void MainWindow::setup_cursor_tip() {
+  cursor_tip_ = new QLabel(this);
+  cursor_tip_->setObjectName(QStringLiteral("CursorTip"));
+  cursor_tip_->setAttribute(Qt::WA_TransparentForMouseEvents);
+  cursor_tip_->setAttribute(Qt::WA_ShowWithoutActivating);
+  cursor_tip_->setFocusPolicy(Qt::NoFocus);
+  cursor_tip_->setStyleSheet(QStringLiteral(
+      "QLabel#CursorTip {"
+      "  background-color: rgba(28, 28, 28, 210);"
+      "  color: #f2f2f2;"
+      "  border: 1px solid rgba(255, 255, 255, 45);"
+      "  border-radius: 3px;"
+      "  padding: 3px 8px;"
+      "  font-size: 12px;"
+      "}"));
+  cursor_tip_->hide();
+}
+
+void MainWindow::hide_cursor_tip() {
+  if (cursor_tip_) cursor_tip_->hide();
+}
+
+bool MainWindow::map_global_to_viewport(const QPoint& global,
+                                        VulkanWindow*& out_window, float& out_x,
+                                        float& out_y) const {
+  out_window = nullptr;
+  auto* vw = vulkan_window_at_global(global);
+  if (!vw) return false;
+
+  QWidget* container = nullptr;
+  for (auto it = view_windows_.constBegin(); it != view_windows_.constEnd();
+       ++it) {
+    if (it.value() == vw) {
+      container = it.key() ? it.key()->widget() : nullptr;
+      break;
+    }
+  }
+  if (!container) return false;
+
+  const QPoint local = container->mapFromGlobal(global);
+  if (!container->rect().contains(local)) return false;
+
+  const int cw = std::max(1, container->width());
+  const int ch = std::max(1, container->height());
+  const int vww = std::max(1, vw->width());
+  const int vwh = std::max(1, vw->height());
+  out_window = vw;
+  out_x = float(local.x()) * float(vww) / float(cw);
+  out_y = float(local.y()) * float(vwh) / float(ch);
+  return true;
+}
+
+QString MainWindow::resolve_cursor_tip_text(VulkanWindow* window, float x,
+                                            float y) {
+  if (command_manager_.has_active_tool()) {
+    QString prompt = command_manager_.active_prompt();
+    prompt.remove(QStringLiteral(" (ESC 取消)"));
+    if (!prompt.isEmpty()) return prompt;
+  }
+
+  if (world_.registry().ctx().contains<ecs::InputState>()) {
+    using Mode = ecs::InputState::DragMode;
+    switch (world_.registry().ctx().get<ecs::InputState>().drag_mode) {
+      case Mode::BoxSelect:
+        return QStringLiteral("框选: 左→右窗口 / 右→左穿越");
+      case Mode::Pan:
+        return QStringLiteral("平移视图");
+      case Mode::Orbit:
+        return QStringLiteral("旋转视图");
+      default:
+        break;
+    }
+  }
+
+  if (window) {
+    const QSize sz = window->size();
+    const entt::entity hit = ecs::pick_renderable(
+        world_.registry(), window->camera(), sz.width(), sz.height(), x, y);
+    if (hit != entt::null) {
+      return QStringLiteral("左键选择 · Ctrl追加 · 右键菜单");
+    }
+  }
+  return QStringLiteral("左键选择/框选 · 右键菜单 · 中键平移");
+}
+
+void MainWindow::update_cursor_tip_at_global(const QPoint& global) {
+  if (!cursor_tip_) return;
+
+  if (view_cube_ && view_cube_->isVisible()) {
+    const QRect cube_global(view_cube_->pos(), view_cube_->size());
+    if (cube_global.contains(global)) {
+      hide_cursor_tip();
+      return;
+    }
+  }
+
+  VulkanWindow* vw = nullptr;
+  float x = 0.0f;
+  float y = 0.0f;
+  if (!map_global_to_viewport(global, vw, x, y)) {
+    hide_cursor_tip();
+    return;
+  }
+
+  const QString text = resolve_cursor_tip_text(vw, x, y);
+  if (text.isEmpty()) {
+    hide_cursor_tip();
+    return;
+  }
+
+  cursor_tip_->setText(text);
+  cursor_tip_->adjustSize();
+
+  constexpr int kOffset = 16;
+  QPoint pos = mapFromGlobal(global + QPoint(kOffset, kOffset));
+  const QRect bounds = rect().adjusted(4, 4, -4, -4);
+  const int max_x = std::max(bounds.left(), bounds.right() - cursor_tip_->width());
+  const int max_y =
+      std::max(bounds.top(), bounds.bottom() - cursor_tip_->height());
+  pos.setX(std::clamp(pos.x(), bounds.left(), max_x));
+  pos.setY(std::clamp(pos.y(), bounds.top(), max_y));
+
+  cursor_tip_->move(pos);
+  cursor_tip_->show();
+  cursor_tip_->raise();
+}
+
+void MainWindow::refresh_cursor_tip() {
+  update_cursor_tip_at_global(QCursor::pos());
+}
+
 void MainWindow::show_viewport_context_menu(VulkanWindow* window, float x,
                                            float y) {
   if (!window || command_manager_.has_active_tool()) return;
@@ -546,6 +682,8 @@ void MainWindow::show_viewport_context_menu(VulkanWindow* window, float x,
     }
   }
 
+  hide_cursor_tip();
+
   QMenu menu(this);
   auto* act_copy = menu.addAction(QStringLiteral("复制"));
   menu.addSeparator();
@@ -555,6 +693,7 @@ void MainWindow::show_viewport_context_menu(VulkanWindow* window, float x,
   act_redo->setEnabled(command_manager_.history().can_redo());
 
   QAction* chosen = menu.exec(QCursor::pos());
+  refresh_cursor_tip();
   if (!chosen) return;
 
   if (chosen == act_copy) {
@@ -979,6 +1118,24 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  if (event->type() == QEvent::MouseMove ||
+      event->type() == QEvent::HoverMove) {
+    QPoint global;
+    if (event->type() == QEvent::MouseMove) {
+      global = static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+    } else {
+      global = static_cast<QHoverEvent*>(event)->globalPosition().toPoint();
+    }
+    update_cursor_tip_at_global(global);
+  } else if (event->type() == QEvent::Leave) {
+    if (qobject_cast<QWidget*>(watched)) {
+      // Leaving a viewport container / MDI child — hide if cursor left views.
+      if (!vulkan_window_at_global(QCursor::pos())) {
+        hide_cursor_tip();
+      }
+    }
+  }
+
   // Block closing the last MDI view subwindow.
   if (event->type() == QEvent::Close) {
     auto* sub = qobject_cast<QMdiSubWindow*>(watched);
