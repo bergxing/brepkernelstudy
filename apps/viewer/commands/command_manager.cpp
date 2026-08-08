@@ -33,6 +33,16 @@ CommandResult CommandManager::run(std::string_view id, CommandContext& ctx) {
     tool_ctx_snapshot_ = ctx;
     tool_ctx_snapshot_.history = &history_;
     active_tool_->on_start(tool_ctx_snapshot_);
+    if (active_tool_->is_finished()) {
+      const CommandResult r = active_tool_->result();
+      BREP_INFO("tool finished immediately '{}' status={}", active_tool_->id(),
+                int(r.status));
+      active_tool_.reset();
+      if (ctx.report_status && !r.message.isEmpty()) {
+        ctx.report_status(r.message);
+      }
+      return r;
+    }
     const QString msg = active_tool_->prompt();
     if (ctx.report_status) ctx.report_status(msg);
     BREP_INFO("tool started '{}'", active_tool_->id());

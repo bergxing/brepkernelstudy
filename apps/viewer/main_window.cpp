@@ -129,8 +129,8 @@ MainWindow::MainWindow(QWidget* parent)
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "XCAD | 左键选择/框选 | Ctrl+追加 | 中键平移 | Ctrl+中键旋转 | "
-      "双击中键缩放到全部 | ESC 取消工具"));
+      "XCAD | 左键选择/框选 | Ctrl+追加 | 复制=基点→放置点 | "
+      "中键平移 | Ctrl+中键旋转 | 双击中键缩放到全部 | ESC 取消工具"));
 }
 
 MainWindow::~MainWindow() {
@@ -573,6 +573,13 @@ void MainWindow::setup_menus() {
   act_redo_->setShortcut(QKeySequence::Redo);
   bind_action(act_redo_, "edit.redo");
 
+  edit_menu->addSeparator();
+  auto* act_copy = edit_menu->addAction(QStringLiteral("复制(&C)…"));
+  act_copy->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+C")));
+  act_copy->setToolTip(
+      QStringLiteral("复制选中立方体：基点 → 放置点"));
+  bind_action(act_copy, "edit.copy");
+
   auto* model_menu = menuBar()->addMenu(QStringLiteral("建模(&M)"));
   auto* act_box = model_menu->addAction(QStringLiteral("创建立方体(&B)…"));
   act_box->setShortcut(QKeySequence(QStringLiteral("Ctrl+B")));
@@ -611,6 +618,10 @@ void MainWindow::setup_toolbar() {
   auto* act_box = toolbar_->addAction(QStringLiteral("立方体"));
   act_box->setToolTip(QStringLiteral("三点创建盒子 (Ctrl+B)"));
   bind_action(act_box, "part.create_box");
+
+  auto* act_copy = toolbar_->addAction(QStringLiteral("复制"));
+  act_copy->setToolTip(QStringLiteral("复制选中对象 (Ctrl+Shift+C)"));
+  bind_action(act_copy, "edit.copy");
 
   auto* act_export = toolbar_->addAction(QStringLiteral("导出 DXF"));
   bind_action(act_export, "file.export_dxf");

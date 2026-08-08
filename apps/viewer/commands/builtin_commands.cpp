@@ -1,7 +1,9 @@
 #include "commands/command_registry.hpp"
 #include "commands/document_history.hpp"
 #include "commands/itool.hpp"
+#include "commands/tools/copy_tool.hpp"
 #include "commands/tools/create_box_tool.hpp"
+#include "ecs/systems.hpp"
 
 #include "brep/brep.hpp"
 #include "brep/log.hpp"
@@ -186,6 +188,30 @@ class ExportDxfCommand final : public ICommand {
   }
 };
 
+class CopyCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    return "edit.copy";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override {
+    return "Copy";
+  }
+  [[nodiscard]] CommandKind kind() const noexcept override {
+    return CommandKind::Interactive;
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.world != nullptr && ctx.world->document() != nullptr &&
+           ctx.world->document()->main_part() != nullptr &&
+           ecs::selected_count(ctx.world->registry()) > 0;
+  }
+
+  [[nodiscard]] std::unique_ptr<ITool> make_tool(
+      CommandContext& /*ctx*/) const override {
+    return std::make_unique<CopyTool>();
+  }
+};
+
 /// Interactive two-click box (Phase 3 tool).
 class CreateBoxCommand final : public ICommand {
  public:
@@ -366,6 +392,7 @@ void register_builtin_commands(CommandRegistry& registry) {
   add<ExportDxfCommand>(registry);
   add<CreateBoxCommand>(registry);
   add<CreateBoxInstantCommand>(registry);
+  add<CopyCommand>(registry);
   add<UndoCommand>(registry);
   add<RedoCommand>(registry);
   BREP_INFO("registered builtin commands: {}", registry.ids().size());

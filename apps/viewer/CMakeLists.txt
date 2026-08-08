@@ -78,6 +78,7 @@ qt_add_executable(brep_viewer
   commands/picking.cpp
   commands/command_palette.cpp
   commands/tools/create_box_tool.cpp
+  commands/tools/copy_tool.cpp
   ${VIEWER_SPV_OUTPUTS}
 )
 add_dependencies(brep_viewer brep_viewer_shaders)
