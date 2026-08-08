@@ -60,6 +60,7 @@ class MainWindow final : public QMainWindow {
   void setup_toolbar();
   void setup_view_toolbar();
   void place_view_cube();
+  [[nodiscard]] bool is_view_layout_object(const QObject* watched) const;
   void apply_wheel_zoom(VulkanWindow* window, int dy);
   void apply_standard_view(char face);
   void refresh_window_title();

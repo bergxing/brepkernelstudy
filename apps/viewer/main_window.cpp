@@ -92,6 +92,10 @@ MainWindow::MainWindow(QWidget* parent)
   mdi_area_->setTabsClosable(true);
   setCentralWidget(mdi_area_);
   setMouseTracking(true);
+  mdi_area_->installEventFilter(this);
+  if (mdi_area_->viewport()) {
+    mdi_area_->viewport()->installEventFilter(this);
+  }
 
   connect(mdi_area_, &QMdiArea::subWindowActivated, this,
           &MainWindow::on_sub_window_activated);
@@ -737,13 +741,32 @@ void MainWindow::changeEvent(QEvent* event) {
   }
 }
 
+bool MainWindow::is_view_layout_object(const QObject* watched) const {
+  if (!watched || !mdi_area_) return false;
+  if (watched == mdi_area_ || watched == mdi_area_->viewport()) return true;
+  for (auto it = view_windows_.cbegin(); it != view_windows_.cend(); ++it) {
+    if (watched == it.key() || watched == it.key()->widget()) return true;
+  }
+  return false;
+}
+
 void MainWindow::place_view_cube() {
+  if (!view_cube_) return;
+
   QWidget* container = active_viewport_container();
-  if (!view_cube_ || !container) return;
+  QMdiSubWindow* sub = mdi_area_ ? mdi_area_->activeSubWindow() : nullptr;
+  if (!container || !sub || sub->isMinimized() || !container->isVisible() ||
+      isMinimized()) {
+    view_cube_->hide();
+    return;
+  }
+
   constexpr int margin = 10;
+  // Anchor to the active viewport's top-right corner (client area).
   const QPoint global = container->mapToGlobal(
       QPoint(container->width() - view_cube_->width() - margin, margin));
   view_cube_->move(global);
+  if (!view_cube_->isVisible()) view_cube_->show();
 }
 
 void MainWindow::apply_wheel_zoom(VulkanWindow* window, int dy) {
@@ -833,6 +856,22 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
         return true;
       }
     }
+  }
+
+  // Keep ViewCube glued to the active viewport when MDI windows move/resize.
+  switch (event->type()) {
+    case QEvent::Move:
+    case QEvent::Resize:
+    case QEvent::Show:
+    case QEvent::Hide:
+    case QEvent::WindowStateChange:
+    case QEvent::LayoutRequest:
+      if (is_view_layout_object(watched)) {
+        place_view_cube();
+      }
+      break;
+    default:
+      break;
   }
 
   if (handle_tool_mouse(event)) return true;
