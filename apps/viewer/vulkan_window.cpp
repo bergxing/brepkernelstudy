@@ -142,8 +142,34 @@ void VulkanWindow::pointer_double_click(Qt::MouseButton button) {
   fit_view_to_scene();
 }
 
+void VulkanWindow::begin_right_press(QPointF pos) {
+  right_press_active_ = true;
+  right_moved_ = false;
+  right_press_x_ = float(pos.x());
+  right_press_y_ = float(pos.y());
+}
+
+bool VulkanWindow::finish_right_release(QPointF pos) {
+  if (!right_press_active_) return false;
+  right_press_active_ = false;
+  if (right_moved_ || !selection_enabled_ || !context_menu_callback_) {
+    return true;
+  }
+  constexpr float kSlop = 5.0f;
+  const float dx = float(pos.x()) - right_press_x_;
+  const float dy = float(pos.y()) - right_press_y_;
+  if (dx * dx + dy * dy >= kSlop * kSlop) return true;
+  context_menu_callback_(right_press_x_, right_press_y_);
+  return true;
+}
+
 void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button,
                                  Qt::KeyboardModifiers modifiers) {
+  if (button == Qt::RightButton) {
+    begin_right_press(pos);
+    return;
+  }
+
   if (forward_tool_press(pos, button)) return;
 
   if (!world_) return;
@@ -173,6 +199,13 @@ void VulkanWindow::restore_idle_cursor() {
 }
 
 void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
+  if (right_press_active_ && (buttons & Qt::RightButton)) {
+    constexpr float kSlop = 5.0f;
+    const float dx = float(pos.x()) - right_press_x_;
+    const float dy = float(pos.y()) - right_press_y_;
+    if (dx * dx + dy * dy >= kSlop * kSlop) right_moved_ = true;
+  }
+
   // QWindow-direct moves (common with QWidget::createWindowContainer) must
   // still drive tool rubber-band previews.
   if (!selection_enabled_ && tool_motion_callback_) {
@@ -181,7 +214,7 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
 
   if (!world_) return;
   if (!selection_enabled_ && (buttons & Qt::LeftButton) &&
-      !(buttons & (Qt::RightButton | Qt::MiddleButton))) {
+      !(buttons & Qt::MiddleButton)) {
     return;
   }
 
@@ -206,6 +239,8 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
 }
 
 void VulkanWindow::pointer_release(QPointF pos) {
+  if (finish_right_release(pos)) return;
+
   if (!world_) return;
   if (!selection_enabled_) {
     // Reset any stray drag state, but keep the tool crosshair (override cursor).
@@ -311,6 +346,10 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
     }
     case QEvent::MouseButtonRelease: {
       auto* e = static_cast<QMouseEvent*>(event);
+      if (e->button() == Qt::RightButton) {
+        pointer_release(e->position());
+        return true;
+      }
       if (!selection_enabled_ && e->button() == Qt::LeftButton) {
         return false;
       }
@@ -320,7 +359,7 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
     case QEvent::MouseMove: {
       auto* e = static_cast<QMouseEvent*>(event);
       if (!selection_enabled_ && (e->buttons() & Qt::LeftButton) &&
-          !(e->buttons() & (Qt::RightButton | Qt::MiddleButton))) {
+          !(e->buttons() & Qt::MiddleButton)) {
         return false;
       }
       pointer_move(e->position(), e->buttons());

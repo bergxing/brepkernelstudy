@@ -3,12 +3,14 @@
 #include "brep/brep.hpp"
 #include "brep/log.hpp"
 #include "commands/command_palette.hpp"
+#include "ecs/components.hpp"
 #include "ecs/systems.hpp"
 #include "view_mdi_subwindow.hpp"
 
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDialog>
 #include <QDir>
 #include <QDockWidget>
@@ -19,6 +21,7 @@
 #include <QKeySequence>
 #include <QMdiArea>
 #include <QMdiSubWindow>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMouseEvent>
@@ -129,7 +132,7 @@ MainWindow::MainWindow(QWidget* parent)
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "XCAD | 左键选择/框选 | Ctrl+追加 | 复制=基点→放置点 | "
+      "XCAD | 左键选择/框选 | Ctrl+追加 | 右键菜单 | "
       "中键平移 | Ctrl+中键旋转 | 双击中键缩放到全部 | ESC 取消工具"));
 }
 
@@ -196,6 +199,9 @@ void MainWindow::wire_vulkan_window(VulkanWindow* window) {
     sync_tool_ui();
     refresh_edit_actions();
     return consumed;
+  });
+  window->set_context_menu_callback([this, window](float x, float y) {
+    show_viewport_context_menu(window, x, y);
   });
 }
 
@@ -518,6 +524,55 @@ void MainWindow::refresh_edit_actions() {
     act_redo_->setText(label.isEmpty()
                            ? QStringLiteral("重做(&R)")
                            : QStringLiteral("重做(&R) %1").arg(label));
+  }
+}
+
+void MainWindow::show_viewport_context_menu(VulkanWindow* window, float x,
+                                           float y) {
+  if (!window || command_manager_.has_active_tool()) return;
+
+  auto& registry = world_.registry();
+  const QSize sz = window->size();
+  const entt::entity hit = ecs::pick_renderable(
+      registry, window->camera(), sz.width(), sz.height(), x, y);
+
+  const bool on_object = hit != entt::null;
+  if (on_object) {
+    // Clicked an object: select it unless it is already in the selection.
+    if (!registry.all_of<ecs::SelectedTag>(hit)) {
+      ecs::set_selection(registry, hit);
+      update_property_panel(ecs::selected_entity(registry));
+      request_all_views_update();
+    }
+  }
+
+  QMenu menu(this);
+  auto* act_copy = menu.addAction(QStringLiteral("复制"));
+  menu.addSeparator();
+  auto* act_undo = menu.addAction(QStringLiteral("撤销"));
+  auto* act_redo = menu.addAction(QStringLiteral("重做"));
+  act_undo->setEnabled(command_manager_.history().can_undo());
+  act_redo->setEnabled(command_manager_.history().can_redo());
+
+  QAction* chosen = menu.exec(QCursor::pos());
+  if (!chosen) return;
+
+  if (chosen == act_copy) {
+    if (!on_object) {
+      // Empty space → force "copy then select" path.
+      ecs::clear_selection(registry);
+      update_property_panel(entt::null);
+      request_all_views_update();
+    }
+    run_command("edit.copy");
+    return;
+  }
+  if (chosen == act_undo) {
+    run_command("edit.undo");
+    return;
+  }
+  if (chosen == act_redo) {
+    run_command("edit.redo");
   }
 }
 

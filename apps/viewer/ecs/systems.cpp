@@ -90,7 +90,8 @@ int input_on_press(entt::registry& registry, float x, float y, int button,
     state.drag_mode = InputState::DragMode::PendingSelect;
   } else if (button == Qt::MiddleButton && state.multi_select) {
     state.drag_mode = InputState::DragMode::Orbit;
-  } else if (button == Qt::RightButton || button == Qt::MiddleButton) {
+  } else if (button == Qt::MiddleButton) {
+    // Pan is middle-button only; right-click is reserved for context menu.
     state.drag_mode = InputState::DragMode::Pan;
   } else {
     state.drag_mode = InputState::DragMode::None;
@@ -125,7 +126,7 @@ void input_on_move(entt::registry& registry, Camera& camera, float x, float y,
   } else if (state.drag_mode == InputState::DragMode::Orbit) {
     if (!(buttons & Qt::MiddleButton)) return;
   } else if (state.drag_mode == InputState::DragMode::Pan) {
-    if (!(buttons & (Qt::RightButton | Qt::MiddleButton))) return;
+    if (!(buttons & Qt::MiddleButton)) return;
   }
 
   const float dx = x - state.last_x;

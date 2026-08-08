@@ -46,6 +46,12 @@ class VulkanWindow final : public QVulkanWindow {
     tool_press_callback_ = std::move(cb);
   }
 
+  /// Right-click (no drag) in selection mode. Window-local x/y.
+  using ContextMenuCallback = std::function<void(float x, float y)>;
+  void set_context_menu_callback(ContextMenuCallback cb) {
+    context_menu_callback_ = std::move(cb);
+  }
+
   [[nodiscard]] Camera& camera() noexcept { return camera_; }
   [[nodiscard]] const Camera& camera() const noexcept { return camera_; }
 
@@ -84,6 +90,8 @@ class VulkanWindow final : public QVulkanWindow {
   [[nodiscard]] bool forward_tool_press(QPointF pos, Qt::MouseButton button);
   [[nodiscard]] QRect rubber_band_geometry(float x0, float y0, float x1,
                                            float y1) const;
+  void begin_right_press(QPointF pos);
+  [[nodiscard]] bool finish_right_release(QPointF pos);
 
   ecs::World* world_{nullptr};
   Camera camera_{};
@@ -91,9 +99,14 @@ class VulkanWindow final : public QVulkanWindow {
   QWidget* rubber_host_{nullptr};
   QRubberBand* rubber_band_{nullptr};  // child of rubber_host_
   bool selection_enabled_{true};
+  bool right_press_active_{false};
+  bool right_moved_{false};
+  float right_press_x_{0.0f};
+  float right_press_y_{0.0f};
   SelectionCallback selection_callback_;
   ToolMotionCallback tool_motion_callback_;
   ToolPressCallback tool_press_callback_;
+  ContextMenuCallback context_menu_callback_;
 };
 
 }  // namespace brep::viewer

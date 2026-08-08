@@ -80,6 +80,7 @@ class MainWindow final : public QMainWindow {
   [[nodiscard]] QString wood_albedo_path() const;
   [[nodiscard]] QString view_icon_path(const QString& filename) const;
   bool handle_tool_mouse(QEvent* event);
+  void show_viewport_context_menu(VulkanWindow* window, float x, float y);
 
   DocumentSession document_;
   ecs::World world_;
