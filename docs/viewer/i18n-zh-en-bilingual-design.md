@@ -1,9 +1,15 @@
 # XCAD Viewer 中英双语设计方案
 
-**状态**：待评审  
+**状态**：已确认，实施中  
 **日期**：2026-08-08  
 **范围**：`apps/viewer` 用户可见 UI（不含 B-Rep 内核日志）  
-**目标**：支持简体中文 / English，可扩展更多语言
+**目标**：支持简体中文 / English，可扩展更多语言  
+
+**已确认决策**  
+1. 源语言英文，`zh_CN.ts` 提供中文  
+2. 切换语言立即生效（不重启）  
+3. 默认跟随系统，未知则 `zh_CN`  
+4. 入口：`工具 → 语言`
 
 ---
 
@@ -23,13 +29,12 @@
 |------|------|
 | 语言 | `zh_CN`（简体中文）、`en`（English） |
 | 覆盖 | 菜单、工具栏、对话框、状态栏短提示、交互工具 `prompt()`、右键菜单、Home/启动相关文案 |
-| 切换 | 设置项选择语言；**重启后生效**（v1） |
+| 切换 | 设置项选择语言；**立即生效，不重启软件**（热切换） |
 | 默认 | 跟随系统 UI 语言；无法识别时默认 `zh_CN`（当前用户主体）或 `en`（可配置） |
 | 构建 | CMake 生成/安装 `.qm`，运行时可从 exe 旁 `translations/` 加载 |
 
 ### 2.2 非目标（v1 不做）
 
-- 运行时无重启热切换全 UI（可作 v2）
 - 内核 / spdlog 诊断日志多语言
 - 命令行参数本地化、文件格式字符串本地化
 - 专业 TMS（Crowdin 等）；v1 用 Qt Linguist 即可
@@ -130,24 +135,64 @@ translations/
   2. `system` → `QLocale::system().name()`（`zh_CN` / `en_US` → 映射到 `zh_CN` / `en`）
   3. fallback：`zh_CN`
 
-### 5.4 启动加载流程
+### 5.4 启动加载与热切换流程
+
+**启动：**
 
 ```
 main()
   → 读 QSettings
   → 决定 language_tag
-  → installTranslator(qtbase_xx.qm)   // 可选
-  → installTranslator(xcad_xx.qm)
+  → LanguageManager::apply(lang)   // installTranslator(qtbase + xcad)
   → 再创建 HomeWindow / MainWindow
 ```
 
-**注意**：Translator 必须在创建带 `tr()` 的窗口**之前**安装。
+**热切换（不重启）：**
+
+```
+用户选择语言
+  → 写入 QSettings
+  → LanguageManager::apply(new_lang)
+       1. removeTranslator(旧 xcad / qtbase)
+       2. load + installTranslator(新 .qm)
+       3. qApp->postEvent / emit languageChanged()
+  → 各顶层窗口 retranslate_ui()
+       - 菜单 / 工具栏 / Dock 标题重新 setText(tr(...))
+       - 状态栏、ViewCube 旁文案、属性面板标签刷新
+       - 若有活动工具：用新语言刷新 prompt / 光标提示
+```
+
+Qt 要点：仅 `installTranslator` **不会**自动改已创建控件上的文字；必须在收到 `QEvent::LanguageChange`（或自定义信号）后**主动**把文案设回 `tr("...")`。这是热切换的核心工作量，但仍远轻于“整进程重启”。
+
+推荐集中封装：
+
+```cpp
+// apps/viewer/i18n/language_manager.hpp
+class LanguageManager : public QObject {
+  // apply(QString lang_tag) -> bool
+  // signals: languageChanged(QString)
+};
+```
+
+各窗口：
+
+```cpp
+void MainWindow::changeEvent(QEvent* e) override {
+  if (e->type() == QEvent::LanguageChange) retranslate_ui();
+  QMainWindow::changeEvent(e);
+}
+```
+
+或连接 `LanguageManager::languageChanged` 调用同一套 `retranslate_ui()`。
+
+**交互工具进行中切换语言**：允许；只刷新 prompt/状态栏，不中断工具步骤。
 
 ### 5.5 设置 UI（v1）
 
-- 菜单：`编辑` 或 `工具` → `语言(&L)…` / `Language…`
-- 或 Home / 首选项简单对话框：下拉「跟随系统 / 简体中文 / English」
-- 变更后提示：**「语言将在重启后生效」**，写入 settings，不强制立刻 `retranslate`
+- 菜单：`工具` → `语言(&L)` 子菜单：`跟随系统` / `简体中文` / `English`（单选）
+- 或小型对话框下拉选择
+- 变更后：**立即切换**，短暂状态栏提示如 `Language: English` / `界面语言：简体中文`
+- 无需提示重启
 
 ---
 
@@ -192,35 +237,37 @@ CI：可校验 `zh_CN.ts` 无未完成条目（可选，v1 不强制）。
 
 ## 8. 迁移实施计划（分阶段）
 
-### Phase 0 — 骨架（0.5–1 天）
+### Phase 0 — 骨架 + 热切换通路（1 天）
 
-- [ ] 增加 `i18n/` 与空 `xcad_zh_CN.ts`
-- [ ] `main.cpp`：`load_translators(lang)`
+- [ ] 增加 `LanguageManager` + `i18n/` 与 `xcad_zh_CN.ts`
+- [ ] `main.cpp` 启动加载 translator
 - [ ] `QSettings` 读写语言
 - [ ] CMake 复制 `.qm`
-- [ ] 设置入口（菜单一项即可）
-- [ ] 用 **少量** 字符串验证中英切换（重启）
+- [ ] 设置入口（语言子菜单）
+- [ ] `MainWindow::retranslate_ui()` 先覆盖菜单等少量字符串
+- [ ] **不重启**切换中英，验证菜单即时变化
 
 ### Phase 1 — 主窗口与对话框（1–2 天）
 
-- [ ] `MainWindow` 菜单/工具栏/关闭保存框/右键菜单
-- [ ] `HomeWindow` / `SplashScreen`
-- [ ] `QMessageBox` 标题与正文
+- [ ] `MainWindow` 全量 `retranslate_ui`（菜单/工具栏/关闭框/右键）
+- [ ] `HomeWindow` / `SplashScreen` 的 `retranslate_ui`
+- [ ] 动态 `QMessageBox`：创建时用 `tr()`（天然随当前语言）
 
 ### Phase 2 — 命令与工具（1–2 天）
 
 - [ ] `builtin_commands` 显示名（若有）
 - [ ] `CreateBoxTool` / `CopyTool` 的 `prompt()` 与用户可见失败信息
-- [ ] 命令面板条目（若显示本地化标题）
+- [ ] 命令面板条目；语言变更时若面板打开则刷新列表
+- [ ] 活动工具：`languageChanged` 时刷新 status / cursor tip
 
 ### Phase 3 — 收尾（0.5–1 天）
 
-- [ ] 属性面板、状态栏剩余文案
-- [ ] 光标跟随提示（工具 prompt 已译则自动覆盖）
+- [ ] 属性面板、状态栏剩余文案纳入 `retranslate_ui`
 - [ ] Linguist 通校中文
-- [ ] 默认语言与「跟随系统」实测（中文 Windows / 英文 Windows）
+- [ ] 默认语言与「跟随系统」实测
+- [ ] 切换语言时文档未丢、视图/选择/撤销栈保持不变
 
-**预估总工作量**：约 3–5 人日（含翻译校对）。
+**预估总工作量**：约 4–6 人日（含热切换与翻译校对；比重启方案略多在 `retranslate_ui`）。
 
 ---
 
@@ -231,6 +278,8 @@ CI：可校验 `zh_CN.ts` 无未完成条目（可选，v1 不强制）。
 3. 动态组句只用 `%n` / `%1`，并在 `.ts` 里写自然中文语序。
 4. 不翻译的标识用 `QLatin1String` / `std::string`，避免误抽进 `.ts`。
 5. 改字符串后跑一次 `lupdate`，避免 `.ts` 过期。
+6. 每个顶层窗口必须实现 `retranslate_ui()`，并响应 `LanguageChange` / `languageChanged`；**禁止**只在构造函数里设一次文案却无刷新路径。
+7. 构造 UI 时优先：`action->setText(tr("Save"))`，`retranslate_ui` 里重复同一调用（可抽成小函数避免两处不一致）。
 
 辅助宏（可选）：
 
@@ -245,13 +294,13 @@ CI：可校验 `zh_CN.ts` 无未完成条目（可选，v1 不强制）。
 
 | 用例 | 期望 |
 |------|------|
-| 设置 English → 重启 | 菜单为 Save / Edit / Copy… |
-| 设置 简体中文 → 重启 | 菜单为 保存 / 编辑 / 复制… |
-| 跟随系统（中文 OS） | 启动为中文 |
-| 跟随系统（英文 OS） | 启动为英文 |
-| 关闭未保存文档 | 对话框三按钮随语言变化 |
-| 复制/创建立方体工具 | 逐步提示随语言变化 |
-| 缺 `.qm` 文件 | 回退到源语言（英文），不崩溃 |
+| 设置 English（不重启） | 菜单立刻变为 Save / Edit / Copy… |
+| 再切回简体中文（不重启） | 菜单立刻变为 保存 / 编辑 / 复制… |
+| 切换过程中已打开文档 | 几何/选择/撤销栈不变，仅 UI 文案变 |
+| 工具进行中切换语言 | 步骤不丢，prompt 变为新语言 |
+| 跟随系统（中文/英文 OS） | 启动语言正确 |
+| 关闭未保存文档 | 对话框随当前语言 |
+| 缺 `.qm` 文件 | 回退源语言（英文），不崩溃 |
 
 ---
 
@@ -259,16 +308,16 @@ CI：可校验 `zh_CN.ts` 无未完成条目（可选，v1 不强制）。
 
 | 风险 | 缓解 |
 |------|------|
-| 漏改硬编码中文 | Phase 结束前全文搜 `QStringLiteral("[\u4e00-\u9fff]` |
+| 漏改硬编码中文 | Phase 结束前全文搜中文 `QStringLiteral` |
 | 助记符 `&` 冲突 | 中英分别校对菜单字母 |
-| Translator 装太晚 | 只在 `main()`、创建窗口前加载 |
-| 热切换期待 | 文档与设置文案写明「重启生效」 |
+| Translator 装太晚 | 启动时在创建窗口前加载；热切换走 `LanguageManager` |
+| 热切换后个别控件仍是旧语言 | 清单式 `retranslate_ui`；测试切换两轮中→英→中 |
+| 动态创建的菜单（右键） | 弹出时现场 `tr()`，不必缓存旧字符串 |
 
 ---
 
-## 12. v2 展望（本方案不实施）
+## 12. v2 展望
 
-- 不重启 `retranslateUi` / 重建菜单
 - 更多语言包（`ja_JP` 等）
 - 命令本地化别名（输入「复制」触发 `edit.copy`）
 - 文档/示例工程多语言
@@ -280,8 +329,8 @@ CI：可校验 `zh_CN.ts` 无未完成条目（可选，v1 不强制）。
 请确认后开始 Phase 0 实现：
 
 1. **源语言用英文**，`zh_CN.ts` 提供中文 — 是否同意？  
-2. **切换语言重启生效** — 是否同意？  
+2. **切换语言立即生效（不重启）** — 是否同意？（本文已按此修订）  
 3. **默认**：跟随系统，未知则 `zh_CN` — 是否同意？  
-4. **设置入口**：放在「工具」菜单还是独立「首选项」对话框？  
+4. **设置入口**：`工具 → 语言` 子菜单，还是独立「首选项」对话框？  
 
 确认后按 Phase 0 → 1 → 2 → 3 落地，不必一次性改完所有字符串。

@@ -69,6 +69,7 @@ qt_add_executable(brep_viewer
   vulkan_window.cpp
   vulkan_renderer.cpp
   select_rect_overlay.cpp
+  i18n/language_manager.cpp
   ecs/world.cpp
   ecs/systems.cpp
   io/dxf_export.cpp
@@ -98,9 +99,42 @@ add_custom_command(TARGET brep_viewer POST_BUILD
 )
 
 target_include_directories(brep_viewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set(VIEWER_I18N_DIR ${CMAKE_CURRENT_SOURCE_DIR}/i18n)
 target_compile_definitions(brep_viewer PRIVATE
   BREP_VIEWER_SPV_DIR="${VIEWER_SPV_DIR}"
   BREP_VIEWER_ASSETS_DIR="${VIEWER_ASSETS_DIR}"
+  BREP_VIEWER_I18N_DIR="${VIEWER_I18N_DIR}"
+)
+
+# Compile .ts → .qm when lrelease is available; always deploy translations/.
+find_program(LRELEASE_EXECUTABLE NAMES lrelease lrelease-qt6 lrelease.exe
+  HINTS "${Qt6_DIR}/../../../bin")
+set(VIEWER_QM_DIR ${CMAKE_CURRENT_BINARY_DIR}/translations)
+file(MAKE_DIRECTORY ${VIEWER_QM_DIR})
+if(LRELEASE_EXECUTABLE)
+  add_custom_command(
+    OUTPUT ${VIEWER_QM_DIR}/xcad_zh_CN.qm
+    COMMAND ${LRELEASE_EXECUTABLE}
+            ${VIEWER_I18N_DIR}/xcad_zh_CN.ts
+            -qm ${VIEWER_QM_DIR}/xcad_zh_CN.qm
+    DEPENDS ${VIEWER_I18N_DIR}/xcad_zh_CN.ts
+    COMMENT "lrelease xcad_zh_CN.ts"
+    VERBATIM
+  )
+  add_custom_target(brep_viewer_i18n DEPENDS ${VIEWER_QM_DIR}/xcad_zh_CN.qm)
+  add_dependencies(brep_viewer brep_viewer_i18n)
+else()
+  message(WARNING "lrelease not found; copy prebuilt .qm if present")
+endif()
+
+add_custom_command(TARGET brep_viewer POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory
+          $<TARGET_FILE_DIR:brep_viewer>/translations
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${VIEWER_QM_DIR}/xcad_zh_CN.qm
+          $<TARGET_FILE_DIR:brep_viewer>/translations/xcad_zh_CN.qm
+  COMMENT "Deploy viewer translations"
+  VERBATIM
 )
 # Qt Gui links the platform Vulkan loader; headers come from the Vulkan-Headers submodule.
 target_link_libraries(brep_viewer PRIVATE

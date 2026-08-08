@@ -15,11 +15,13 @@
 #include <memory>
 
 class QAction;
+class QActionGroup;
 class QCloseEvent;
 class QDockWidget;
 class QLabel;
 class QMdiArea;
 class QMdiSubWindow;
+class QMenu;
 class QToolBar;
 
 namespace brep::viewer {
@@ -65,8 +67,11 @@ class MainWindow final : public QMainWindow {
   void ensure_minimum_view();
   void setup_menus();
   void setup_window_menu();
+  void setup_language_menu(QMenu* tools_menu);
   void setup_toolbar();
   void setup_view_toolbar();
+  void retranslate_ui();
+  void sync_language_menu_checks();
   void place_view_cube();
   [[nodiscard]] bool is_view_layout_object(const QObject* watched) const;
   void apply_wheel_zoom(VulkanWindow* window, int dy);
@@ -114,6 +119,10 @@ class MainWindow final : public QMainWindow {
   QAction* act_undo_{nullptr};
   QAction* act_redo_{nullptr};
   QAction* act_ortho_{nullptr};
+  QActionGroup* lang_action_group_{nullptr};
+  QAction* act_lang_system_{nullptr};
+  QAction* act_lang_zh_{nullptr};
+  QAction* act_lang_en_{nullptr};
   bool tool_cursor_overridden_{false};
 };
 

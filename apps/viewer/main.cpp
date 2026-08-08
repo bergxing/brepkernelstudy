@@ -1,4 +1,5 @@
 #include "home_window.hpp"
+#include "i18n/language_manager.hpp"
 #include "main_window.hpp"
 #include "splash_screen.hpp"
 
@@ -81,8 +82,13 @@ int main(int argc, char* argv[]) {
   brep::init_logging("brep_viewer.log", brep::LogLevel::Info);
 
   QApplication app(argc, argv);
+  QApplication::setOrganizationName(QStringLiteral("XCAD"));
   QApplication::setApplicationName(QStringLiteral("XCAD"));
   QApplication::setApplicationDisplayName(QStringLiteral("XCAD"));
+
+  auto& languages = brep::viewer::LanguageManager::instance();
+  languages.load_preference_from_settings();
+  languages.apply(languages.preference());
 
   try {
     auto* splash = new brep::viewer::SplashScreen();
