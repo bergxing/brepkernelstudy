@@ -6,7 +6,6 @@
 #include "ecs/world.hpp"
 #include "property_panel.hpp"
 #include "view_cube.hpp"
-#include "view_panel.hpp"
 #include "vulkan_window.hpp"
 
 #include <QMainWindow>
@@ -41,19 +40,21 @@ class MainWindow final : public QMainWindow {
  private:
   void setup_menus();
   void setup_toolbar();
+  void setup_view_toolbar();
   void place_view_cube();
   void apply_wheel_zoom(int dy);
+  void apply_standard_view(char face);
   void refresh_window_title();
   void refresh_edit_actions();
   void rebind_view_cube_camera();
   void sync_tool_ui();
   void setup_property_dock();
-  void setup_view_dock();
   void update_property_panel(entt::entity entity);
   void bind_action(QAction* action, const char* command_id);
   commands::CommandResult run_command(std::string_view command_id);
   [[nodiscard]] commands::CommandContext make_command_context();
   [[nodiscard]] QString wood_albedo_path() const;
+  [[nodiscard]] QString view_icon_path(const QString& filename) const;
   bool handle_tool_mouse(QEvent* event);
 
   DocumentSession document_;
@@ -65,12 +66,12 @@ class MainWindow final : public QMainWindow {
   QWidget* viewport_container_{nullptr};
   ViewCubeWidget* view_cube_{nullptr};
   QToolBar* toolbar_{nullptr};
+  QToolBar* view_toolbar_{nullptr};
   QDockWidget* property_dock_{nullptr};
   PropertyPanel* property_panel_{nullptr};
-  QDockWidget* view_dock_{nullptr};
-  ViewPanel* view_panel_{nullptr};
   QAction* act_undo_{nullptr};
   QAction* act_redo_{nullptr};
+  QAction* act_ortho_{nullptr};
   bool tool_cursor_overridden_{false};
 };
 

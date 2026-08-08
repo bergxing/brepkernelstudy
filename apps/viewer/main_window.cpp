@@ -13,6 +13,7 @@
 #include <QDockWidget>
 #include <QEvent>
 #include <QFileInfo>
+#include <QIcon>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QMenuBar>
@@ -21,6 +22,7 @@
 #include <QMoveEvent>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QSignalBlocker>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QVersionNumber>
@@ -120,8 +122,8 @@ MainWindow::MainWindow(QWidget* parent)
 
   setup_menus();
   setup_toolbar();
+  setup_view_toolbar();
   setup_property_dock();
-  setup_view_dock();
   refresh_window_title();
   refresh_edit_actions();
   update_property_panel(entt::null);
@@ -146,6 +148,29 @@ QString MainWindow::wood_albedo_path() const {
                     .filePath(QStringLiteral("assets/wood.png"));
   }
   return wood_path;
+}
+
+QString MainWindow::view_icon_path(const QString& filename) const {
+  QString path =
+      QDir(QStringLiteral(BREP_VIEWER_ASSETS_DIR)).filePath(
+          QStringLiteral("views/") + filename);
+  if (!QFileInfo::exists(path)) {
+    path = QDir(QCoreApplication::applicationDirPath())
+               .filePath(QStringLiteral("assets/views/") + filename);
+  }
+  return path;
+}
+
+void MainWindow::apply_standard_view(char face) {
+  Camera* cam = world_.main_camera();
+  if (!cam) return;
+  cam->set_standard_view(face);
+  if (act_ortho_) {
+    const QSignalBlocker block(act_ortho_);
+    act_ortho_->setChecked(cam->ortho);
+  }
+  if (view_cube_) view_cube_->update();
+  if (vulkan_window_) vulkan_window_->requestUpdate();
 }
 
 commands::CommandContext MainWindow::make_command_context() {
@@ -174,10 +199,6 @@ commands::CommandContext MainWindow::make_command_context() {
   };
   ctx.after_document_reset = [this] {
     rebind_view_cube_camera();
-    if (view_panel_) {
-      view_panel_->set_camera(world_.main_camera());
-      view_panel_->sync_from_camera();
-    }
     refresh_window_title();
     update_property_panel(entt::null);
   };
@@ -315,6 +336,7 @@ void MainWindow::setup_menus() {
 
 void MainWindow::setup_toolbar() {
   toolbar_ = addToolBar(QStringLiteral("主工具栏"));
+  toolbar_->setObjectName(QStringLiteral("MainToolbar"));
   toolbar_->setMovable(false);
   toolbar_->setIconSize(QSize(20, 20));
 
@@ -333,6 +355,54 @@ void MainWindow::setup_toolbar() {
 
   auto* act_export = toolbar_->addAction(QStringLiteral("导出 DXF"));
   bind_action(act_export, "file.export_dxf");
+}
+
+void MainWindow::setup_view_toolbar() {
+  view_toolbar_ = addToolBar(QStringLiteral("视图方向"));
+  view_toolbar_->setObjectName(QStringLiteral("ViewOrientToolbar"));
+  view_toolbar_->setMovable(true);
+  view_toolbar_->setIconSize(QSize(32, 32));
+  view_toolbar_->setToolButtonStyle(Qt::ToolButtonIconOnly);
+
+  struct Spec {
+    const char* file;
+    const char* tip;
+    char face;
+  };
+  constexpr Spec kSpecs[] = {
+      {"front.png", "前视图", 'f'},
+      {"back.png", "后视图", 'k'},
+      {"left.png", "左视图", 'l'},
+      {"right.png", "右视图", 'r'},
+      {"top.png", "顶视图", 't'},
+      {"bottom.png", "底视图", 'b'},
+      {"iso.png", "轴侧视图", 'h'},
+  };
+
+  for (const auto& spec : kSpecs) {
+    const QString tip = QString::fromUtf8(spec.tip);
+    const QIcon icon(view_icon_path(QString::fromUtf8(spec.file)));
+    auto* act = view_toolbar_->addAction(icon, tip);
+    act->setToolTip(tip);
+    const char face = spec.face;
+    connect(act, &QAction::triggered, this,
+            [this, face] { apply_standard_view(face); });
+  }
+
+  view_toolbar_->addSeparator();
+  act_ortho_ = view_toolbar_->addAction(QStringLiteral("正交"));
+  act_ortho_->setCheckable(true);
+  act_ortho_->setToolTip(QStringLiteral("正交投影"));
+  if (Camera* cam = world_.main_camera()) {
+    act_ortho_->setChecked(cam->ortho);
+  }
+  connect(act_ortho_, &QAction::toggled, this, [this](bool on) {
+    if (Camera* cam = world_.main_camera()) {
+      cam->ortho = on;
+      if (view_cube_) view_cube_->update();
+      if (vulkan_window_) vulkan_window_->requestUpdate();
+    }
+  });
 }
 
 void MainWindow::setup_property_dock() {
@@ -403,29 +473,11 @@ void MainWindow::setup_property_dock() {
         update_property_panel(ecs::selected_entity(world_.registry()));
       });
 
-}
-
-void MainWindow::setup_view_dock() {
-  view_dock_ = new QDockWidget(QStringLiteral("视图"), this);
-  view_dock_->setObjectName(QStringLiteral("ViewDock"));
-  view_dock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-  view_panel_ = new ViewPanel(view_dock_);
-  view_dock_->setWidget(view_panel_);
-  view_dock_->setMinimumWidth(160);
-  addDockWidget(Qt::LeftDockWidgetArea, view_dock_);
-
-  view_panel_->set_camera(world_.main_camera());
-  view_panel_->sync_from_camera();
-  view_panel_->set_redraw_callback([this] {
-    if (view_cube_) view_cube_->update();
-    if (vulkan_window_) vulkan_window_->requestUpdate();
-  });
-
   auto* view_menu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
-  if (property_dock_) {
-    view_menu->addAction(property_dock_->toggleViewAction());
+  view_menu->addAction(property_dock_->toggleViewAction());
+  if (view_toolbar_) {
+    view_menu->addAction(view_toolbar_->toggleViewAction());
   }
-  view_menu->addAction(view_dock_->toggleViewAction());
 }
 
 void MainWindow::update_property_panel(entt::entity entity) {
@@ -443,9 +495,11 @@ void MainWindow::refresh_window_title() {
 
 void MainWindow::rebind_view_cube_camera() {
   if (view_cube_) view_cube_->set_camera(world_.main_camera());
-  if (view_panel_) {
-    view_panel_->set_camera(world_.main_camera());
-    view_panel_->sync_from_camera();
+  if (act_ortho_) {
+    if (Camera* cam = world_.main_camera()) {
+      const QSignalBlocker block(act_ortho_);
+      act_ortho_->setChecked(cam->ortho);
+    }
   }
 }
 
