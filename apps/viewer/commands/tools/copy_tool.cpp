@@ -10,6 +10,7 @@
 #include "brep/log.hpp"
 
 #include <QMouseEvent>
+#include <qnamespace.h>
 
 #include <cmath>
 
@@ -111,10 +112,15 @@ std::vector<BoxSpec> collect_selected_box_specs(CommandContext& ctx) {
 }  // namespace
 
 QString CopyTool::prompt() const {
-  if (step_ == 0) {
-    return QStringLiteral("复制: 选择基点 (ESC 取消)");
+  switch (step_) {
+    case 0:
+      return QStringLiteral(
+          "复制: 点选/框选/Ctrl+左键选择对象，空格确认 (ESC 取消)");
+    case 1:
+      return QStringLiteral("复制: 选择基点 (ESC 取消)");
+    default:
+      return QStringLiteral("复制: 选择放置点 (ESC 取消)");
   }
-  return QStringLiteral("复制: 选择放置点 (ESC 取消)");
 }
 
 void CopyTool::clear_preview(CommandContext& ctx) {
@@ -125,20 +131,26 @@ void CopyTool::on_start(CommandContext& ctx) {
   step_ = 0;
   finished_ = false;
   result_ = CommandResult::cancelled();
-  sources_ = collect_selected_box_specs(ctx);
+  sources_.clear();
   clear_preview(ctx);
-
-  if (sources_.empty()) {
-    result_ = CommandResult::failed(
-        QStringLiteral("请先选中至少一个立方体再复制"));
-    finished_ = true;
-    if (ctx.report_status) ctx.report_status(result_.message);
-    BREP_WARN("CopyTool start aborted: no selected boxes");
-    return;
-  }
-
   if (ctx.report_status) ctx.report_status(prompt());
-  BREP_INFO("CopyTool start with {} source box(es)", sources_.size());
+  BREP_INFO("CopyTool start (select objects, then Space)");
+}
+
+bool CopyTool::confirm_selection(CommandContext& ctx) {
+  sources_ = collect_selected_box_specs(ctx);
+  if (sources_.empty()) {
+    if (ctx.report_status) {
+      ctx.report_status(
+          QStringLiteral("未选中立方体，请点选或框选后再按空格"));
+    }
+    return false;
+  }
+  step_ = 1;
+  clear_preview(ctx);
+  if (ctx.report_status) ctx.report_status(prompt());
+  BREP_INFO("CopyTool selection confirmed: {} box(es)", sources_.size());
+  return true;
 }
 
 bool CopyTool::pick_ground(CommandContext& ctx, float x, float y,
@@ -286,6 +298,8 @@ void CopyTool::commit_copies(CommandContext& ctx, const Point3d& place) {
 
 bool CopyTool::on_mouse_press(CommandContext& ctx, float x, float y,
                               int button) {
+  // Selection phase: let the viewport own click / box / Ctrl+select.
+  if (step_ == 0) return false;
   if (button != Qt::LeftButton) return false;
 
   Point3d hit;
@@ -296,9 +310,9 @@ bool CopyTool::on_mouse_press(CommandContext& ctx, float x, float y,
     return true;
   }
 
-  if (step_ == 0) {
+  if (step_ == 1) {
     base_ = hit;
-    step_ = 1;
+    step_ = 2;
     if (ctx.set_preview_edges) {
       ctx.set_preview_edges(make_point_marker(base_));
     }
@@ -312,7 +326,16 @@ bool CopyTool::on_mouse_press(CommandContext& ctx, float x, float y,
 }
 
 void CopyTool::on_mouse_move(CommandContext& ctx, float x, float y) {
-  if (step_ == 1) update_preview(ctx, x, y);
+  if (step_ == 2) update_preview(ctx, x, y);
+}
+
+bool CopyTool::on_key_press(CommandContext& ctx, int key) {
+  if (step_ != 0) return false;
+  if (key != Qt::Key_Space && key != Qt::Key_Return && key != Qt::Key_Enter) {
+    return false;
+  }
+  confirm_selection(ctx);
+  return true;
 }
 
 void CopyTool::on_cancel(CommandContext& ctx) {

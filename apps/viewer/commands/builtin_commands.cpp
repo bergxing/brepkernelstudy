@@ -202,8 +202,7 @@ class CopyCommand final : public ICommand {
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
     return ctx.world != nullptr && ctx.world->document() != nullptr &&
-           ctx.world->document()->main_part() != nullptr &&
-           ecs::selected_count(ctx.world->registry()) > 0;
+           ctx.world->document()->main_part() != nullptr;
   }
 
   [[nodiscard]] std::unique_ptr<ITool> make_tool(

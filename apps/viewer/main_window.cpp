@@ -220,7 +220,8 @@ VulkanWindow* MainWindow::create_view_window(const QString& title,
   vulkan_window->setTitle(QString());
   wire_vulkan_window(vulkan_window);
   if (command_manager_.has_active_tool()) {
-    vulkan_window->set_selection_enabled(false);
+    vulkan_window->set_selection_enabled(
+        command_manager_.active_tool_allows_selection());
   }
 
   auto* container = QWidget::createWindowContainer(vulkan_window, mdi_area_);
@@ -450,14 +451,18 @@ commands::CommandContext MainWindow::make_command_context() {
 
 void MainWindow::sync_tool_ui() {
   const bool tool = command_manager_.has_active_tool();
+  const bool allow_sel = command_manager_.active_tool_allows_selection();
   for (auto* window : view_windows_) {
-    if (window) window->set_selection_enabled(!tool);
+    if (window) window->set_selection_enabled(!tool || allow_sel);
   }
 
-  if (tool && !tool_cursor_overridden_) {
+  // Crosshair only while the tool owns picking (base / place), not during
+  // object selection.
+  const bool want_cross = tool && !allow_sel;
+  if (want_cross && !tool_cursor_overridden_) {
     QApplication::setOverrideCursor(Qt::CrossCursor);
     tool_cursor_overridden_ = true;
-  } else if (!tool && tool_cursor_overridden_) {
+  } else if (!want_cross && tool_cursor_overridden_) {
     QApplication::restoreOverrideCursor();
     tool_cursor_overridden_ = false;
   }
@@ -836,18 +841,30 @@ void MainWindow::apply_wheel_zoom(VulkanWindow* window, int dy) {
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* event) {
-  if (event->key() == Qt::Key_Escape && command_manager_.has_active_tool()) {
+  if (command_manager_.has_active_tool()) {
+    if (event->key() == Qt::Key_Escape) {
+      auto ctx = make_command_context();
+      command_manager_.cancel_active_tool(ctx);
+      sync_tool_ui();
+      event->accept();
+      return;
+    }
     auto ctx = make_command_context();
-    command_manager_.cancel_active_tool(ctx);
-    sync_tool_ui();
-    event->accept();
-    return;
+    if (command_manager_.tool_key_press(ctx, int(event->key()))) {
+      sync_tool_ui();
+      refresh_edit_actions();
+      update_property_panel(ecs::selected_entity(world_.registry()));
+      event->accept();
+      return;
+    }
   }
   QMainWindow::keyPressEvent(event);
 }
 
 bool MainWindow::handle_tool_mouse(QEvent* event) {
   if (!command_manager_.has_active_tool()) return false;
+  // Selection phase (e.g. Copy): let the viewport handle pick / box / Ctrl.
+  if (command_manager_.active_tool_allows_selection()) return false;
 
   const QEvent::Type type = event->type();
   if (type != QEvent::MouseButtonPress && type != QEvent::MouseButtonRelease &&
@@ -937,12 +954,20 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 
   if (handle_tool_mouse(event)) return true;
 
-  if (event->type() == QEvent::KeyPress) {
+  if (event->type() == QEvent::KeyPress &&
+      command_manager_.has_active_tool()) {
     auto* ke = static_cast<QKeyEvent*>(event);
-    if (ke->key() == Qt::Key_Escape && command_manager_.has_active_tool()) {
+    if (ke->key() == Qt::Key_Escape) {
       auto ctx = make_command_context();
       command_manager_.cancel_active_tool(ctx);
       sync_tool_ui();
+      return true;
+    }
+    auto ctx = make_command_context();
+    if (command_manager_.tool_key_press(ctx, int(ke->key()))) {
+      sync_tool_ui();
+      refresh_edit_actions();
+      update_property_panel(ecs::selected_entity(world_.registry()));
       return true;
     }
   }

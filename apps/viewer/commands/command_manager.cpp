@@ -12,6 +12,10 @@ QString CommandManager::active_prompt() const {
   return active_tool_->prompt();
 }
 
+bool CommandManager::active_tool_allows_selection() const noexcept {
+  return active_tool_ && active_tool_->allows_viewport_selection();
+}
+
 CommandResult CommandManager::run(std::string_view id, CommandContext& ctx) {
   ctx.history = &history_;
   auto cmd = registry_.create(id);
@@ -89,6 +93,14 @@ void CommandManager::tool_mouse_move(CommandContext& ctx, float x, float y) {
   if (!active_tool_) return;
   ctx.history = &history_;
   active_tool_->on_mouse_move(ctx, x, y);
+}
+
+bool CommandManager::tool_key_press(CommandContext& ctx, int key) {
+  if (!active_tool_) return false;
+  ctx.history = &history_;
+  const bool consumed = active_tool_->on_key_press(ctx, key);
+  finish_tool_if_done(ctx);
+  return consumed;
 }
 
 }  // namespace brep::viewer::commands

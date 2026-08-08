@@ -24,6 +24,7 @@ class CommandManager {
   }
   [[nodiscard]] ITool* active_tool() noexcept { return active_tool_.get(); }
   [[nodiscard]] QString active_prompt() const;
+  [[nodiscard]] bool active_tool_allows_selection() const noexcept;
 
   /// Instant → execute; Interactive → start tool (cancels previous tool).
   CommandResult run(std::string_view id, CommandContext& ctx);
@@ -33,6 +34,7 @@ class CommandManager {
   /// Forward input to the active tool. Returns true if consumed.
   bool tool_mouse_press(CommandContext& ctx, float x, float y, int button);
   void tool_mouse_move(CommandContext& ctx, float x, float y);
+  bool tool_key_press(CommandContext& ctx, int key);
 
  private:
   void finish_tool_if_done(CommandContext& ctx);
