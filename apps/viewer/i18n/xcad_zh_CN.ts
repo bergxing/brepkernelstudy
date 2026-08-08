@@ -223,12 +223,103 @@
         <translation>界面语言：%1</translation>
     </message>
     <message>
+        <source>&amp;View</source>
+        <translation>视图(&amp;V)</translation>
+    </message>
+    <message>
+        <source>Front View</source>
+        <translation>前视图</translation>
+    </message>
+    <message>
+        <source>Back View</source>
+        <translation>后视图</translation>
+    </message>
+    <message>
+        <source>Left View</source>
+        <translation>左视图</translation>
+    </message>
+    <message>
+        <source>Right View</source>
+        <translation>右视图</translation>
+    </message>
+    <message>
+        <source>Top View</source>
+        <translation>顶视图</translation>
+    </message>
+    <message>
+        <source>Bottom View</source>
+        <translation>底视图</translation>
+    </message>
+    <message>
+        <source>Isometric View</source>
+        <translation>轴侧视图</translation>
+    </message>
+    <message>
+        <source>View</source>
+        <translation>视图</translation>
+    </message>
+    <message>
+        <source>View %1</source>
+        <translation>视图 %1</translation>
+    </message>
+    <message>
+        <source>%1 (%2)</source>
+        <translation>%1 (%2)</translation>
+    </message>
+    <message>
         <source>&amp;Undo %1</source>
         <translation>撤销(&amp;U) %1</translation>
     </message>
     <message>
         <source>&amp;Redo %1</source>
         <translation>重做(&amp;R) %1</translation>
+    </message>
+</context>
+<context>
+    <name>brep::viewer::PropertyPanel</name>
+    <message>
+        <source>No selection</source>
+        <translation>未选择对象</translation>
+    </message>
+    <message>
+        <source>Object</source>
+        <translation>对象</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>名称</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>类型</translation>
+    </message>
+    <message>
+        <source>Dimensions (parameters)</source>
+        <translation>尺寸 (参数)</translation>
+    </message>
+    <message>
+        <source>Length (X)</source>
+        <translation>长 (X)</translation>
+    </message>
+    <message>
+        <source>Width (Z)</source>
+        <translation>宽 (Z)</translation>
+    </message>
+    <message>
+        <source>Height (Y)</source>
+        <translation>高 (Y)</translation>
+    </message>
+    <message>
+        <source>Parameter-driven · edits regenerate the model</source>
+        <translation>参数驱动 · 修改后自动再生</translation>
+    </message>
+    <message>
+        <source>No box parameters</source>
+        <translation>无 Box 参数</translation>
+    </message>
+    <message>
+        <source>(unnamed)</source>
+        <translation>(未命名)</translation>
     </message>
 </context>
 </TS>

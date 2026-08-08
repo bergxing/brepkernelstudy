@@ -16,6 +16,9 @@ class ViewMdiSubWindow final : public QMdiSubWindow {
   void fill_workspace();
   void clear_fill();
   [[nodiscard]] bool is_filled() const noexcept { return filled_; }
+  void set_view_caption(char standard_view, int serial);
+  [[nodiscard]] char standard_view() const noexcept { return standard_view_; }
+  [[nodiscard]] int view_serial() const noexcept { return view_serial_; }
 
  protected:
   void changeEvent(QEvent* event) override;
@@ -30,6 +33,8 @@ class ViewMdiSubWindow final : public QMdiSubWindow {
   bool filled_{false};
   bool remember_geom_{true};
   bool was_filled_before_minimize_{false};
+  char standard_view_{0};
+  int view_serial_{0};
   QRect normal_geometry_{};
 };
 

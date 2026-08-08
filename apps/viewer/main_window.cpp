@@ -57,28 +57,44 @@ int wheel_delta_y(const QWheelEvent* event) {
   return 0;
 }
 
-QString title_for_standard_view(char face) {
+}  // namespace
+
+QString MainWindow::title_for_standard_view(char face) const {
   switch (face) {
     case 'f':
-      return QStringLiteral("前视图");
+      return tr("Front View");
     case 'k':
-      return QStringLiteral("后视图");
+      return tr("Back View");
     case 'l':
-      return QStringLiteral("左视图");
+      return tr("Left View");
     case 'r':
-      return QStringLiteral("右视图");
+      return tr("Right View");
     case 't':
-      return QStringLiteral("顶视图");
+      return tr("Top View");
     case 'b':
-      return QStringLiteral("底视图");
+      return tr("Bottom View");
     case 'h':
-      return QStringLiteral("轴侧视图");
+      return tr("Isometric View");
     default:
-      return QStringLiteral("视图");
+      return tr("View");
   }
 }
 
-}  // namespace
+QString MainWindow::format_view_title(char standard_view, int serial) const {
+  if (standard_view == 0) {
+    return tr("View %1").arg(serial);
+  }
+  return tr("%1 (%2)").arg(title_for_standard_view(standard_view)).arg(serial);
+}
+
+void MainWindow::refresh_view_titles() {
+  for (auto it = view_windows_.cbegin(); it != view_windows_.cend(); ++it) {
+    if (auto* sub = qobject_cast<ViewMdiSubWindow*>(it.key())) {
+      sub->setWindowTitle(
+          format_view_title(sub->standard_view(), sub->view_serial()));
+    }
+  }
+}
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), command_manager_(commands_) {
@@ -113,7 +129,7 @@ MainWindow::MainWindow(QWidget* parent)
   connect(mdi_area_, &QMdiArea::subWindowActivated, this,
           &MainWindow::on_sub_window_activated);
 
-  create_view_window(title_for_standard_view('h'), 'h');
+  create_view_window('h');
 
   view_cube_ = new ViewCubeWidget(this);
   view_cube_->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
@@ -267,8 +283,7 @@ void MainWindow::clear_view_fill_states() {
   }
 }
 
-VulkanWindow* MainWindow::create_view_window(const QString& title,
-                                             char standard_view,
+VulkanWindow* MainWindow::create_view_window(char standard_view,
                                              bool fill_workspace) {
   auto* vulkan_window = new VulkanWindow();
   vulkan_window->setVulkanInstance(vulkan_instance_.get());
@@ -311,11 +326,9 @@ VulkanWindow* MainWindow::create_view_window(const QString& title,
   auto* sub = new ViewMdiSubWindow(mdi_area_);
   sub->setWidget(host);
   mdi_area_->addSubWindow(sub);
-  const QString numbered =
-      title.isEmpty()
-          ? QStringLiteral("视图 %1").arg(++view_serial_)
-          : QStringLiteral("%1 (%2)").arg(title).arg(++view_serial_);
-  sub->setWindowTitle(numbered);
+  const int serial = ++view_serial_;
+  sub->set_view_caption(standard_view, serial);
+  sub->setWindowTitle(format_view_title(standard_view, serial));
   sub->installEventFilter(this);
   view_windows_.insert(sub, vulkan_window);
 
@@ -382,7 +395,7 @@ void MainWindow::ensure_minimum_view() {
   if (!view_windows_.isEmpty() || !mdi_area_->subWindowList().isEmpty()) {
     return;
   }
-  create_view_window(title_for_standard_view('h'), 'h');
+  create_view_window('h');
 }
 
 void MainWindow::on_sub_window_activated(QMdiSubWindow* sub) {
@@ -393,7 +406,7 @@ void MainWindow::on_sub_window_activated(QMdiSubWindow* sub) {
 
 void MainWindow::on_new_view() {
   clear_view_fill_states();
-  create_view_window(title_for_standard_view('h'), 'h', false);
+  create_view_window('h', false);
   mdi_area_->tileSubWindows();
   place_view_cube();
 }
@@ -412,7 +425,7 @@ void MainWindow::on_quad_views() {
 
   const char faces[] = {'f', 't', 'r', 'h'};
   for (char face : faces) {
-    create_view_window(title_for_standard_view(face), face, false);
+    create_view_window(face, false);
   }
   clear_view_fill_states();
   mdi_area_->tileSubWindows();
@@ -1033,6 +1046,8 @@ void MainWindow::retranslate_ui() {
   set_act("act_window_cascade", tr("&Cascade"));
   set_act("act_window_close", tr("C&lose Active View"));
 
+  set_menu("menu_view", tr("&View"));
+
   if (toolbar_) toolbar_->setWindowTitle(tr("Main Toolbar"));
   set_act("tb_new", tr("New"));
   set_act("tb_open", tr("Open"));
@@ -1062,7 +1077,9 @@ void MainWindow::retranslate_ui() {
   set_tip("tb_view_ortho", tr("Orthographic projection"));
 
   if (property_dock_) property_dock_->setWindowTitle(tr("Properties"));
+  if (property_panel_) property_panel_->retranslate_ui();
 
+  refresh_view_titles();
   refresh_edit_actions();
   sync_language_menu_checks();
   refresh_cursor_tip();
@@ -1135,7 +1152,8 @@ void MainWindow::setup_property_dock() {
         update_property_panel(ecs::selected_entity(world_.registry()));
       });
 
-  auto* view_menu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
+  auto* view_menu = menuBar()->addMenu(tr("&View"));
+  view_menu->setObjectName(QStringLiteral("menu_view"));
   view_menu->addAction(property_dock_->toggleViewAction());
   if (view_toolbar_) {
     view_menu->addAction(view_toolbar_->toggleViewAction());

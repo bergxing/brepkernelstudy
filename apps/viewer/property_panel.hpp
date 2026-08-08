@@ -11,9 +11,11 @@
 
 #include <functional>
 
+class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QDoubleSpinBox;
+class QEvent;
 
 namespace brep::viewer {
 
@@ -32,9 +34,14 @@ class PropertyPanel final : public QWidget {
 
   void clear();
   void show_entity(entt::registry& registry, entt::entity entity);
+  void retranslate_ui();
+
+ protected:
+  void changeEvent(QEvent* event) override;
 
  private:
   void set_enabled(bool enabled);
+  void refresh_dim_hint();
   void on_dim_edited();
   void block_dim_signals(bool block);
 
@@ -52,6 +59,14 @@ class PropertyPanel final : public QWidget {
   QLabel* empty_label_{nullptr};
   QLabel* dims_hint_{nullptr};
   QWidget* form_host_{nullptr};
+  QGroupBox* identity_group_{nullptr};
+  QGroupBox* dims_group_{nullptr};
+  QLabel* name_row_label_{nullptr};
+  QLabel* type_row_label_{nullptr};
+  QLabel* length_row_label_{nullptr};
+  QLabel* width_row_label_{nullptr};
+  QLabel* height_row_label_{nullptr};
+  bool box_params_visible_{false};
 };
 
 }  // namespace brep::viewer

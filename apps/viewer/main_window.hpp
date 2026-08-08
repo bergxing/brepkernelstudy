@@ -55,7 +55,7 @@ class MainWindow final : public QMainWindow {
   void on_close_active_view();
 
  private:
-  VulkanWindow* create_view_window(const QString& title, char standard_view,
+  VulkanWindow* create_view_window(char standard_view,
                                    bool fill_workspace = true);
   void clear_view_fill_states();
   [[nodiscard]] VulkanWindow* active_vulkan_window() const;
@@ -72,6 +72,9 @@ class MainWindow final : public QMainWindow {
   void setup_view_toolbar();
   void retranslate_ui();
   void sync_language_menu_checks();
+  void refresh_view_titles();
+  [[nodiscard]] QString title_for_standard_view(char face) const;
+  [[nodiscard]] QString format_view_title(char standard_view, int serial) const;
   void place_view_cube();
   [[nodiscard]] bool is_view_layout_object(const QObject* watched) const;
   void apply_wheel_zoom(VulkanWindow* window, int dy);

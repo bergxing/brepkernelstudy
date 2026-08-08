@@ -14,6 +14,11 @@ ViewMdiSubWindow::ViewMdiSubWindow(QWidget* parent) : QMdiSubWindow(parent) {
                  Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
 }
 
+void ViewMdiSubWindow::set_view_caption(char standard_view, int serial) {
+  standard_view_ = standard_view;
+  view_serial_ = serial;
+}
+
 void ViewMdiSubWindow::ensure_mdi_hooked() {
   if (auto* mdi = mdiArea()) {
     if (mdi->viewport()) {
