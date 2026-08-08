@@ -1052,8 +1052,12 @@ void VulkanRenderer::initSwapChainResources() {}
 void VulkanRenderer::releaseSwapChainResources() {}
 
 void VulkanRenderer::releaseResources() {
+  BREP_INFO("VulkanRenderer::releaseResources begin");
   const VkDevice device = window_->device();
-  if (!dev_ || device == VK_NULL_HANDLE) return;
+  if (!dev_ || device == VK_NULL_HANDLE) {
+    BREP_WARN("VulkanRenderer::releaseResources skipped (no device)");
+    return;
+  }
 
   destroy_buffer(tri_vb_);
   destroy_buffer(tri_ib_);
@@ -1102,6 +1106,7 @@ void VulkanRenderer::releaseResources() {
   desc_layout_ = VK_NULL_HANDLE;
   desc_set_ = selection_desc_set_ = axis_desc_set_ = VK_NULL_HANDLE;
   axis_vertex_count_ = 0;
+  BREP_INFO("VulkanRenderer::releaseResources end");
 }
 
 void VulkanRenderer::sync_from_world() {
@@ -1110,6 +1115,12 @@ void VulkanRenderer::sync_from_world() {
 }
 
 void VulkanRenderer::startNextFrame() {
+  // Window teardown clears world; do not keep requesting frames.
+  if (!window_ || !window_->world()) {
+    if (window_) window_->frameReady();
+    return;
+  }
+
   // Keep ECS → GPU sync current (mesh/material dirtied by systems).
   sync_from_world();
 

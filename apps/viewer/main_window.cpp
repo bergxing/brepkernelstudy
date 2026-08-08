@@ -144,10 +144,15 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+  BREP_INFO("MainWindow::~MainWindow begin");
+  // Must remove before QObject teardown; otherwise quit-time events can call
+  // into a destroyed MainWindow (ACCESS_VIOLATION / 0xC0000005).
+  if (qApp) qApp->removeEventFilter(this);
   if (tool_cursor_overridden_) {
     QApplication::restoreOverrideCursor();
     tool_cursor_overridden_ = false;
   }
+  BREP_INFO("MainWindow::~MainWindow end");
 }
 
 bool MainWindow::open_document(const QString& path) {
@@ -969,13 +974,18 @@ void MainWindow::refresh_window_title() {
 }
 
 bool MainWindow::confirm_close_or_save() {
+  BREP_INFO("confirm_close_or_save dirty={} tool={}", document_.dirty(),
+            command_manager_.has_active_tool());
   if (command_manager_.has_active_tool()) {
     auto ctx = make_command_context();
     command_manager_.cancel_active_tool(ctx);
     sync_tool_ui();
   }
 
-  if (!document_.dirty()) return true;
+  if (!document_.dirty()) {
+    BREP_INFO("confirm_close_or_save: clean document, allow close");
+    return true;
+  }
 
   QMessageBox box(this);
   box.setIcon(QMessageBox::Warning);
@@ -995,20 +1005,47 @@ bool MainWindow::confirm_close_or_save() {
   box.setEscapeButton(btn_cancel);
   box.exec();
 
-  if (box.clickedButton() == btn_cancel) return false;
-  if (box.clickedButton() == btn_discard) return true;
+  if (box.clickedButton() == btn_cancel) {
+    BREP_INFO("confirm_close_or_save: user cancelled");
+    return false;
+  }
+  if (box.clickedButton() == btn_discard) {
+    BREP_INFO("confirm_close_or_save: discard changes");
+    return true;
+  }
 
   // Save then close. Abort close if the user cancels the save dialog / fails.
+  BREP_INFO("confirm_close_or_save: saving before close");
   const auto result = run_command("file.save");
+  BREP_INFO("confirm_close_or_save: save status={}", int(result.status));
   return result.succeeded();
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
-  if (confirm_close_or_save()) {
-    event->accept();
-  } else {
+  BREP_INFO("MainWindow::closeEvent");
+  if (!confirm_close_or_save()) {
+    BREP_INFO("MainWindow::closeEvent ignored");
     event->ignore();
+    return;
   }
+
+  // Tear down app-wide hooks before child/Vulkan destruction churn.
+  if (qApp) qApp->removeEventFilter(this);
+  hide_cursor_tip();
+  if (view_cube_) {
+    view_cube_->hide();
+    view_cube_->set_camera(nullptr);
+  }
+  for (auto* window : view_windows_) {
+    if (!window) continue;
+    window->set_selection_callback({});
+    window->set_tool_motion_callback({});
+    window->set_tool_press_callback({});
+    window->set_context_menu_callback({});
+    window->set_world(nullptr);
+  }
+  BREP_INFO("MainWindow::closeEvent accepted");
+  event->accept();
 }
 
 void MainWindow::rebind_view_cube_camera() {
