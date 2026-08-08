@@ -55,6 +55,7 @@ class VulkanWindow final : public QVulkanWindow {
  protected:
   void mousePressEvent(QMouseEvent* event) override;
   void mouseReleaseEvent(QMouseEvent* event) override;
+  void mouseDoubleClickEvent(QMouseEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
   void keyPressEvent(QKeyEvent* event) override;
@@ -64,10 +65,12 @@ class VulkanWindow final : public QVulkanWindow {
   void pointer_move(QPointF pos, Qt::MouseButtons buttons);
   void pointer_release(QPointF pos);
   void pointer_wheel(int angle_delta_y);
+  void pointer_double_click(Qt::MouseButton button);
   void apply_key(int key);
   void sync_renderer();
   void maybe_select_at(float x, float y);
   void restore_idle_cursor();
+  void fit_view_to_scene();
   [[nodiscard]] bool forward_tool_press(QPointF pos, Qt::MouseButton button);
 
   ecs::World* world_{nullptr};

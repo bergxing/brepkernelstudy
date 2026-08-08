@@ -60,6 +60,24 @@ bool VulkanWindow::forward_tool_press(QPointF pos, Qt::MouseButton button) {
   return tool_press_callback_(float(pos.x()), float(pos.y()), int(button));
 }
 
+void VulkanWindow::fit_view_to_scene() {
+  if (!world_) return;
+  const float aspect =
+      float(std::max(1, width())) / float(std::max(1, height()));
+  ecs::fit_camera_to_scene(world_->registry(), camera_, aspect);
+  if (world_->registry().ctx().contains<ecs::InputState>()) {
+    world_->registry().ctx().get<ecs::InputState>().drag_mode =
+        ecs::InputState::DragMode::None;
+  }
+  restore_idle_cursor();
+  requestUpdate();
+}
+
+void VulkanWindow::pointer_double_click(Qt::MouseButton button) {
+  if (button != Qt::MiddleButton) return;
+  fit_view_to_scene();
+}
+
 void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
   if (forward_tool_press(pos, button)) return;
 
@@ -160,6 +178,11 @@ void VulkanWindow::mouseReleaseEvent(QMouseEvent* event) {
   event->accept();
 }
 
+void VulkanWindow::mouseDoubleClickEvent(QMouseEvent* event) {
+  pointer_double_click(event->button());
+  event->accept();
+}
+
 void VulkanWindow::mouseMoveEvent(QMouseEvent* event) {
   pointer_move(event->position(), event->buttons());
   event->accept();
@@ -188,6 +211,11 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
         w->setCursor(Qt::ArrowCursor);
       }
       break;
+    case QEvent::MouseButtonDblClick: {
+      auto* e = static_cast<QMouseEvent*>(event);
+      pointer_double_click(e->button());
+      return true;
+    }
     case QEvent::MouseButtonPress: {
       auto* e = static_cast<QMouseEvent*>(event);
       pointer_press(e->position(), e->button());

@@ -71,6 +71,32 @@ struct Camera {
     if (pitch_deg < -89.0f) pitch_deg = -89.0f;
   }
 
+  /// Zoom-to-fit a world-space bounding sphere; keeps current view direction.
+  void fit_sphere(const Point3d& center, float radius, float aspect) {
+    target = center;
+    const float pad = 1.2f;
+    const float r = std::max(0.05f, radius);
+    const float a = std::max(0.05f, aspect);
+
+    if (ortho) {
+      // Fit circle of radius r into ortho frustum (half_w = half_h * aspect).
+      ortho_half_h = r * pad * std::max(1.0f, 1.0f / a);
+      if (ortho_half_h < 0.05f) ortho_half_h = 0.05f;
+      if (ortho_half_h > 100.0f) ortho_half_h = 100.0f;
+      distance = std::max(6.0f, r * 4.0f);
+    } else {
+      const float v_half = fov_deg * 0.01745329252f * 0.5f;
+      const float h_half =
+          std::atan(a * std::tan(std::max(1e-4f, v_half)));
+      const float sin_v = std::sin(std::max(1e-4f, v_half));
+      const float sin_h = std::sin(std::max(1e-4f, h_half));
+      distance = std::max(r / sin_v, r / sin_h) * pad;
+      if (distance < 0.5f) distance = 0.5f;
+      if (distance > 200.0f) distance = 200.0f;
+    }
+    keep_outside_demo_box();
+  }
+
   void set_standard_view(char face) {
     switch (face) {
       case 'r':

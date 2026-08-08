@@ -123,7 +123,8 @@ MainWindow::MainWindow(QWidget* parent)
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "XCAD | 左键单击选择 / 拖动旋转 | 立方体=三点创建 | ESC 取消工具"));
+      "XCAD | 左键选择/拖动旋转 | 中键拖动平移 | 双击中键缩放到全部 | "
+      "立方体=三点创建 | ESC 取消工具"));
 }
 
 MainWindow::~MainWindow() {

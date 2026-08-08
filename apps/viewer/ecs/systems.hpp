@@ -1,5 +1,7 @@
 #pragma once
 
+#include "brep/math.hpp"
+
 #include <entt/entt.hpp>
 
 #include <cstdint>
@@ -36,6 +38,15 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
 [[nodiscard]] entt::entity pick_renderable(entt::registry& registry,
                                            const Camera& cam, int viewport_w,
                                            int viewport_h, float sx, float sy);
+
+/// World AABB of all renderables. Returns false when the scene is empty.
+[[nodiscard]] bool scene_aabb(const entt::registry& registry, Point3d& out_min,
+                              Point3d& out_max);
+
+/// Zoom-to-fit all renderables into the camera (keeps view direction).
+/// Empty scene → default home framing. `aspect` = width/height.
+void fit_camera_to_scene(const entt::registry& registry, Camera& camera,
+                         float aspect);
 
 void set_selection(entt::registry& registry, entt::entity entity);
 void clear_selection(entt::registry& registry);

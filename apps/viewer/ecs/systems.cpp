@@ -6,6 +6,9 @@
 
 #include <qnamespace.h>
 
+#include "camera.hpp"
+
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -275,6 +278,59 @@ bool consume_camera_dirty(entt::registry& registry) {
   const bool dirty = state.camera_dirty;
   state.camera_dirty = false;
   return dirty;
+}
+
+bool scene_aabb(const entt::registry& registry, Point3d& out_min,
+                Point3d& out_max) {
+  bool any = false;
+  auto view = registry.view<const MeshComponent, const Transform,
+                            const RenderableTag>();
+  for (auto entity : view) {
+    const auto& mesh = view.get<const MeshComponent>(entity);
+    const auto& xform = view.get<const Transform>(entity);
+    for (const auto& v : mesh.triangles.vertices) {
+      const Point3d p{v.position.x() + xform.position.x(),
+                      v.position.y() + xform.position.y(),
+                      v.position.z() + xform.position.z()};
+      if (!any) {
+        out_min = out_max = p;
+        any = true;
+      } else {
+        out_min = Point3d{std::min(out_min.x(), p.x()),
+                          std::min(out_min.y(), p.y()),
+                          std::min(out_min.z(), p.z())};
+        out_max = Point3d{std::max(out_max.x(), p.x()),
+                          std::max(out_max.y(), p.y()),
+                          std::max(out_max.z(), p.z())};
+      }
+    }
+  }
+  return any;
+}
+
+void fit_camera_to_scene(const entt::registry& registry, Camera& camera,
+                         float aspect) {
+  Point3d bmin;
+  Point3d bmax;
+  if (!scene_aabb(registry, bmin, bmax)) {
+    camera.target = Point3d{0.0, 0.0, 0.0};
+    if (camera.ortho) {
+      camera.ortho_half_h = 2.1f;
+      camera.distance = 6.0f;
+    } else {
+      camera.distance = 6.0f;
+    }
+    return;
+  }
+
+  const Point3d center{(bmin.x() + bmax.x()) * 0.5,
+                       (bmin.y() + bmax.y()) * 0.5,
+                       (bmin.z() + bmax.z()) * 0.5};
+  const Vector3d ext{bmax.x() - bmin.x(), bmax.y() - bmin.y(),
+                     bmax.z() - bmin.z()};
+  const float radius =
+      std::max(0.05f, static_cast<float>(ext.norm() * 0.5));
+  camera.fit_sphere(center, radius, aspect);
 }
 
 entt::entity pick_renderable(entt::registry& registry, const Camera& cam,
