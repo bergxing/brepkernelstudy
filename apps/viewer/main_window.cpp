@@ -138,6 +138,28 @@ MainWindow::~MainWindow() {
   }
 }
 
+bool MainWindow::open_document(const QString& path) {
+  auto ctx = make_command_context();
+  const auto result = commands::open_xl_file(ctx, path);
+  if (!result.succeeded()) {
+    if (!result.message.isEmpty()) {
+      statusBar()->showMessage(result.message, 6000);
+    }
+    return false;
+  }
+
+  if (auto* vw = active_vulkan_window()) {
+    const float aspect =
+        float(std::max(1, vw->width())) / float(std::max(1, vw->height()));
+    ecs::fit_camera_to_scene(world_.registry(), vw->camera(), aspect);
+  }
+  update_property_panel(entt::null);
+  request_all_views_update();
+  refresh_window_title();
+  statusBar()->showMessage(result.message, 6000);
+  return true;
+}
+
 void MainWindow::wire_vulkan_window(VulkanWindow* window) {
   window->set_selection_callback([this](entt::entity entity) {
     update_property_panel(entity);

@@ -1,5 +1,7 @@
 #include "home_window.hpp"
 
+#include <QDir>
+#include <QFileDialog>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -95,11 +97,17 @@ void HomeWindow::build_ui() {
   btn_new->setDefault(true);
   btn_new->setToolTip(QStringLiteral("创建空白文档并进入工作区"));
 
+  auto* btn_open = new QPushButton(QStringLiteral("打开"), card);
+  btn_open->setObjectName(QStringLiteral("secondaryBtn"));
+  btn_open->setCursor(Qt::PointingHandCursor);
+  btn_open->setToolTip(QStringLiteral("打开 .xl 文档并进入工作区"));
+
   auto* btn_exit = new QPushButton(QStringLiteral("退出"), card);
   btn_exit->setObjectName(QStringLiteral("secondaryBtn"));
   btn_exit->setCursor(Qt::PointingHandCursor);
 
   card_layout->addWidget(btn_new);
+  card_layout->addWidget(btn_open);
   card_layout->addWidget(btn_exit);
 
   root->addStretch(2);
@@ -117,7 +125,16 @@ void HomeWindow::build_ui() {
 
   connect(btn_new, &QPushButton::clicked, this,
           &HomeWindow::new_document_requested);
+  connect(btn_open, &QPushButton::clicked, this, &HomeWindow::on_open_clicked);
   connect(btn_exit, &QPushButton::clicked, this, &HomeWindow::exit_requested);
+}
+
+void HomeWindow::on_open_clicked() {
+  const QString path = QFileDialog::getOpenFileName(
+      this, QStringLiteral("打开文档"), QDir::homePath(),
+      QStringLiteral("XCAD Document (*.xl);;All Files (*)"));
+  if (path.isEmpty()) return;
+  emit open_document_requested(path);
 }
 
 }  // namespace brep::viewer

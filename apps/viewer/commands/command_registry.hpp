@@ -33,4 +33,8 @@ class CommandRegistry {
 /// Register builtins (doc/file/part/edit + interactive create_box).
 void register_builtin_commands(CommandRegistry& registry);
 
+/// Load a `.xl` path into the command context (no file dialog).
+[[nodiscard]] CommandResult open_xl_file(CommandContext& ctx,
+                                         const QString& path);
+
 }  // namespace brep::viewer::commands

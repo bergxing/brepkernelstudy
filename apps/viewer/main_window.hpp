@@ -28,6 +28,9 @@ class MainWindow final : public QMainWindow {
   explicit MainWindow(QWidget* parent = nullptr);
   ~MainWindow() override;
 
+  /// Load a `.xl` document into the workspace and show its content.
+  [[nodiscard]] bool open_document(const QString& path);
+
  protected:
   void showEvent(QShowEvent* event) override;
   void resizeEvent(QResizeEvent* event) override;

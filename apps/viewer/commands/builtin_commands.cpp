@@ -125,41 +125,7 @@ class OpenXlCommand final : public ICommand {
     if (path.isEmpty()) {
       return CommandResult::cancelled(QStringLiteral("已取消打开"));
     }
-
-    auto loaded = brep::io::load_xl(path.toStdString());
-    if (!loaded.ok()) {
-      const QString err = QString::fromStdString(loaded.error);
-      if (ctx.parent_widget) {
-        QMessageBox::critical(ctx.parent_widget, QStringLiteral("打开失败"),
-                              err);
-      }
-      return CommandResult::failed(err);
-    }
-
-    if (ctx.history) ctx.history->clear();
-    Material material = ctx.wood_albedo_path.empty()
-                            ? Material{}
-                            : make_wood_material(ctx.wood_albedo_path);
-
-    // Prefer sidecar mesh cache when present and matching document Guid.
-    brep::io::BodyMeshCache mesh_cache;
-    const brep::io::BodyMeshCache* cache_ptr = nullptr;
-    auto cache_loaded =
-        brep::io::load_bks_cache(path.toStdString(), loaded.document->guid);
-    if (cache_loaded.ok) {
-      mesh_cache = std::move(cache_loaded.cache);
-      cache_ptr = &mesh_cache;
-    }
-
-    ctx.world->adopt_document(std::move(loaded.document), std::move(material),
-                              cache_ptr);
-    ctx.session->set_document_path(path);
-    if (ctx.after_document_reset) ctx.after_document_reset();
-    if (ctx.request_redraw) ctx.request_redraw();
-    if (ctx.refresh_ui) ctx.refresh_ui();
-    const QString msg = QStringLiteral("已打开: %1").arg(path);
-    if (ctx.report_status) ctx.report_status(msg);
-    return CommandResult::ok(msg);
+    return open_xl_file(ctx, path);
   }
 };
 
@@ -403,6 +369,48 @@ void register_builtin_commands(CommandRegistry& registry) {
   add<UndoCommand>(registry);
   add<RedoCommand>(registry);
   BREP_INFO("registered builtin commands: {}", registry.ids().size());
+}
+
+CommandResult open_xl_file(CommandContext& ctx, const QString& path) {
+  if (!ctx.world || !ctx.session) {
+    return CommandResult::failed(QStringLiteral("无法打开：上下文无效"));
+  }
+  if (path.isEmpty()) {
+    return CommandResult::failed(QStringLiteral("路径为空"));
+  }
+
+  auto loaded = brep::io::load_xl(path.toStdString());
+  if (!loaded.ok()) {
+    const QString err = QString::fromStdString(loaded.error);
+    if (ctx.parent_widget) {
+      QMessageBox::critical(ctx.parent_widget, QStringLiteral("打开失败"), err);
+    }
+    return CommandResult::failed(err);
+  }
+
+  if (ctx.history) ctx.history->clear();
+  Material material = ctx.wood_albedo_path.empty()
+                          ? Material{}
+                          : make_wood_material(ctx.wood_albedo_path);
+
+  brep::io::BodyMeshCache mesh_cache;
+  const brep::io::BodyMeshCache* cache_ptr = nullptr;
+  auto cache_loaded =
+      brep::io::load_bks_cache(path.toStdString(), loaded.document->guid);
+  if (cache_loaded.ok) {
+    mesh_cache = std::move(cache_loaded.cache);
+    cache_ptr = &mesh_cache;
+  }
+
+  ctx.world->adopt_document(std::move(loaded.document), std::move(material),
+                            cache_ptr);
+  ctx.session->set_document_path(path);
+  if (ctx.after_document_reset) ctx.after_document_reset();
+  if (ctx.request_redraw) ctx.request_redraw();
+  if (ctx.refresh_ui) ctx.refresh_ui();
+  const QString msg = QStringLiteral("已打开: %1").arg(path);
+  if (ctx.report_status) ctx.report_status(msg);
+  return CommandResult::ok(msg);
 }
 
 }  // namespace brep::viewer::commands

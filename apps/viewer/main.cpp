@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QMessageBox>
+#include <QString>
 
 #include <exception>
 
@@ -13,7 +14,7 @@ namespace {
 
 void open_home_window(QApplication& app);
 
-void open_workspace(QApplication& app) {
+void open_workspace(QApplication& app, const QString& path = {}) {
   try {
     auto* workspace = new brep::viewer::MainWindow();
     workspace->setAttribute(Qt::WA_DeleteOnClose);
@@ -23,6 +24,13 @@ void open_workspace(QApplication& app) {
     workspace->raise();
     workspace->activateWindow();
     app.setQuitOnLastWindowClosed(true);
+
+    if (!path.isEmpty()) {
+      if (!workspace->open_document(path)) {
+        BREP_WARN("failed to open document from home: {}",
+                  path.toStdString());
+      }
+    }
   } catch (const std::exception& ex) {
     BREP_ERROR("workspace failed: {}", ex.what());
     QMessageBox::critical(nullptr, QStringLiteral("XCAD Error"),
@@ -47,6 +55,17 @@ void open_home_window(QApplication& app) {
         QObject::connect(home, &QObject::destroyed, &app,
                          [&app] { open_workspace(app); },
                          Qt::QueuedConnection);
+        home->close();
+      });
+
+  QObject::connect(
+      home, &brep::viewer::HomeWindow::open_document_requested, &app,
+      [home, &app](const QString& path) {
+        app.setQuitOnLastWindowClosed(false);
+        QObject::connect(
+            home, &QObject::destroyed, &app,
+            [path, &app] { open_workspace(app, path); },
+            Qt::QueuedConnection);
         home->close();
       });
 
