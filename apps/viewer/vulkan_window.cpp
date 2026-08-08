@@ -41,14 +41,22 @@ QVulkanWindowRenderer* VulkanWindow::createRenderer() {
   return renderer_;
 }
 
-void VulkanWindow::maybe_select_at(float x, float y) {
+void VulkanWindow::maybe_select_at(float x, float y, bool multi) {
   if (!selection_enabled_ || !world_) return;
   const QSize sz = size();
   const entt::entity hit = ecs::pick_renderable(
       world_->registry(), camera_, sz.width(), sz.height(), x, y);
-  ecs::set_selection(world_->registry(), hit);
+  if (multi) {
+    if (hit != entt::null) {
+      ecs::toggle_selection(world_->registry(), hit);
+    }
+  } else {
+    ecs::set_selection(world_->registry(), hit);
+  }
   requestUpdate();
-  if (selection_callback_) selection_callback_(hit);
+  if (selection_callback_) {
+    selection_callback_(ecs::selected_entity(world_->registry()));
+  }
 }
 
 bool VulkanWindow::forward_tool_press(QPointF pos, Qt::MouseButton button) {
@@ -74,11 +82,13 @@ void VulkanWindow::fit_view_to_scene() {
 }
 
 void VulkanWindow::pointer_double_click(Qt::MouseButton button) {
+  // Zoom-to-fit: plain middle double-click (not Ctrl+Middle orbit).
   if (button != Qt::MiddleButton) return;
   fit_view_to_scene();
 }
 
-void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
+void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button,
+                                 Qt::KeyboardModifiers modifiers) {
   if (forward_tool_press(pos, button)) return;
 
   if (!world_) return;
@@ -89,8 +99,9 @@ void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button) {
     return;
   }
 
-  const int mode = ecs::input_on_press(world_->registry(), float(pos.x()),
-                                       float(pos.y()), int(button));
+  const int mode =
+      ecs::input_on_press(world_->registry(), float(pos.x()), float(pos.y()),
+                          int(button), int(modifiers));
   if (mode == static_cast<int>(ecs::InputState::DragMode::Orbit)) {
     setCursor(Qt::ClosedHandCursor);
   } else if (mode == static_cast<int>(ecs::InputState::DragMode::Pan)) {
@@ -120,16 +131,12 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
   }
 
   auto& state = world_->registry().ctx().get<ecs::InputState>();
-  const auto before = state.drag_mode;
   ecs::input_on_move(world_->registry(), camera_, float(pos.x()), float(pos.y()),
                      int(buttons));
   if (selection_enabled_ &&
-      before == ecs::InputState::DragMode::PendingSelect &&
-      state.drag_mode == ecs::InputState::DragMode::Orbit) {
-    setCursor(Qt::ClosedHandCursor);
-  } else if (selection_enabled_ &&
-             state.drag_mode == ecs::InputState::DragMode::None &&
-             buttons == Qt::NoButton) {
+      (state.drag_mode == ecs::InputState::DragMode::None ||
+       state.drag_mode == ecs::InputState::DragMode::Cancelled) &&
+      buttons == Qt::NoButton) {
     restore_idle_cursor();
   }
   if (ecs::consume_camera_dirty(world_->registry())) {
@@ -145,10 +152,11 @@ void VulkanWindow::pointer_release(QPointF pos) {
     return;
   }
 
+  const bool multi = ecs::pending_click_is_multi(world_->registry());
   const bool click = ecs::input_on_release(world_->registry());
   restore_idle_cursor();
   if (click) {
-    maybe_select_at(float(pos.x()), float(pos.y()));
+    maybe_select_at(float(pos.x()), float(pos.y()), multi);
   }
 }
 
@@ -169,7 +177,7 @@ void VulkanWindow::apply_key(int key) {
 }
 
 void VulkanWindow::mousePressEvent(QMouseEvent* event) {
-  pointer_press(event->position(), event->button());
+  pointer_press(event->position(), event->button(), event->modifiers());
   event->accept();
 }
 
@@ -179,6 +187,12 @@ void VulkanWindow::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 void VulkanWindow::mouseDoubleClickEvent(QMouseEvent* event) {
+  // Ignore Ctrl+Middle double-click so it doesn't fight orbit.
+  if (event->button() == Qt::MiddleButton &&
+      (event->modifiers() & Qt::ControlModifier)) {
+    event->accept();
+    return;
+  }
   pointer_double_click(event->button());
   event->accept();
 }
@@ -213,12 +227,16 @@ bool VulkanWindow::eventFilter(QObject* watched, QEvent* event) {
       break;
     case QEvent::MouseButtonDblClick: {
       auto* e = static_cast<QMouseEvent*>(event);
+      if (e->button() == Qt::MiddleButton &&
+          (e->modifiers() & Qt::ControlModifier)) {
+        return true;
+      }
       pointer_double_click(e->button());
       return true;
     }
     case QEvent::MouseButtonPress: {
       auto* e = static_cast<QMouseEvent*>(event);
-      pointer_press(e->position(), e->button());
+      pointer_press(e->position(), e->button(), e->modifiers());
       return true;
     }
     case QEvent::MouseButtonRelease: {

@@ -61,14 +61,15 @@ class VulkanWindow final : public QVulkanWindow {
   void keyPressEvent(QKeyEvent* event) override;
 
  private:
-  void pointer_press(QPointF pos, Qt::MouseButton button);
+  void pointer_press(QPointF pos, Qt::MouseButton button,
+                     Qt::KeyboardModifiers modifiers);
   void pointer_move(QPointF pos, Qt::MouseButtons buttons);
   void pointer_release(QPointF pos);
   void pointer_wheel(int angle_delta_y);
   void pointer_double_click(Qt::MouseButton button);
   void apply_key(int key);
   void sync_renderer();
-  void maybe_select_at(float x, float y);
+  void maybe_select_at(float x, float y, bool multi);
   void restore_idle_cursor();
   void fit_view_to_scene();
   [[nodiscard]] bool forward_tool_press(QPointF pos, Qt::MouseButton button);

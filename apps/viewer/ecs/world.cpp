@@ -151,7 +151,9 @@ void World::sync_part_bodies(brep::Part& part, Material material,
     if (!found) stale.push_back(entity);
   }
   for (auto entity : stale) {
-    if (selected_entity(registry_) == entity) clear_selection(registry_);
+    if (registry_.all_of<SelectedTag>(entity)) {
+      toggle_selection(registry_, entity);
+    }
     registry_.destroy(entity);
   }
 }
@@ -167,8 +169,8 @@ entt::entity World::find_body_renderable(const brep::Guid& body_guid) const {
 bool World::destroy_body_renderable(const brep::Guid& body_guid) {
   const entt::entity e = find_body_renderable(body_guid);
   if (e == entt::null) return false;
-  if (selected_entity(registry_) == e) {
-    clear_selection(registry_);
+  if (registry_.all_of<SelectedTag>(e)) {
+    toggle_selection(registry_, e);
   }
   registry_.destroy(e);
   return true;

@@ -53,11 +53,12 @@ struct FeatureRef {
   brep::Guid feature_guid{};
 };
 
-/// Tag: currently selected renderable (single-selection for now).
+/// Tag: currently selected renderable (supports multi-select).
 struct SelectedTag {};
 
 /// Active selection (stored in registry context).
 struct SelectionState {
+  /// Last entity clicked / toggled (property panel focus).
   entt::entity primary{entt::null};
 };
 
@@ -65,6 +66,7 @@ struct SelectionState {
 struct RenderCache {
   std::size_t renderable_count{0};
   entt::entity selection{entt::null};
+  std::size_t selection_count{0};
   bool force_rebuild{false};
   std::uint64_t version{0};
 
@@ -81,14 +83,16 @@ struct RenderCache {
 
 /// Transient input state (stored in registry context, not on an entity).
 struct InputState {
-  /// Left-press starts as PendingSelect; crosses slop → Orbit. Click = select.
-  enum class DragMode { None, PendingSelect, Orbit, Pan };
+  /// Left: PendingSelect → click select, or Cancelled if dragged.
+  /// Ctrl+Middle: Orbit. Middle/Right: Pan.
+  enum class DragMode { None, PendingSelect, Orbit, Pan, Cancelled };
 
   DragMode drag_mode{DragMode::None};
   float last_x{0.0f};
   float last_y{0.0f};
   float press_x{0.0f};
   float press_y{0.0f};
+  bool multi_select{false};
   bool camera_dirty{true};
 };
 

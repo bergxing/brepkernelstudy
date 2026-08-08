@@ -15,13 +15,16 @@ class Camera;
 namespace brep::viewer::ecs {
 
 /// Apply pointer/keyboard interaction to the given view camera.
+/// `modifiers` uses Qt::KeyboardModifier bits (e.g. Qt::ControlModifier).
 /// Returns the active drag mode after press (for cursor feedback).
 [[nodiscard]] int input_on_press(entt::registry& registry, float x, float y,
-                                 int button);
+                                 int button, int modifiers);
 void input_on_move(entt::registry& registry, Camera& camera, float x, float y,
                    int buttons);
 /// Returns true when the gesture was a click (select), not a drag.
 [[nodiscard]] bool input_on_release(entt::registry& registry);
+/// True when the pending click should toggle multi-select (Ctrl held on press).
+[[nodiscard]] bool pending_click_is_multi(const entt::registry& registry);
 void input_on_wheel(entt::registry& registry, Camera& camera,
                     int angle_delta_y);
 void input_on_key(entt::registry& registry, Camera& camera, int key);
@@ -48,9 +51,13 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
 void fit_camera_to_scene(const entt::registry& registry, Camera& camera,
                          float aspect);
 
+/// Replace selection with a single entity (or clear when null).
 void set_selection(entt::registry& registry, entt::entity entity);
+/// Ctrl+click: toggle entity in/out of the selection set.
+void toggle_selection(entt::registry& registry, entt::entity entity);
 void clear_selection(entt::registry& registry);
 [[nodiscard]] entt::entity selected_entity(const entt::registry& registry);
+[[nodiscard]] std::size_t selected_count(const entt::registry& registry);
 
 /// Human-readable label for status bar (name + guid when available).
 [[nodiscard]] std::string selection_label(const entt::registry& registry,

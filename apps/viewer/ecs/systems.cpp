@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 namespace brep::viewer::ecs {
 namespace {
@@ -75,15 +76,20 @@ Material make_selection_material() {
 
 }  // namespace
 
-int input_on_press(entt::registry& registry, float x, float y, int button) {
+int input_on_press(entt::registry& registry, float x, float y, int button,
+                   int modifiers) {
   auto& state = input(registry);
   state.last_x = x;
   state.last_y = y;
   state.press_x = x;
   state.press_y = y;
+  state.multi_select = (modifiers & Qt::ControlModifier) != 0;
+
   if (button == Qt::LeftButton) {
-    // Click without drag → select; drag past slop → orbit.
+    // Click without drag → select. Left-drag no longer orbits.
     state.drag_mode = InputState::DragMode::PendingSelect;
+  } else if (button == Qt::MiddleButton && state.multi_select) {
+    state.drag_mode = InputState::DragMode::Orbit;
   } else if (button == Qt::RightButton || button == Qt::MiddleButton) {
     state.drag_mode = InputState::DragMode::Pan;
   } else {
@@ -95,7 +101,10 @@ int input_on_press(entt::registry& registry, float x, float y, int button) {
 void input_on_move(entt::registry& registry, Camera& camera, float x, float y,
                    int buttons) {
   auto& state = input(registry);
-  if (state.drag_mode == InputState::DragMode::None) return;
+  if (state.drag_mode == InputState::DragMode::None ||
+      state.drag_mode == InputState::DragMode::Cancelled) {
+    return;
+  }
 
   if (state.drag_mode == InputState::DragMode::PendingSelect) {
     if (!(buttons & Qt::LeftButton)) return;
@@ -106,9 +115,11 @@ void input_on_move(entt::registry& registry, Camera& camera, float x, float y,
       state.last_y = y;
       return;
     }
-    state.drag_mode = InputState::DragMode::Orbit;
+    // Dragged with LMB: cancel pick, do not orbit.
+    state.drag_mode = InputState::DragMode::Cancelled;
+    return;
   } else if (state.drag_mode == InputState::DragMode::Orbit) {
-    if (!(buttons & Qt::LeftButton)) return;
+    if (!(buttons & Qt::MiddleButton)) return;
   } else if (state.drag_mode == InputState::DragMode::Pan) {
     if (!(buttons & (Qt::RightButton | Qt::MiddleButton))) return;
   }
@@ -132,6 +143,11 @@ bool input_on_release(entt::registry& registry) {
   const bool click = state.drag_mode == InputState::DragMode::PendingSelect;
   state.drag_mode = InputState::DragMode::None;
   return click;
+}
+
+bool pending_click_is_multi(const entt::registry& registry) {
+  if (!registry.ctx().contains<InputState>()) return false;
+  return registry.ctx().get<InputState>().multi_select;
 }
 
 void input_on_wheel(entt::registry& registry, Camera& camera,
@@ -188,9 +204,11 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
 
   auto& cache = render_cache(registry);
   const entt::entity sel = selected_entity(registry);
+  const std::size_t sel_count = selected_count(registry);
   const bool need_rebuild =
       any_component_dirty || count != cache.renderable_count ||
-      sel != cache.selection || cache.force_rebuild;
+      sel != cache.selection || sel_count != cache.selection_count ||
+      cache.force_rebuild;
 
   if (need_rebuild) {
     cache.scene_tri = {};
@@ -248,6 +266,7 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
 
     cache.renderable_count = count;
     cache.selection = sel;
+    cache.selection_count = sel_count;
     cache.force_rebuild = false;
     ++cache.version;
   }
@@ -363,23 +382,53 @@ entt::entity pick_renderable(entt::registry& registry, const Camera& cam,
   return best;
 }
 
+namespace {
+
+void clear_selected_tags(entt::registry& registry) {
+  auto view = registry.view<SelectedTag>();
+  std::vector<entt::entity> tagged;
+  for (auto entity : view) tagged.push_back(entity);
+  for (auto entity : tagged) {
+    registry.remove<SelectedTag>(entity);
+  }
+}
+
+}  // namespace
+
 void set_selection(entt::registry& registry, entt::entity entity) {
   auto& sel = selection(registry);
-  if (sel.primary == entity) return;
+  clear_selected_tags(registry);
 
-  if (sel.primary != entt::null && registry.valid(sel.primary)) {
-    registry.remove<SelectedTag>(sel.primary);
-  }
-
-  sel.primary = entity;
   if (entity == entt::null || !registry.valid(entity)) {
     sel.primary = entt::null;
   } else {
-    registry.emplace_or_replace<SelectedTag>(entity);
+    sel.primary = entity;
+    registry.emplace<SelectedTag>(entity);
   }
 
   // Must force rebuild: clearing selection sets both sel and cache to null,
   // which would otherwise look like "no change".
+  render_cache(registry).force_rebuild = true;
+}
+
+void toggle_selection(entt::registry& registry, entt::entity entity) {
+  if (entity == entt::null || !registry.valid(entity)) return;
+
+  auto& sel = selection(registry);
+  if (registry.all_of<SelectedTag>(entity)) {
+    registry.remove<SelectedTag>(entity);
+    if (sel.primary == entity) {
+      sel.primary = entt::null;
+      auto view = registry.view<SelectedTag>();
+      for (auto e : view) {
+        sel.primary = e;
+        break;
+      }
+    }
+  } else {
+    registry.emplace<SelectedTag>(entity);
+    sel.primary = entity;
+  }
   render_cache(registry).force_rebuild = true;
 }
 
@@ -390,6 +439,10 @@ void clear_selection(entt::registry& registry) {
 entt::entity selected_entity(const entt::registry& registry) {
   if (!registry.ctx().contains<SelectionState>()) return entt::null;
   return registry.ctx().get<SelectionState>().primary;
+}
+
+std::size_t selected_count(const entt::registry& registry) {
+  return registry.view<SelectedTag>().size();
 }
 
 std::string selection_label(const entt::registry& registry,

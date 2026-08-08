@@ -123,8 +123,8 @@ MainWindow::MainWindow(QWidget* parent)
   qApp->installEventFilter(this);
 
   statusBar()->showMessage(QStringLiteral(
-      "XCAD | 左键选择/拖动旋转 | 中键拖动平移 | 双击中键缩放到全部 | "
-      "立方体=三点创建 | ESC 取消工具"));
+      "XCAD | 左键选择 | Ctrl+左键多选 | 中键平移 | Ctrl+中键旋转 | "
+      "双击中键缩放到全部 | ESC 取消工具"));
 }
 
 MainWindow::~MainWindow() {
@@ -138,8 +138,14 @@ void MainWindow::wire_vulkan_window(VulkanWindow* window) {
   window->set_selection_callback([this](entt::entity entity) {
     update_property_panel(entity);
     request_all_views_update();
-    if (entity == entt::null) {
+    const std::size_t count = ecs::selected_count(world_.registry());
+    if (count == 0) {
       statusBar()->showMessage(QStringLiteral("已取消选择"), 3000);
+      return;
+    }
+    if (count > 1) {
+      statusBar()->showMessage(
+          QStringLiteral("已多选: %1 个对象").arg(count), 6000);
       return;
     }
     const std::string label =
