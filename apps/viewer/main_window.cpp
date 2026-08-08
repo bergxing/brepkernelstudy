@@ -34,6 +34,7 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
+#include <QVBoxLayout>
 #include <QVersionNumber>
 #include <QVulkanInstance>
 #include <QWheelEvent>
@@ -233,19 +234,33 @@ VulkanWindow* MainWindow::create_view_window(const QString& title,
         command_manager_.active_tool_allows_selection());
   }
 
-  auto* container = QWidget::createWindowContainer(vulkan_window, mdi_area_);
+  // Host wraps the native Vulkan container so the box-select overlay can
+  // paint above it (children of createWindowContainer stay hidden under GL).
+  auto* host = new QWidget();
+  host->setMinimumSize(160, 120);
+  host->setFocusPolicy(Qt::StrongFocus);
+  host->setMouseTracking(true);
+  host->setAttribute(Qt::WA_Hover, true);
+  host->setCursor(Qt::ArrowCursor);
+
+  auto* container = QWidget::createWindowContainer(vulkan_window, host);
   container->setFocusPolicy(Qt::StrongFocus);
   container->setMouseTracking(true);
   container->setAttribute(Qt::WA_Hover, true);
   // Break inheritance from QMdiSubWindow border resize cursors.
   container->setCursor(Qt::ArrowCursor);
-  vulkan_window->set_rubber_band_host(container);
+  auto* layout = new QVBoxLayout(host);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(0);
+  layout->addWidget(container);
+
+  vulkan_window->set_rubber_band_host(host);
   container->installEventFilter(vulkan_window);
   container->installEventFilter(this);
-  container->setMinimumSize(160, 120);
+  host->installEventFilter(this);
 
   auto* sub = new ViewMdiSubWindow(mdi_area_);
-  sub->setWidget(container);
+  sub->setWidget(host);
   mdi_area_->addSubWindow(sub);
   const QString numbered =
       title.isEmpty()
@@ -271,7 +286,7 @@ VulkanWindow* MainWindow::create_view_window(const QString& title,
       place_view_cube();
     });
   }
-  container->setFocus();
+  host->setFocus();
   rebind_view_cube_camera();
   place_view_cube();
   return vulkan_window;
@@ -586,35 +601,19 @@ bool MainWindow::map_global_to_viewport(const QPoint& global,
 
 QString MainWindow::resolve_cursor_tip_text(VulkanWindow* window, float x,
                                             float y) {
+  (void)window;
+  (void)x;
+  (void)y;
+
+  // Only show tips while an interactive tool is active.
+  // Idle / pan / orbit / box-select stay silent.
   if (command_manager_.has_active_tool()) {
     QString prompt = command_manager_.active_prompt();
     prompt.remove(QStringLiteral(" (ESC 取消)"));
     if (!prompt.isEmpty()) return prompt;
   }
 
-  if (world_.registry().ctx().contains<ecs::InputState>()) {
-    using Mode = ecs::InputState::DragMode;
-    switch (world_.registry().ctx().get<ecs::InputState>().drag_mode) {
-      case Mode::BoxSelect:
-        return QStringLiteral("框选: 左→右窗口 / 右→左穿越");
-      case Mode::Pan:
-        return QStringLiteral("平移视图");
-      case Mode::Orbit:
-        return QStringLiteral("旋转视图");
-      default:
-        break;
-    }
-  }
-
-  if (window) {
-    const QSize sz = window->size();
-    const entt::entity hit = ecs::pick_renderable(
-        world_.registry(), window->camera(), sz.width(), sz.height(), x, y);
-    if (hit != entt::null) {
-      return QStringLiteral("左键选择 · Ctrl追加 · 右键菜单");
-    }
-  }
-  return QStringLiteral("左键选择/框选 · 右键菜单 · 中键平移");
+  return {};
 }
 
 void MainWindow::update_cursor_tip_at_global(const QPoint& global) {

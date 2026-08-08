@@ -68,6 +68,7 @@ qt_add_executable(brep_viewer
   property_panel.cpp
   vulkan_window.cpp
   vulkan_renderer.cpp
+  select_rect_overlay.cpp
   ecs/world.cpp
   ecs/systems.cpp
   io/dxf_export.cpp

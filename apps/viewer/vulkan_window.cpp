@@ -1,12 +1,12 @@
 #include "vulkan_window.hpp"
 
 #include "ecs/systems.hpp"
+#include "select_rect_overlay.hpp"
 
 #include "brep/log.hpp"
 
 #include <QKeyEvent>
 #include <QMouseEvent>
-#include <QRubberBand>
 #include <QWheelEvent>
 #include <QWidget>
 
@@ -63,23 +63,14 @@ QRect VulkanWindow::rubber_band_geometry(float x0, float y0, float x1,
 void VulkanWindow::update_rubber_band(float x0, float y0, float x1, float y1) {
   if (!rubber_host_) return;
   if (!rubber_band_) {
-    rubber_band_ = new QRubberBand(QRubberBand::Rectangle, rubber_host_);
+    rubber_band_ = new SelectRectOverlay(rubber_host_);
   }
-  const bool crossing = x1 < x0;
-  rubber_band_->setStyleSheet(
-      crossing ? QStringLiteral(
-                     "QRubberBand { border: 1px dashed #2ecc71; "
-                     "background-color: rgba(46, 204, 113, 40); }")
-               : QStringLiteral(
-                     "QRubberBand { border: 1px solid #3498db; "
-                     "background-color: rgba(52, 152, 219, 40); }"));
-  rubber_band_->setGeometry(rubber_band_geometry(x0, y0, x1, y1));
-  rubber_band_->show();
-  rubber_band_->raise();
+  // Left→right = window (solid blue); right→left = crossing (dashed green).
+  rubber_band_->show_rect(rubber_band_geometry(x0, y0, x1, y1), x1 < x0);
 }
 
 void VulkanWindow::hide_rubber_band() {
-  if (rubber_band_) rubber_band_->hide();
+  if (rubber_band_) rubber_band_->hide_rect();
 }
 
 void VulkanWindow::maybe_select_at(float x, float y, bool multi) {

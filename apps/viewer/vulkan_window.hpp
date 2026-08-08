@@ -7,10 +7,11 @@
 
 #include <functional>
 
-class QRubberBand;
 class QWidget;
 
 namespace brep::viewer {
+
+class SelectRectOverlay;
 
 class VulkanWindow final : public QVulkanWindow {
   Q_OBJECT
@@ -20,7 +21,7 @@ class VulkanWindow final : public QVulkanWindow {
   void set_world(ecs::World* world) noexcept { world_ = world; }
   [[nodiscard]] ecs::World* world() noexcept { return world_; }
 
-  /// Host widget for the QRubberBand overlay (window container).
+  /// Host widget that owns the box-select overlay (above the Vulkan container).
   void set_rubber_band_host(QWidget* host) noexcept { rubber_host_ = host; }
 
   /// When false, left-click will not change selection (e.g. interactive tool).
@@ -97,7 +98,7 @@ class VulkanWindow final : public QVulkanWindow {
   Camera camera_{};
   VulkanRenderer* renderer_{nullptr};
   QWidget* rubber_host_{nullptr};
-  QRubberBand* rubber_band_{nullptr};  // child of rubber_host_
+  SelectRectOverlay* rubber_band_{nullptr};  // child of rubber_host_
   bool selection_enabled_{true};
   bool right_press_active_{false};
   bool right_moved_{false};
