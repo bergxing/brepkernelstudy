@@ -34,6 +34,10 @@ void DocumentSession::set_export_path(const QString& path) {
   dirty_ = false;
 }
 
+void DocumentSession::set_document_path(const QString& path) {
+  set_export_path(path);
+}
+
 QString DocumentSession::window_title() const {
   QString name = title_.isEmpty() ? QStringLiteral("Untitled") : title_;
   if (dirty_) name += QLatin1Char('*');

@@ -21,6 +21,10 @@ Guid Guid::generate() {
 
 Guid Guid::nil() noexcept { return Guid{}; }
 
+Guid Guid::from_bytes(const std::array<std::uint8_t, 16>& bytes) noexcept {
+  return Guid{bytes};
+}
+
 Guid Guid::from_string(std::string_view text) {
   try {
     const boost::uuids::uuid u =

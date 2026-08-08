@@ -67,6 +67,10 @@ class World {
   /// New Document → Part → Body(demo box) + camera/renderables.
   void create_demo_box_scene(const std::string& wood_albedo_path);
 
+  /// Replace the active Document (e.g. after .xl load) and rebuild view.
+  void adopt_document(std::unique_ptr<brep::Document> document,
+                      Material material);
+
   [[nodiscard]] Camera* main_camera() noexcept;
   [[nodiscard]] const Camera* main_camera() const noexcept;
 

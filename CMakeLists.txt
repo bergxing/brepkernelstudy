@@ -110,6 +110,7 @@ add_library(brep
   src/solve2d/solver.cpp
   src/ops/extrude.cpp
   src/asm/assembly.cpp
+  src/io/xl_document.cpp
 )
 target_include_directories(brep
   PUBLIC
@@ -131,10 +132,14 @@ target_link_libraries(smoke PRIVATE brep)
 add_executable(parametric_smoke examples/parametric_smoke.cpp)
 target_link_libraries(parametric_smoke PRIVATE brep)
 
+add_executable(xl_roundtrip examples/xl_roundtrip.cpp)
+target_link_libraries(xl_roundtrip PRIVATE brep)
+
 enable_testing()
 add_test(NAME box_demo COMMAND box_demo)
 add_test(NAME smoke COMMAND smoke)
 add_test(NAME parametric_smoke COMMAND parametric_smoke)
+add_test(NAME xl_roundtrip COMMAND xl_roundtrip)
 
 # ---------------------------------------------------------------------------
 # Local Qt6 discovery (kit matches the active compiler: MinGW vs MSVC)

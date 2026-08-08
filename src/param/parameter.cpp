@@ -15,6 +15,22 @@ ParameterId ParameterStore::add(std::string name, ParamKind kind, double value) 
   return id;
 }
 
+bool ParameterStore::add_with_id(ParameterId id, std::string name,
+                                 ParamKind kind, double value,
+                                 bool user_driven) {
+  if (id.guid.is_nil() || index_.count(id.guid)) return false;
+  Parameter p;
+  p.id = id;
+  p.name = std::move(name);
+  p.kind = kind;
+  p.value = value;
+  p.user_driven = user_driven;
+  index_[id.guid] = params_.size();
+  params_.push_back(std::move(p));
+  dirty_ = true;
+  return true;
+}
+
 bool ParameterStore::set(ParameterId id, double value) {
   Parameter* p = find(id);
   if (!p) return false;

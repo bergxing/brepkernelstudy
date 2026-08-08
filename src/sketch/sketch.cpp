@@ -50,4 +50,18 @@ std::optional<SketchLine> Sketch::line_at(std::size_t index) const {
   return lines_[index];
 }
 
+void Sketch::assign(Plane frame, std::vector<SketchPoint> points,
+                    std::vector<SketchLine> lines,
+                    std::vector<SketchCircle> circles,
+                    std::vector<Constraint> constraints,
+                    std::uint32_t next_entity, std::uint32_t next_constraint) {
+  frame_ = std::move(frame);
+  points_ = std::move(points);
+  lines_ = std::move(lines);
+  circles_ = std::move(circles);
+  constraints_ = std::move(constraints);
+  next_entity_ = next_entity;
+  next_constraint_ = next_constraint;
+}
+
 }  // namespace brep::sketch

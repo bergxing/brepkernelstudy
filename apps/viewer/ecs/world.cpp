@@ -214,6 +214,49 @@ void World::create_demo_box_scene(const std::string& wood_albedo_path) {
       body->guid.to_string());
 }
 
+void World::adopt_document(std::unique_ptr<brep::Document> document,
+                           Material material) {
+  using namespace brep;
+  if (!document) return;
+
+  // Keep InputState / Selection / RenderCache; drop entities only.
+  registry_.clear();
+  if (!registry_.ctx().contains<InputState>()) {
+    registry_.ctx().emplace<InputState>();
+  } else {
+    registry_.ctx().get<InputState>() = InputState{};
+  }
+  if (!registry_.ctx().contains<SelectionState>()) {
+    registry_.ctx().emplace<SelectionState>();
+  } else {
+    registry_.ctx().get<SelectionState>() = SelectionState{};
+  }
+  if (!registry_.ctx().contains<RenderCache>()) {
+    registry_.ctx().emplace<RenderCache>();
+  } else {
+    registry_.ctx().get<RenderCache>() = RenderCache{};
+  }
+
+  document_ = std::move(document);
+
+  Camera cam;
+  cam.target = Point3d{0.0, 0.0, 0.0};
+  cam.distance = 6.0f;
+  if (Part* part = document_->main_part()) {
+    // Frame roughly around existing bodies.
+    if (!part->model().bodies().empty() && part->model().bodies().front()) {
+      cam.target = Point3d{1.0, 0.5, 1.5};
+    }
+    create_camera(cam);
+    sync_part_bodies(*part, std::move(material));
+  } else {
+    create_camera(cam);
+  }
+
+  BREP_INFO("adopted Document={} parts={}", document_->guid.to_string(),
+            document_->parts().size());
+}
+
 Camera* World::main_camera() noexcept {
   auto view = registry_.view<CameraComponent, MainCameraTag>();
   for (auto entity : view) {

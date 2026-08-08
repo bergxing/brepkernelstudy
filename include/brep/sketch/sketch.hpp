@@ -88,6 +88,19 @@ class Sketch {
   [[nodiscard]] bool is_point(SketchEntityId id) const;
   [[nodiscard]] std::optional<SketchLine> line_at(std::size_t index) const;
 
+  /// Replace sketch contents (document load).
+  void assign(Plane frame, std::vector<SketchPoint> points,
+              std::vector<SketchLine> lines, std::vector<SketchCircle> circles,
+              std::vector<Constraint> constraints, std::uint32_t next_entity,
+              std::uint32_t next_constraint);
+
+  [[nodiscard]] std::uint32_t next_entity() const noexcept {
+    return next_entity_;
+  }
+  [[nodiscard]] std::uint32_t next_constraint() const noexcept {
+    return next_constraint_;
+  }
+
  private:
   Plane frame_{Plane::xz_y_up()};
   std::vector<SketchPoint> points_;

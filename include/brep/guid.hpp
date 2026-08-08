@@ -17,6 +17,8 @@ class Guid {
   [[nodiscard]] static Guid generate();
   [[nodiscard]] static Guid nil() noexcept;
   [[nodiscard]] static Guid from_string(std::string_view text);
+  [[nodiscard]] static Guid from_bytes(
+      const std::array<std::uint8_t, 16>& bytes) noexcept;
 
   [[nodiscard]] std::string to_string() const;
   [[nodiscard]] bool is_nil() const noexcept;

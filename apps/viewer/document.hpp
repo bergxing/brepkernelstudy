@@ -24,6 +24,9 @@ class DocumentSession {
 
   void set_export_path(const QString& path);
 
+  /// Bind session to a saved/opened document path and clear dirty.
+  void set_document_path(const QString& path);
+
   [[nodiscard]] QString window_title() const;
 
  private:

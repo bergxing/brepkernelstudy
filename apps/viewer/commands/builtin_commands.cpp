@@ -10,6 +10,7 @@
 
 #include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QMessageBox>
 
 #include <vector>
@@ -40,6 +41,111 @@ class NewDocumentCommand final : public ICommand {
     if (ctx.request_redraw) ctx.request_redraw();
     if (ctx.refresh_ui) ctx.refresh_ui();
     const QString msg = QStringLiteral("已新建空白文档");
+    if (ctx.report_status) ctx.report_status(msg);
+    return CommandResult::ok(msg);
+  }
+};
+
+class SaveXlCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    return "file.save";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override {
+    return "Save (.xl)";
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.world != nullptr && ctx.world->document() != nullptr &&
+           ctx.session != nullptr;
+  }
+
+  CommandResult execute(CommandContext& ctx) override {
+    QString path = ctx.session->path();
+    if (path.isEmpty() ||
+        !path.endsWith(QStringLiteral(".xl"), Qt::CaseInsensitive)) {
+      QString start = path;
+      if (start.isEmpty()) {
+        start = QDir::homePath() + QStringLiteral("/untitled.xl");
+      } else {
+        QFileInfo fi(start);
+        start = fi.path() + QLatin1Char('/') + fi.completeBaseName() +
+                QStringLiteral(".xl");
+      }
+      path = QFileDialog::getSaveFileName(
+          ctx.parent_widget, QStringLiteral("保存文档"), start,
+          QStringLiteral("XCAD Document (*.xl);;All Files (*)"));
+      if (path.isEmpty()) {
+        return CommandResult::cancelled(QStringLiteral("已取消保存"));
+      }
+      if (!path.endsWith(QStringLiteral(".xl"), Qt::CaseInsensitive)) {
+        path += QStringLiteral(".xl");
+      }
+    }
+
+    auto result = brep::io::save_xl(*ctx.world->document(), path.toStdString());
+    if (!result.ok) {
+      const QString err = QString::fromStdString(result.error);
+      if (ctx.parent_widget) {
+        QMessageBox::critical(ctx.parent_widget, QStringLiteral("保存失败"),
+                              err);
+      }
+      return CommandResult::failed(err);
+    }
+
+    ctx.world->document()->set_path(path.toStdString());
+    ctx.world->document()->mark_clean();
+    ctx.session->set_document_path(path);
+    if (ctx.refresh_ui) ctx.refresh_ui();
+    const QString msg = QStringLiteral("已保存: %1").arg(path);
+    if (ctx.report_status) ctx.report_status(msg);
+    return CommandResult::ok(msg);
+  }
+};
+
+class OpenXlCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    return "file.open";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override {
+    return "Open (.xl)";
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.world != nullptr && ctx.session != nullptr;
+  }
+
+  CommandResult execute(CommandContext& ctx) override {
+    QString start = ctx.session->path();
+    if (start.isEmpty()) start = QDir::homePath();
+    const QString path = QFileDialog::getOpenFileName(
+        ctx.parent_widget, QStringLiteral("打开文档"), start,
+        QStringLiteral("XCAD Document (*.xl);;All Files (*)"));
+    if (path.isEmpty()) {
+      return CommandResult::cancelled(QStringLiteral("已取消打开"));
+    }
+
+    auto loaded = brep::io::load_xl(path.toStdString());
+    if (!loaded.ok()) {
+      const QString err = QString::fromStdString(loaded.error);
+      if (ctx.parent_widget) {
+        QMessageBox::critical(ctx.parent_widget, QStringLiteral("打开失败"),
+                              err);
+      }
+      return CommandResult::failed(err);
+    }
+
+    if (ctx.history) ctx.history->clear();
+    Material material = ctx.wood_albedo_path.empty()
+                            ? Material{}
+                            : make_wood_material(ctx.wood_albedo_path);
+    ctx.world->adopt_document(std::move(loaded.document), std::move(material));
+    ctx.session->set_document_path(path);
+    if (ctx.after_document_reset) ctx.after_document_reset();
+    if (ctx.request_redraw) ctx.request_redraw();
+    if (ctx.refresh_ui) ctx.refresh_ui();
+    const QString msg = QStringLiteral("已打开: %1").arg(path);
     if (ctx.report_status) ctx.report_status(msg);
     return CommandResult::ok(msg);
   }
@@ -277,6 +383,8 @@ void add(CommandRegistry& registry) {
 
 void register_builtin_commands(CommandRegistry& registry) {
   add<NewDocumentCommand>(registry);
+  add<OpenXlCommand>(registry);
+  add<SaveXlCommand>(registry);
   add<ExportDxfCommand>(registry);
   add<CreateBoxCommand>(registry);
   add<CreateBoxInstantCommand>(registry);

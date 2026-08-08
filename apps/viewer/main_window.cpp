@@ -174,6 +174,7 @@ commands::CommandContext MainWindow::make_command_context() {
   ctx.after_document_reset = [this] {
     rebind_view_cube_camera();
     refresh_window_title();
+    update_property_panel(entt::null);
   };
   ctx.refresh_ui = [this] {
     refresh_window_title();
@@ -265,6 +266,16 @@ void MainWindow::setup_menus() {
   act_new->setShortcut(QKeySequence::New);
   bind_action(act_new, "doc.new");
 
+  auto* act_open = file_menu->addAction(QStringLiteral("打开(&O)…"));
+  act_open->setShortcut(QKeySequence::Open);
+  bind_action(act_open, "file.open");
+
+  auto* act_save = file_menu->addAction(QStringLiteral("保存(&S)"));
+  act_save->setShortcut(QKeySequence::Save);
+  bind_action(act_save, "file.save");
+
+  file_menu->addSeparator();
+
   auto* act_export =
       file_menu->addAction(QStringLiteral("导出 DWG/DXF(&E)…"));
   act_export->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
@@ -304,6 +315,12 @@ void MainWindow::setup_toolbar() {
 
   auto* act_new = toolbar_->addAction(QStringLiteral("新建"));
   bind_action(act_new, "doc.new");
+
+  auto* act_open = toolbar_->addAction(QStringLiteral("打开"));
+  bind_action(act_open, "file.open");
+
+  auto* act_save = toolbar_->addAction(QStringLiteral("保存"));
+  bind_action(act_save, "file.save");
 
   auto* act_box = toolbar_->addAction(QStringLiteral("立方体"));
   act_box->setToolTip(QStringLiteral("三点创建盒子 (Ctrl+B)"));

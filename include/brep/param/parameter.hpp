@@ -36,6 +36,9 @@ struct Parameter {
 class ParameterStore {
  public:
   ParameterId add(std::string name, ParamKind kind, double value);
+  /// Insert with a stable Guid (document load). Fails if Guid already exists.
+  bool add_with_id(ParameterId id, std::string name, ParamKind kind,
+                   double value, bool user_driven = true);
   bool set(ParameterId id, double value);
   bool set_by_name(std::string_view name, double value);
   [[nodiscard]] std::optional<double> get(ParameterId id) const;
