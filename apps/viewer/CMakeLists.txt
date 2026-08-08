@@ -77,6 +77,11 @@ qt_add_executable(brep_viewer
   property_panel.cpp
   vulkan_window.cpp
   vulkan_renderer.cpp
+  render/vulkan_buffer.cpp
+  render/vulkan_renderer_textures.cpp
+  render/vulkan_pipeline.cpp
+  render/mesh_uploader.cpp
+  render/vulkan_draw.cpp
   select_rect_overlay.cpp
   i18n/language_manager.cpp
   ecs/world.cpp
