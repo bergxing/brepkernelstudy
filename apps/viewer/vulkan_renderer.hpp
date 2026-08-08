@@ -6,6 +6,7 @@
 
 #include <QVulkanWindow>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,9 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
 
   void set_meshes(TriangleMesh triangles, EdgeMesh edges);
   void set_material(Material material);
+
+  /// Pull shared ECS scene bake into this renderer's GPU buffers if needed.
+  void sync_from_world();
 
   /// Selected body drawn with a solid highlight material (separate GPU mesh).
   void set_selection_mesh(TriangleMesh triangles, EdgeMesh edges,
@@ -106,6 +110,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   bool selection_material_dirty_{false};
   bool preview_dirty_{false};
   bool highlight_dirty_{false};
+  std::uint64_t synced_scene_version_{0};
 
   GpuBuffer tri_vb_{};
   GpuBuffer tri_ib_{};

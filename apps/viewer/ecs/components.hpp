@@ -8,6 +8,7 @@
 
 #include <entt/entt.hpp>
 
+#include <cstdint>
 #include <string>
 
 namespace brep::viewer::ecs {
@@ -60,11 +61,22 @@ struct SelectionState {
   entt::entity primary{entt::null};
 };
 
-/// Tracks what was last uploaded to the GPU scene buffers.
+/// Shared CPU-side scene bake for multi-viewport upload.
 struct RenderCache {
   std::size_t renderable_count{0};
   entt::entity selection{entt::null};
   bool force_rebuild{false};
+  std::uint64_t version{0};
+
+  TriangleMesh scene_tri;
+  EdgeMesh scene_edges;
+  Material scene_material{};
+  bool have_scene{false};
+
+  TriangleMesh selected_tri;
+  EdgeMesh selected_edges;
+  EdgeMesh selected_outline;
+  bool have_selection{false};
 };
 
 /// Transient input state (stored in registry context, not on an entity).

@@ -16,6 +16,8 @@
 #include <QIcon>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QMdiArea>
+#include <QMdiSubWindow>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMouseEvent>
@@ -42,6 +44,27 @@ int wheel_delta_y(const QWheelEvent* event) {
   return 0;
 }
 
+QString title_for_standard_view(char face) {
+  switch (face) {
+    case 'f':
+      return QStringLiteral("前视图");
+    case 'k':
+      return QStringLiteral("后视图");
+    case 'l':
+      return QStringLiteral("左视图");
+    case 'r':
+      return QStringLiteral("右视图");
+    case 't':
+      return QStringLiteral("顶视图");
+    case 'b':
+      return QStringLiteral("底视图");
+    case 'h':
+      return QStringLiteral("轴侧视图");
+    default:
+      return QStringLiteral("视图");
+  }
+}
+
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -59,52 +82,21 @@ MainWindow::MainWindow(QWidget* parent)
     }
   }
 
-  vulkan_window_ = new VulkanWindow();
-  vulkan_window_->setVulkanInstance(vulkan_instance_.get());
-  vulkan_window_->setSampleCount(1);
-  vulkan_window_->set_world(&world_);
-  vulkan_window_->set_selection_callback([this](entt::entity entity) {
-    update_property_panel(entity);
-    if (entity == entt::null) {
-      statusBar()->showMessage(QStringLiteral("已取消选择"), 3000);
-      return;
-    }
-    const std::string label =
-        ecs::selection_label(world_.registry(), entity);
-    statusBar()->showMessage(
-        QStringLiteral("已选中: %1")
-            .arg(QString::fromStdString(label)),
-        6000);
-  });
-  vulkan_window_->set_tool_motion_callback([this](float x, float y) {
-    if (!command_manager_.has_active_tool()) return;
-    auto ctx = make_command_context();
-    command_manager_.tool_mouse_move(ctx, x, y);
-  });
-  // QWindowContainer often delivers presses to the QWindow directly; the
-  // widget/qApp filters alone are not enough on Windows.
-  vulkan_window_->set_tool_press_callback([this](float x, float y, int button) {
-    if (!command_manager_.has_active_tool()) return false;
-    auto ctx = make_command_context();
-    const bool consumed =
-        command_manager_.tool_mouse_press(ctx, x, y, button);
-    sync_tool_ui();
-    refresh_edit_actions();
-    return consumed;
-  });
-
   document_.new_blank_document(world_);
   BREP_INFO("ECS scene ready: blank Document + Part + camera");
 
-  viewport_container_ = QWidget::createWindowContainer(vulkan_window_, this);
-  viewport_container_->setFocusPolicy(Qt::StrongFocus);
-  viewport_container_->setMouseTracking(true);
-  viewport_container_->setAttribute(Qt::WA_Hover, true);
-  viewport_container_->installEventFilter(vulkan_window_);
-  viewport_container_->installEventFilter(this);
-  viewport_container_->setFocus();
-  setCentralWidget(viewport_container_);
+  mdi_area_ = new QMdiArea(this);
+  mdi_area_->setViewMode(QMdiArea::SubWindowView);
+  mdi_area_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+  mdi_area_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+  mdi_area_->setTabsClosable(true);
+  setCentralWidget(mdi_area_);
   setMouseTracking(true);
+
+  connect(mdi_area_, &QMdiArea::subWindowActivated, this,
+          &MainWindow::on_sub_window_activated);
+
+  create_view_window(title_for_standard_view('h'), 'h');
 
   view_cube_ = new ViewCubeWidget(this);
   view_cube_->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
@@ -112,9 +104,9 @@ MainWindow::MainWindow(QWidget* parent)
   view_cube_->setAttribute(Qt::WA_ShowWithoutActivating);
   rebind_view_cube_camera();
   view_cube_->set_redraw_callback([this] {
-    if (vulkan_window_) vulkan_window_->requestUpdate();
-    if (viewport_container_) {
-      viewport_container_->setFocus(Qt::OtherFocusReason);
+    if (auto* vw = active_vulkan_window()) vw->requestUpdate();
+    if (auto* container = active_viewport_container()) {
+      container->setFocus(Qt::OtherFocusReason);
     }
   });
   place_view_cube();
@@ -141,6 +133,177 @@ MainWindow::~MainWindow() {
   }
 }
 
+void MainWindow::wire_vulkan_window(VulkanWindow* window) {
+  window->set_selection_callback([this](entt::entity entity) {
+    update_property_panel(entity);
+    request_all_views_update();
+    if (entity == entt::null) {
+      statusBar()->showMessage(QStringLiteral("已取消选择"), 3000);
+      return;
+    }
+    const std::string label =
+        ecs::selection_label(world_.registry(), entity);
+    statusBar()->showMessage(
+        QStringLiteral("已选中: %1")
+            .arg(QString::fromStdString(label)),
+        6000);
+  });
+  window->set_tool_motion_callback([this](float x, float y) {
+    if (!command_manager_.has_active_tool()) return;
+    auto ctx = make_command_context();
+    command_manager_.tool_mouse_move(ctx, x, y);
+  });
+  window->set_tool_press_callback([this](float x, float y, int button) {
+    if (!command_manager_.has_active_tool()) return false;
+    auto ctx = make_command_context();
+    const bool consumed =
+        command_manager_.tool_mouse_press(ctx, x, y, button);
+    sync_tool_ui();
+    refresh_edit_actions();
+    return consumed;
+  });
+}
+
+VulkanWindow* MainWindow::create_view_window(const QString& title,
+                                             char standard_view) {
+  auto* vulkan_window = new VulkanWindow();
+  vulkan_window->setVulkanInstance(vulkan_instance_.get());
+  vulkan_window->setSampleCount(1);
+  vulkan_window->set_world(&world_);
+  vulkan_window->camera().set_standard_view(standard_view);
+  wire_vulkan_window(vulkan_window);
+  if (command_manager_.has_active_tool()) {
+    vulkan_window->set_selection_enabled(false);
+  }
+
+  auto* container = QWidget::createWindowContainer(vulkan_window, mdi_area_);
+  container->setFocusPolicy(Qt::StrongFocus);
+  container->setMouseTracking(true);
+  container->setAttribute(Qt::WA_Hover, true);
+  container->installEventFilter(vulkan_window);
+  container->installEventFilter(this);
+  container->setMinimumSize(160, 120);
+
+  auto* sub = mdi_area_->addSubWindow(container);
+  const QString numbered =
+      title.isEmpty()
+          ? QStringLiteral("视图 %1").arg(++view_serial_)
+          : QStringLiteral("%1 (%2)").arg(title).arg(++view_serial_);
+  sub->setWindowTitle(numbered);
+  sub->setAttribute(Qt::WA_DeleteOnClose);
+  sub->installEventFilter(this);
+  view_windows_.insert(sub, vulkan_window);
+
+  connect(sub, &QObject::destroyed, this, [this, sub] {
+    view_windows_.remove(sub);
+    ensure_minimum_view();
+  });
+
+  sub->resize(720, 480);
+  sub->show();
+  mdi_area_->setActiveSubWindow(sub);
+  container->setFocus();
+  rebind_view_cube_camera();
+  place_view_cube();
+  return vulkan_window;
+}
+
+VulkanWindow* MainWindow::vulkan_window_for_sub(QMdiSubWindow* sub) const {
+  if (!sub) return nullptr;
+  return view_windows_.value(sub, nullptr);
+}
+
+VulkanWindow* MainWindow::active_vulkan_window() const {
+  if (!mdi_area_) return nullptr;
+  return vulkan_window_for_sub(mdi_area_->activeSubWindow());
+}
+
+QWidget* MainWindow::active_viewport_container() const {
+  if (!mdi_area_) return nullptr;
+  if (auto* sub = mdi_area_->activeSubWindow()) return sub->widget();
+  return nullptr;
+}
+
+VulkanWindow* MainWindow::vulkan_window_at_global(
+    const QPoint& global) const {
+  if (!mdi_area_) return nullptr;
+  for (auto* sub : mdi_area_->subWindowList()) {
+    QWidget* container = sub->widget();
+    if (!container || !container->isVisible()) continue;
+    const QRect rect(container->mapToGlobal(QPoint(0, 0)), container->size());
+    if (rect.contains(global)) {
+      return vulkan_window_for_sub(sub);
+    }
+  }
+  return nullptr;
+}
+
+void MainWindow::request_all_views_update() {
+  for (auto* window : view_windows_) {
+    if (window) window->requestUpdate();
+  }
+}
+
+void MainWindow::ensure_minimum_view() {
+  if (suppress_ensure_view_ || !mdi_area_) return;
+  if (!view_windows_.isEmpty() || !mdi_area_->subWindowList().isEmpty()) {
+    return;
+  }
+  create_view_window(title_for_standard_view('h'), 'h');
+}
+
+void MainWindow::on_sub_window_activated(QMdiSubWindow* sub) {
+  Q_UNUSED(sub);
+  rebind_view_cube_camera();
+  place_view_cube();
+}
+
+void MainWindow::on_new_view() {
+  create_view_window(title_for_standard_view('h'), 'h');
+  mdi_area_->tileSubWindows();
+}
+
+void MainWindow::on_quad_views() {
+  // Replace current layout with front / top / right / iso.
+  suppress_ensure_view_ = true;
+  const auto existing = mdi_area_->subWindowList();
+  for (auto* sub : existing) {
+    view_windows_.remove(sub);
+    sub->removeEventFilter(this);
+    sub->close();
+  }
+  view_windows_.clear();
+  suppress_ensure_view_ = false;
+
+  const char faces[] = {'f', 't', 'r', 'h'};
+  for (char face : faces) {
+    create_view_window(title_for_standard_view(face), face);
+  }
+  mdi_area_->tileSubWindows();
+  place_view_cube();
+}
+
+void MainWindow::on_tile_views() {
+  if (mdi_area_) mdi_area_->tileSubWindows();
+  place_view_cube();
+}
+
+void MainWindow::on_cascade_views() {
+  if (mdi_area_) mdi_area_->cascadeSubWindows();
+  place_view_cube();
+}
+
+void MainWindow::on_close_active_view() {
+  if (!mdi_area_) return;
+  if (mdi_area_->subWindowList().size() <= 1) {
+    statusBar()->showMessage(QStringLiteral("至少保留一个视图窗口"), 3000);
+    return;
+  }
+  if (auto* sub = mdi_area_->activeSubWindow()) {
+    sub->close();
+  }
+}
+
 QString MainWindow::wood_albedo_path() const {
   QString wood_path = QStringLiteral(BREP_VIEWER_ASSETS_DIR "/wood.png");
   if (!QFileInfo::exists(wood_path)) {
@@ -162,15 +325,15 @@ QString MainWindow::view_icon_path(const QString& filename) const {
 }
 
 void MainWindow::apply_standard_view(char face) {
-  Camera* cam = world_.main_camera();
-  if (!cam) return;
-  cam->set_standard_view(face);
+  auto* vw = active_vulkan_window();
+  if (!vw) return;
+  vw->camera().set_standard_view(face);
   if (act_ortho_) {
     const QSignalBlocker block(act_ortho_);
-    act_ortho_->setChecked(cam->ortho);
+    act_ortho_->setChecked(vw->camera().ortho);
   }
   if (view_cube_) view_cube_->update();
-  if (vulkan_window_) vulkan_window_->requestUpdate();
+  vw->requestUpdate();
 }
 
 commands::CommandContext MainWindow::make_command_context() {
@@ -180,49 +343,53 @@ commands::CommandContext MainWindow::make_command_context() {
   ctx.history = &command_manager_.history();
   ctx.parent_widget = this;
   ctx.wood_albedo_path = wood_albedo_path().toStdString();
-  // Prefer QVulkanWindow pixel size — matches QWindow mouse coordinates and
-  // the swapchain used for picking rays.
-  if (vulkan_window_ && vulkan_window_->width() > 0 &&
-      vulkan_window_->height() > 0) {
-    ctx.viewport_w = vulkan_window_->width();
-    ctx.viewport_h = vulkan_window_->height();
-  } else if (viewport_container_) {
-    ctx.viewport_w = std::max(1, viewport_container_->width());
-    ctx.viewport_h = std::max(1, viewport_container_->height());
+
+  auto* vw = active_vulkan_window();
+  auto* container = active_viewport_container();
+  ctx.viewport = vw;
+  ctx.view_camera = vw ? &vw->camera() : nullptr;
+
+  if (vw && vw->width() > 0 && vw->height() > 0) {
+    ctx.viewport_w = vw->width();
+    ctx.viewport_h = vw->height();
+  } else if (container) {
+    ctx.viewport_w = std::max(1, container->width());
+    ctx.viewport_h = std::max(1, container->height());
   }
+
   ctx.report_status = [this](const QString& msg) {
-    // Keep tool prompts visible until the next status update.
     statusBar()->showMessage(msg);
   };
-  ctx.request_redraw = [this] {
-    if (vulkan_window_) vulkan_window_->requestUpdate();
-  };
+  ctx.request_redraw = [this] { request_all_views_update(); };
   ctx.after_document_reset = [this] {
     rebind_view_cube_camera();
     refresh_window_title();
     update_property_panel(entt::null);
+    request_all_views_update();
   };
   ctx.refresh_ui = [this] {
     refresh_window_title();
     refresh_edit_actions();
   };
   ctx.set_preview_edges = [this](EdgeMesh edges) {
-    if (vulkan_window_) vulkan_window_->set_preview_edges(std::move(edges));
+    if (auto* active = active_vulkan_window()) {
+      active->set_preview_edges(std::move(edges));
+    }
   };
   ctx.clear_preview = [this] {
-    if (vulkan_window_) vulkan_window_->clear_preview();
+    if (auto* active = active_vulkan_window()) {
+      active->clear_preview();
+    }
   };
   return ctx;
 }
 
 void MainWindow::sync_tool_ui() {
   const bool tool = command_manager_.has_active_tool();
-  if (vulkan_window_) {
-    vulkan_window_->set_selection_enabled(!tool);
+  for (auto* window : view_windows_) {
+    if (window) window->set_selection_enabled(!tool);
   }
 
-  // Use the application override cursor so VulkanWindow::unsetCursor() (called
-  // on mouse-release after orbit/pan) cannot clear the pick crosshair.
   if (tool && !tool_cursor_overridden_) {
     QApplication::setOverrideCursor(Qt::CrossCursor);
     tool_cursor_overridden_ = true;
@@ -285,6 +452,32 @@ void MainWindow::refresh_edit_actions() {
   }
 }
 
+void MainWindow::setup_window_menu() {
+  auto* window_menu = menuBar()->addMenu(QStringLiteral("窗口(&W)"));
+
+  auto* act_new = window_menu->addAction(QStringLiteral("新建视图(&N)"));
+  act_new->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+N")));
+  connect(act_new, &QAction::triggered, this, &MainWindow::on_new_view);
+
+  auto* act_quad = window_menu->addAction(QStringLiteral("四视图(&Q)"));
+  connect(act_quad, &QAction::triggered, this, &MainWindow::on_quad_views);
+
+  window_menu->addSeparator();
+
+  auto* act_tile = window_menu->addAction(QStringLiteral("平铺(&T)"));
+  connect(act_tile, &QAction::triggered, this, &MainWindow::on_tile_views);
+
+  auto* act_cascade = window_menu->addAction(QStringLiteral("层叠(&C)"));
+  connect(act_cascade, &QAction::triggered, this, &MainWindow::on_cascade_views);
+
+  window_menu->addSeparator();
+
+  auto* act_close =
+      window_menu->addAction(QStringLiteral("关闭当前视图(&L)"));
+  connect(act_close, &QAction::triggered, this,
+          &MainWindow::on_close_active_view);
+}
+
 void MainWindow::setup_menus() {
   auto* file_menu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
 
@@ -332,6 +525,8 @@ void MainWindow::setup_menus() {
   act_palette->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+P")));
   connect(act_palette, &QAction::triggered, this,
           &MainWindow::on_command_palette);
+
+  setup_window_menu();
 }
 
 void MainWindow::setup_toolbar() {
@@ -393,14 +588,14 @@ void MainWindow::setup_view_toolbar() {
   act_ortho_ = view_toolbar_->addAction(QStringLiteral("正交"));
   act_ortho_->setCheckable(true);
   act_ortho_->setToolTip(QStringLiteral("正交投影"));
-  if (Camera* cam = world_.main_camera()) {
-    act_ortho_->setChecked(cam->ortho);
+  if (auto* vw = active_vulkan_window()) {
+    act_ortho_->setChecked(vw->camera().ortho);
   }
   connect(act_ortho_, &QAction::toggled, this, [this](bool on) {
-    if (Camera* cam = world_.main_camera()) {
-      cam->ortho = on;
+    if (auto* vw = active_vulkan_window()) {
+      vw->camera().ortho = on;
       if (view_cube_) view_cube_->update();
-      if (vulkan_window_) vulkan_window_->requestUpdate();
+      vw->requestUpdate();
     }
   });
 }
@@ -429,11 +624,10 @@ void MainWindow::setup_property_dock() {
                                       : make_wood_material(
                                             wood_albedo_path().toStdString());
         world_.sync_part_bodies(*part, material);
-        if (vulkan_window_) vulkan_window_->requestUpdate();
+        request_all_views_update();
         document_.mark_dirty();
         refresh_window_title();
 
-        // Bridge FeatureHistory ↔ DocumentHistory for Ctrl+Z.
         auto* history = &command_manager_.history();
         const std::string wood = wood_albedo_path().toStdString();
         history->push(commands::DocumentHistory::Entry{
@@ -448,7 +642,7 @@ void MainWindow::setup_property_dock() {
                   Material mat =
                       wood.empty() ? Material{} : make_wood_material(wood);
                   world_.sync_part_bodies(*p, std::move(mat));
-                  if (vulkan_window_) vulkan_window_->requestUpdate();
+                  request_all_views_update();
                   update_property_panel(
                       ecs::selected_entity(world_.registry()));
                   refresh_edit_actions();
@@ -463,7 +657,7 @@ void MainWindow::setup_property_dock() {
                   Material mat =
                       wood.empty() ? Material{} : make_wood_material(wood);
                   world_.sync_part_bodies(*p, std::move(mat));
-                  if (vulkan_window_) vulkan_window_->requestUpdate();
+                  request_all_views_update();
                   update_property_panel(
                       ecs::selected_entity(world_.registry()));
                   refresh_edit_actions();
@@ -494,12 +688,11 @@ void MainWindow::refresh_window_title() {
 }
 
 void MainWindow::rebind_view_cube_camera() {
-  if (view_cube_) view_cube_->set_camera(world_.main_camera());
-  if (act_ortho_) {
-    if (Camera* cam = world_.main_camera()) {
-      const QSignalBlocker block(act_ortho_);
-      act_ortho_->setChecked(cam->ortho);
-    }
+  auto* vw = active_vulkan_window();
+  if (view_cube_) view_cube_->set_camera(vw ? &vw->camera() : nullptr);
+  if (act_ortho_ && vw) {
+    const QSignalBlocker block(act_ortho_);
+    act_ortho_->setChecked(vw->camera().ortho);
   }
 }
 
@@ -535,20 +728,17 @@ void MainWindow::changeEvent(QEvent* event) {
 }
 
 void MainWindow::place_view_cube() {
-  if (!view_cube_ || !viewport_container_) return;
+  QWidget* container = active_viewport_container();
+  if (!view_cube_ || !container) return;
   constexpr int margin = 10;
-  const QPoint global = viewport_container_->mapToGlobal(
-      QPoint(viewport_container_->width() - view_cube_->width() - margin,
-             margin));
+  const QPoint global = container->mapToGlobal(
+      QPoint(container->width() - view_cube_->width() - margin, margin));
   view_cube_->move(global);
 }
 
-void MainWindow::apply_wheel_zoom(int dy) {
-  if (dy == 0) return;
-  Camera* cam = world_.main_camera();
-  if (!cam) return;
-  cam->zoom(dy > 0 ? 1.0f : -1.0f);
-  if (vulkan_window_) vulkan_window_->requestUpdate();
+void MainWindow::apply_wheel_zoom(VulkanWindow* window, int dy) {
+  if (!window || dy == 0) return;
+  window->handle_wheel(dy);
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* event) {
@@ -563,7 +753,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 }
 
 bool MainWindow::handle_tool_mouse(QEvent* event) {
-  if (!command_manager_.has_active_tool() || !viewport_container_) return false;
+  if (!command_manager_.has_active_tool()) return false;
 
   const QEvent::Type type = event->type();
   if (type != QEvent::MouseButtonPress && type != QEvent::MouseButtonRelease &&
@@ -572,19 +762,32 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
   }
 
   auto* e = static_cast<QMouseEvent*>(event);
-  const QPoint local =
-      viewport_container_->mapFromGlobal(e->globalPosition().toPoint());
-  if (!viewport_container_->rect().contains(local)) return false;
+  const QPoint global = e->globalPosition().toPoint();
+  auto* vw = vulkan_window_at_global(global);
+  if (!vw) return false;
 
-  // Scale container (logical) → Vulkan window pixels when they differ (DPI).
-  const int cw = std::max(1, viewport_container_->width());
-  const int ch = std::max(1, viewport_container_->height());
-  const int vw =
-      vulkan_window_ ? std::max(1, vulkan_window_->width()) : cw;
-  const int vh =
-      vulkan_window_ ? std::max(1, vulkan_window_->height()) : ch;
-  const float sx = float(local.x()) * float(vw) / float(cw);
-  const float sy = float(local.y()) * float(vh) / float(ch);
+  // Activate the viewport under the cursor so picking uses its camera.
+  for (auto it = view_windows_.begin(); it != view_windows_.end(); ++it) {
+    if (it.value() == vw) {
+      if (mdi_area_->activeSubWindow() != it.key()) {
+        mdi_area_->setActiveSubWindow(it.key());
+      }
+      break;
+    }
+  }
+
+  QWidget* container = active_viewport_container();
+  if (!container) return false;
+
+  const QPoint local = container->mapFromGlobal(global);
+  if (!container->rect().contains(local)) return false;
+
+  const int cw = std::max(1, container->width());
+  const int ch = std::max(1, container->height());
+  const int vww = std::max(1, vw->width());
+  const int vwh = std::max(1, vw->height());
+  const float sx = float(local.x()) * float(vww) / float(cw);
+  const float sy = float(local.y()) * float(vwh) / float(ch);
 
   auto ctx = make_command_context();
   if (type == QEvent::MouseButtonPress) {
@@ -599,25 +802,30 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
   }
 
   if (type == QEvent::MouseButtonRelease) {
-    // Swallow left-release so VulkanWindow cannot unsetCursor / start select.
     if (e->button() != Qt::LeftButton) return false;
     sync_tool_ui();
     return true;
   }
 
-  // MouseMove: update rubber-band. Only consume when not panning with RMB/MMB,
-  // otherwise orbit/pan handlers never see the drag.
   command_manager_.tool_mouse_move(ctx, sx, sy);
   if (e->buttons() & (Qt::RightButton | Qt::MiddleButton)) return false;
   return true;
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
-  // Prefer the viewport filter; also handle via qApp so QWindow-direct events
-  // still reach the active tool. Only consume when the cursor is over the view.
-  if (watched == viewport_container_ || watched == qApp) {
-    if (handle_tool_mouse(event)) return true;
+  // Block closing the last MDI view subwindow.
+  if (event->type() == QEvent::Close) {
+    auto* sub = qobject_cast<QMdiSubWindow*>(watched);
+    if (sub && mdi_area_ && view_windows_.contains(sub)) {
+      if (mdi_area_->subWindowList().size() <= 1) {
+        statusBar()->showMessage(QStringLiteral("至少保留一个视图窗口"), 3000);
+        event->ignore();
+        return true;
+      }
+    }
   }
+
+  if (handle_tool_mouse(event)) return true;
 
   if (event->type() == QEvent::KeyPress) {
     auto* ke = static_cast<QKeyEvent*>(event);
@@ -629,25 +837,21 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     }
   }
 
-  if (event->type() == QEvent::Wheel && vulkan_window_ && viewport_container_) {
+  if (event->type() == QEvent::Wheel) {
     auto* we = static_cast<QWheelEvent*>(event);
     const QPoint global = we->globalPosition().toPoint();
-    const QRect viewport_global(
-        viewport_container_->mapToGlobal(QPoint(0, 0)),
-        viewport_container_->size());
-    if (!viewport_global.contains(global)) {
-      return QMainWindow::eventFilter(watched, event);
-    }
     if (view_cube_ && view_cube_->isVisible()) {
       const QRect cube_global(view_cube_->pos(), view_cube_->size());
       if (cube_global.contains(global)) {
         return QMainWindow::eventFilter(watched, event);
       }
     }
-    const int dy = wheel_delta_y(we);
-    if (dy != 0) {
-      apply_wheel_zoom(dy);
-      return true;
+    if (auto* vw = vulkan_window_at_global(global)) {
+      const int dy = wheel_delta_y(we);
+      if (dy != 0) {
+        apply_wheel_zoom(vw, dy);
+        return true;
+      }
     }
   }
   return QMainWindow::eventFilter(watched, event);

@@ -40,8 +40,8 @@ class VulkanWindow final : public QVulkanWindow {
     tool_press_callback_ = std::move(cb);
   }
 
-  [[nodiscard]] Camera& camera();
-  [[nodiscard]] const Camera& camera() const;
+  [[nodiscard]] Camera& camera() noexcept { return camera_; }
+  [[nodiscard]] const Camera& camera() const noexcept { return camera_; }
 
   QVulkanWindowRenderer* createRenderer() override;
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -70,7 +70,7 @@ class VulkanWindow final : public QVulkanWindow {
   [[nodiscard]] bool forward_tool_press(QPointF pos, Qt::MouseButton button);
 
   ecs::World* world_{nullptr};
-  Camera fallback_camera_{};
+  Camera camera_{};
   VulkanRenderer* renderer_{nullptr};
   bool selection_enabled_{true};
   SelectionCallback selection_callback_;

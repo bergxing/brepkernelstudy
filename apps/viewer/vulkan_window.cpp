@@ -15,23 +15,9 @@ VulkanWindow::VulkanWindow(QWindow* parent) : QVulkanWindow(parent) {
   setKeyboardGrabEnabled(false);
 }
 
-Camera& VulkanWindow::camera() {
-  if (world_) {
-    if (Camera* cam = world_->main_camera()) return *cam;
-  }
-  return fallback_camera_;
-}
-
-const Camera& VulkanWindow::camera() const {
-  if (world_) {
-    if (const Camera* cam = world_->main_camera()) return *cam;
-  }
-  return fallback_camera_;
-}
-
 void VulkanWindow::sync_renderer() {
-  if (!world_ || !renderer_) return;
-  ecs::render_sync(world_->registry(), *renderer_);
+  if (!renderer_) return;
+  renderer_->sync_from_world();
 }
 
 void VulkanWindow::set_preview_edges(EdgeMesh edges) {
@@ -56,7 +42,7 @@ void VulkanWindow::maybe_select_at(float x, float y) {
   if (!selection_enabled_ || !world_) return;
   const QSize sz = size();
   const entt::entity hit = ecs::pick_renderable(
-      world_->registry(), camera(), sz.width(), sz.height(), x, y);
+      world_->registry(), camera_, sz.width(), sz.height(), x, y);
   ecs::set_selection(world_->registry(), hit);
   requestUpdate();
   if (selection_callback_) selection_callback_(hit);
@@ -106,7 +92,7 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons) {
 
   auto& state = world_->registry().ctx().get<ecs::InputState>();
   const auto before = state.drag_mode;
-  ecs::input_on_move(world_->registry(), float(pos.x()), float(pos.y()),
+  ecs::input_on_move(world_->registry(), camera_, float(pos.x()), float(pos.y()),
                      int(buttons));
   if (selection_enabled_ &&
       before == ecs::InputState::DragMode::PendingSelect &&
@@ -135,7 +121,7 @@ void VulkanWindow::pointer_release(QPointF pos) {
 
 void VulkanWindow::pointer_wheel(int angle_delta_y) {
   if (!world_) return;
-  ecs::input_on_wheel(world_->registry(), angle_delta_y);
+  ecs::input_on_wheel(world_->registry(), camera_, angle_delta_y);
   if (ecs::consume_camera_dirty(world_->registry())) {
     requestUpdate();
   }
@@ -143,7 +129,7 @@ void VulkanWindow::pointer_wheel(int angle_delta_y) {
 
 void VulkanWindow::apply_key(int key) {
   if (!world_) return;
-  ecs::input_on_key(world_->registry(), key);
+  ecs::input_on_key(world_->registry(), camera_, key);
   if (ecs::consume_camera_dirty(world_->registry())) {
     requestUpdate();
   }

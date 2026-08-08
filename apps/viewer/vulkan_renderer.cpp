@@ -1034,11 +1034,14 @@ void VulkanRenderer::releaseResources() {
   axis_vertex_count_ = 0;
 }
 
+void VulkanRenderer::sync_from_world() {
+  if (!window_ || !window_->world()) return;
+  ecs::render_sync(window_->world()->registry(), *this, synced_scene_version_);
+}
+
 void VulkanRenderer::startNextFrame() {
   // Keep ECS → GPU sync current (mesh/material dirtied by systems).
-  if (window_ && window_->world()) {
-    ecs::render_sync(window_->world()->registry(), *this);
-  }
+  sync_from_world();
 
   if (!dev_ || !pipeline_layout_ ||
       (!tri_pipeline_ && !line_pipeline_ && !axis_pipeline_)) {

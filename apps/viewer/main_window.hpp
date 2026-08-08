@@ -8,6 +8,7 @@
 #include "view_cube.hpp"
 #include "vulkan_window.hpp"
 
+#include <QHash>
 #include <QMainWindow>
 #include <QVulkanInstance>
 
@@ -15,6 +16,8 @@
 
 class QAction;
 class QDockWidget;
+class QMdiArea;
+class QMdiSubWindow;
 class QToolBar;
 
 namespace brep::viewer {
@@ -36,13 +39,28 @@ class MainWindow final : public QMainWindow {
  private slots:
   void on_run_command();
   void on_command_palette();
+  void on_sub_window_activated(QMdiSubWindow* sub);
+  void on_new_view();
+  void on_quad_views();
+  void on_tile_views();
+  void on_cascade_views();
+  void on_close_active_view();
 
  private:
+  VulkanWindow* create_view_window(const QString& title, char standard_view);
+  [[nodiscard]] VulkanWindow* active_vulkan_window() const;
+  [[nodiscard]] QWidget* active_viewport_container() const;
+  [[nodiscard]] VulkanWindow* vulkan_window_for_sub(QMdiSubWindow* sub) const;
+  [[nodiscard]] VulkanWindow* vulkan_window_at_global(const QPoint& global) const;
+  void wire_vulkan_window(VulkanWindow* window);
+  void request_all_views_update();
+  void ensure_minimum_view();
   void setup_menus();
+  void setup_window_menu();
   void setup_toolbar();
   void setup_view_toolbar();
   void place_view_cube();
-  void apply_wheel_zoom(int dy);
+  void apply_wheel_zoom(VulkanWindow* window, int dy);
   void apply_standard_view(char face);
   void refresh_window_title();
   void refresh_edit_actions();
@@ -62,8 +80,10 @@ class MainWindow final : public QMainWindow {
   commands::CommandRegistry commands_;
   commands::CommandManager command_manager_;
   std::unique_ptr<QVulkanInstance> vulkan_instance_;
-  VulkanWindow* vulkan_window_{nullptr};
-  QWidget* viewport_container_{nullptr};
+  QMdiArea* mdi_area_{nullptr};
+  QHash<QMdiSubWindow*, VulkanWindow*> view_windows_;
+  int view_serial_{0};
+  bool suppress_ensure_view_{false};
   ViewCubeWidget* view_cube_{nullptr};
   QToolBar* toolbar_{nullptr};
   QToolBar* view_toolbar_{nullptr};

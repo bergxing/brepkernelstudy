@@ -109,7 +109,9 @@ void CreateBoxTool::on_start(CommandContext& ctx) {
 
 bool CreateBoxTool::pick_ground(CommandContext& ctx, float x, float y,
                                 Point3d& hit) const {
-  Camera* cam = ctx.world ? ctx.world->main_camera() : nullptr;
+  Camera* cam = ctx.view_camera
+                    ? ctx.view_camera
+                    : (ctx.world ? ctx.world->main_camera() : nullptr);
   if (!cam) return false;
   Point3d origin;
   Vector3d dir;
@@ -121,7 +123,9 @@ bool CreateBoxTool::pick_ground(CommandContext& ctx, float x, float y,
 
 bool CreateBoxTool::pick_height(CommandContext& ctx, float x, float y,
                                 double& height) const {
-  Camera* cam = ctx.world ? ctx.world->main_camera() : nullptr;
+  Camera* cam = ctx.view_camera
+                    ? ctx.view_camera
+                    : (ctx.world ? ctx.world->main_camera() : nullptr);
   if (!cam) return false;
 
   Point3d origin;

@@ -12,14 +12,6 @@
 namespace brep::viewer::ecs {
 namespace {
 
-CameraComponent* main_camera(entt::registry& registry) {
-  auto view = registry.view<CameraComponent, MainCameraTag>();
-  for (auto entity : view) {
-    return &view.get<CameraComponent>(entity);
-  }
-  return nullptr;
-}
-
 InputState& input(entt::registry& registry) {
   return registry.ctx().get<InputState>();
 }
@@ -97,7 +89,8 @@ int input_on_press(entt::registry& registry, float x, float y, int button) {
   return static_cast<int>(state.drag_mode);
 }
 
-void input_on_move(entt::registry& registry, float x, float y, int buttons) {
+void input_on_move(entt::registry& registry, Camera& camera, float x, float y,
+                   int buttons) {
   auto& state = input(registry);
   if (state.drag_mode == InputState::DragMode::None) return;
 
@@ -121,14 +114,12 @@ void input_on_move(entt::registry& registry, float x, float y, int buttons) {
   const float dy = y - state.last_y;
   if (std::fabs(dx) < 1e-6f && std::fabs(dy) < 1e-6f) return;
 
-  if (auto* cam = main_camera(registry)) {
-    if (state.drag_mode == InputState::DragMode::Orbit) {
-      cam->camera.orbit(dx, dy);
-    } else if (state.drag_mode == InputState::DragMode::Pan) {
-      cam->camera.pan(dx, dy);
-    }
-    state.camera_dirty = true;
+  if (state.drag_mode == InputState::DragMode::Orbit) {
+    camera.orbit(dx, dy);
+  } else if (state.drag_mode == InputState::DragMode::Pan) {
+    camera.pan(dx, dy);
   }
+  state.camera_dirty = true;
   state.last_x = x;
   state.last_y = y;
 }
@@ -140,39 +131,35 @@ bool input_on_release(entt::registry& registry) {
   return click;
 }
 
-void input_on_wheel(entt::registry& registry, int angle_delta_y) {
+void input_on_wheel(entt::registry& registry, Camera& camera,
+                    int angle_delta_y) {
   if (angle_delta_y == 0) return;
-  if (auto* cam = main_camera(registry)) {
-    cam->camera.zoom(angle_delta_y > 0 ? 1.0f : -1.0f);
-    input(registry).camera_dirty = true;
-  }
+  camera.zoom(angle_delta_y > 0 ? 1.0f : -1.0f);
+  input(registry).camera_dirty = true;
 }
 
-void input_on_key(entt::registry& registry, int key) {
-  auto* cam = main_camera(registry);
-  if (!cam) return;
-
+void input_on_key(entt::registry& registry, Camera& camera, int key) {
   constexpr float step = 8.0f;
   bool changed = true;
   switch (key) {
     case Qt::Key_Left:
-      cam->camera.orbit(-step, 0.0f);
+      camera.orbit(-step, 0.0f);
       break;
     case Qt::Key_Right:
-      cam->camera.orbit(step, 0.0f);
+      camera.orbit(step, 0.0f);
       break;
     case Qt::Key_Up:
-      cam->camera.orbit(0.0f, -step);
+      camera.orbit(0.0f, -step);
       break;
     case Qt::Key_Down:
-      cam->camera.orbit(0.0f, step);
+      camera.orbit(0.0f, step);
       break;
     case Qt::Key_Plus:
     case Qt::Key_Equal:
-      cam->camera.zoom(1.0f);
+      camera.zoom(1.0f);
       break;
     case Qt::Key_Minus:
-      cam->camera.zoom(-1.0f);
+      camera.zoom(-1.0f);
       break;
     default:
       changed = false;
@@ -181,7 +168,8 @@ void input_on_key(entt::registry& registry, int key) {
   if (changed) input(registry).camera_dirty = true;
 }
 
-void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
+void render_sync(entt::registry& registry, VulkanRenderer& renderer,
+                 std::uint64_t& synced_version) {
   auto view =
       registry.view<MeshComponent, MaterialComponent, Transform, RenderableTag>();
 
@@ -201,71 +189,85 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer) {
       any_component_dirty || count != cache.renderable_count ||
       sel != cache.selection || cache.force_rebuild;
 
-  if (!need_rebuild) return;
+  if (need_rebuild) {
+    cache.scene_tri = {};
+    cache.scene_edges = {};
+    cache.selected_tri = {};
+    cache.selected_edges = {};
+    cache.selected_outline = {};
+    cache.scene_material = {};
+    cache.have_scene = false;
+    cache.have_selection = false;
+    bool have_material = false;
 
-  TriangleMesh scene_tri;
-  EdgeMesh scene_edges;
-  TriangleMesh selected_tri;
-  EdgeMesh selected_edges;
-  Material scene_material{};
-  bool have_material = false;
+    for (auto entity : view) {
+      auto& mesh = view.get<MeshComponent>(entity);
+      auto& mat = view.get<MaterialComponent>(entity);
+      const auto& xform = view.get<Transform>(entity);
+      const bool selected = registry.all_of<SelectedTag>(entity);
 
-  for (auto entity : view) {
-    auto& mesh = view.get<MeshComponent>(entity);
-    auto& mat = view.get<MaterialComponent>(entity);
-    const auto& xform = view.get<Transform>(entity);
-    const bool selected = registry.all_of<SelectedTag>(entity);
+      if (selected) {
+        append_transformed_mesh(cache.selected_tri, mesh.triangles,
+                                xform.position);
+        append_transformed_edges(cache.selected_edges, mesh.edges,
+                                 xform.position);
+      } else {
+        append_transformed_mesh(cache.scene_tri, mesh.triangles, xform.position);
+        append_transformed_edges(cache.scene_edges, mesh.edges, xform.position);
+        if (!have_material) {
+          cache.scene_material = mat.material;
+          have_material = true;
+        } else if (cache.scene_material.albedo_path.empty() &&
+                   !mat.material.albedo_path.empty()) {
+          cache.scene_material = mat.material;
+        }
+      }
 
-    if (selected) {
-      append_transformed_mesh(selected_tri, mesh.triangles, xform.position);
-      append_transformed_edges(selected_edges, mesh.edges, xform.position);
-    } else {
-      append_transformed_mesh(scene_tri, mesh.triangles, xform.position);
-      append_transformed_edges(scene_edges, mesh.edges, xform.position);
-      if (!have_material) {
-        scene_material = mat.material;
+      mesh.dirty = false;
+      mat.dirty = false;
+    }
+
+    if (!have_material) {
+      for (auto entity : view) {
+        cache.scene_material = view.get<MaterialComponent>(entity).material;
         have_material = true;
-      } else if (scene_material.albedo_path.empty() &&
-                 !mat.material.albedo_path.empty()) {
-        scene_material = mat.material;
+        if (!cache.scene_material.albedo_path.empty()) break;
       }
     }
 
-    mesh.dirty = false;
-    mat.dirty = false;
-  }
-
-  // If everything is selected (or only one body and it is selected), still
-  // keep a wood material ready for when selection clears.
-  if (!have_material) {
-    for (auto entity : view) {
-      scene_material = view.get<MaterialComponent>(entity).material;
-      have_material = true;
-      if (!scene_material.albedo_path.empty()) break;
+    cache.have_scene = !(cache.scene_tri.indices.empty() &&
+                         cache.scene_edges.positions.empty());
+    cache.have_selection = !(cache.selected_tri.indices.empty() &&
+                             cache.selected_edges.positions.empty());
+    if (cache.have_selection) {
+      cache.selected_outline = cache.selected_edges;
     }
+
+    cache.renderable_count = count;
+    cache.selection = sel;
+    cache.force_rebuild = false;
+    ++cache.version;
   }
 
-  if (scene_tri.indices.empty() && scene_edges.positions.empty()) {
+  if (synced_version == cache.version) return;
+
+  if (!cache.have_scene) {
     renderer.set_meshes({}, {});
   } else {
-    renderer.set_meshes(std::move(scene_tri), std::move(scene_edges));
-    if (have_material) renderer.set_material(scene_material);
+    renderer.set_meshes(cache.scene_tri, cache.scene_edges);
+    renderer.set_material(cache.scene_material);
   }
 
-  if (selected_tri.indices.empty() && selected_edges.positions.empty()) {
+  if (!cache.have_selection) {
     renderer.clear_selection_mesh();
     renderer.clear_highlight();
   } else {
-    EdgeMesh outline = selected_edges;  // copy wireframe before move
-    renderer.set_selection_mesh(std::move(selected_tri),
-                                std::move(selected_edges),
+    renderer.set_selection_mesh(cache.selected_tri, cache.selected_edges,
                                 make_selection_material());
-    renderer.set_highlight_edges(std::move(outline));
+    renderer.set_highlight_edges(cache.selected_outline);
   }
 
-  cache.renderable_count = count;
-  cache.selection = sel;
-  cache.force_rebuild = false;
+  synced_version = cache.version;
 }
 
 bool consume_camera_dirty(entt::registry& registry) {

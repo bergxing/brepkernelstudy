@@ -11,6 +11,11 @@
 #include <functional>
 #include <string>
 
+namespace brep::viewer {
+class Camera;
+class VulkanWindow;
+}  // namespace brep::viewer
+
 namespace brep::viewer::commands {
 
 class DocumentHistory;
@@ -51,6 +56,8 @@ struct CommandContext {
   DocumentSession* session{nullptr};
   DocumentHistory* history{nullptr};
   QWidget* parent_widget{nullptr};
+  Camera* view_camera{nullptr};
+  VulkanWindow* viewport{nullptr};
   std::string wood_albedo_path;
   int viewport_w{1};
   int viewport_h{1};
