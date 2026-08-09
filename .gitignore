@@ -1,5 +1,8 @@
 build/
 build-mingw/
+build-kernel/
+build-viewer/
+install-kernel/
 build_tools/
 cmake-build-*/
 out/

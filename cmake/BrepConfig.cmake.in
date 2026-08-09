@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/BrepTargets.cmake")
+
+# Convenience: un-namespaced alias for code that still links `brep`.
+if(TARGET Brep::brep AND NOT TARGET brep)
+  add_library(brep ALIAS Brep::brep)
+endif()
+
+check_required_components(Brep)

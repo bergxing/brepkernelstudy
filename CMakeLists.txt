@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(brep-kernel LANGUAGES CXX)
+project(brepkernelstudy LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,197 +7,39 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ---------------------------------------------------------------------------
-# Third-party via git submodules (third_party/*)
-#   git submodule update --init --recursive
-#
-# Qt is NOT vendored (too large). Use a local Qt install, e.g. C:/Qt6.
-# IDE: open this folder in CLion and select preset "clion-mingw"
-#   (MinGW from Qt — no Visual Studio required).
+# Thin aggregator (ADR 0004): kernel subproject + optional viewer.
+# IDE: open this folder; preset clion-mingw (Qt MinGW).
 # ---------------------------------------------------------------------------
-set(BREP_EIGEN_DIR          ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen)
-set(BREP_SPDLOG_DIR         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog)
-set(BREP_VULKAN_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/Vulkan-Headers)
-set(BREP_VOLK_DIR           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/volk)
-set(BREP_ENTT_DIR           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/entt)
-set(BREP_BOOST_UUID_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost_uuid)
+get_filename_component(BREP_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
+include(${BREP_REPO_ROOT}/cmake/BrepLibType.cmake)
 
-foreach(path_var IN ITEMS
-    BREP_EIGEN_DIR BREP_SPDLOG_DIR BREP_VULKAN_HEADERS_DIR BREP_VOLK_DIR
-    BREP_ENTT_DIR BREP_BOOST_UUID_DIR)
-  if(NOT EXISTS "${${path_var}}")
-    message(FATAL_ERROR
-      "Missing dependency: ${${path_var}}. "
-      "Run: git submodule update --init --recursive "
-      "(and ensure third_party/boost_uuid is present)")
-  endif()
-endforeach()
+add_subdirectory(kernel)
 
-if(NOT EXISTS "${BREP_BOOST_UUID_DIR}/boost/uuid/uuid.hpp")
-  message(FATAL_ERROR
-    "Boost.Uuid headers missing at ${BREP_BOOST_UUID_DIR}/boost/uuid")
-endif()
-
-if(NOT EXISTS "${BREP_ENTT_DIR}/single_include/entt/entt.hpp")
-  message(FATAL_ERROR "EnTT submodule incomplete at third_party/entt")
-endif()
-
-if(NOT EXISTS "${BREP_EIGEN_DIR}/Eigen/Core")
-  message(FATAL_ERROR "Eigen submodule incomplete at third_party/eigen")
-endif()
-if(NOT EXISTS "${BREP_SPDLOG_DIR}/include/spdlog/spdlog.h")
-  message(FATAL_ERROR "spdlog submodule incomplete at third_party/spdlog")
-endif()
-if(NOT EXISTS "${BREP_VULKAN_HEADERS_DIR}/include/vulkan/vulkan.h")
-  message(FATAL_ERROR "Vulkan-Headers submodule incomplete")
-endif()
-
-# Eigen (header-only)
-if(NOT TARGET Eigen3::Eigen)
-  add_library(Eigen3::Eigen INTERFACE IMPORTED GLOBAL)
-  set_target_properties(Eigen3::Eigen PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${BREP_EIGEN_DIR}")
-endif()
-
-# Vulkan-Headers (header-only)
-if(NOT TARGET Vulkan::Headers)
-  add_library(Vulkan::Headers INTERFACE IMPORTED GLOBAL)
-  set_target_properties(Vulkan::Headers PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${BREP_VULKAN_HEADERS_DIR}/include")
-endif()
-
-# EnTT ECS (header-only)
-if(NOT TARGET EnTT::EnTT)
-  add_library(EnTT::EnTT INTERFACE IMPORTED GLOBAL)
-  set_target_properties(EnTT::EnTT PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${BREP_ENTT_DIR}/single_include")
-endif()
-
-# Minimal Boost.Uuid (+deps), header-only — see third_party/boost_uuid/README.md
-add_library(brep_boost_uuid INTERFACE)
-target_include_directories(brep_boost_uuid INTERFACE "${BREP_BOOST_UUID_DIR}")
-
-# volk meta-loader (vendored Vulkan-Headers; loads vulkan-1.dll at runtime)
-set(VOLK_PULL_IN_VULKAN ON CACHE BOOL "" FORCE)
-set(VULKAN_HEADERS_INSTALL_DIR "${BREP_VULKAN_HEADERS_DIR}" CACHE PATH "" FORCE)
-set(VOLK_INSTALL OFF CACHE BOOL "" FORCE)
-add_subdirectory(${BREP_VOLK_DIR} ${CMAKE_BINARY_DIR}/_deps/volk EXCLUDE_FROM_ALL)
-if(TARGET volk)
-  target_link_libraries(volk PUBLIC Vulkan::Headers)
-endif()
-
-include(cmake/BrepLibType.cmake)
-include(cmake/BrepAll.cmake)
-
-add_executable(box_demo examples/box_demo.cpp)
-target_link_libraries(box_demo PRIVATE brep)
-
-add_executable(smoke examples/smoke.cpp)
-target_link_libraries(smoke PRIVATE brep)
-
-add_executable(parametric_smoke examples/parametric_smoke.cpp)
-target_link_libraries(parametric_smoke PRIVATE brep)
-
-add_executable(xl_roundtrip examples/xl_roundtrip.cpp)
-target_link_libraries(xl_roundtrip PRIVATE brep)
-
+# Repo-wide include boundary lint (needs apps/viewer tree).
 enable_testing()
-add_test(NAME box_demo COMMAND box_demo)
-add_test(NAME smoke COMMAND smoke)
-add_test(NAME parametric_smoke COMMAND parametric_smoke)
-add_test(NAME xl_roundtrip COMMAND xl_roundtrip)
-
-# Phase 4: include boundary check (Viewer → api/* only; no public brep/internal).
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
   add_test(
     NAME include_boundaries
     COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_SOURCE_DIR}/scripts/check_include_boundaries.py
-            --root ${CMAKE_SOURCE_DIR}
+            ${BREP_REPO_ROOT}/scripts/check_include_boundaries.py
+            --root ${BREP_REPO_ROOT}
   )
-  set_tests_properties(include_boundaries PROPERTIES
-    LABELS "lint;phase4"
-  )
+  set_tests_properties(include_boundaries PROPERTIES LABELS "lint;phase4")
 else()
   message(WARNING
-    "Python3 not found: include_boundaries ctest will be skipped. "
-    "Install Python 3 to enforce Phase 4 API include rules.")
+    "Python3 not found: include_boundaries ctest will be skipped.")
 endif()
 
 # ---------------------------------------------------------------------------
-# GoogleTest unit tests (optional)
+# Optional Viewer
 # ---------------------------------------------------------------------------
-option(BREP_BUILD_TESTS "Build GoogleTest unit tests" ON)
-if(BREP_BUILD_TESTS)
-  include(FetchContent)
-  FetchContent_Declare(
-    googletest
-    URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-  )
-  # For Windows: prevent overriding parent project's compiler/linker settings.
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  FetchContent_MakeAvailable(googletest)
-  add_subdirectory(tests)
-endif()
+include(${BREP_REPO_ROOT}/cmake/BrepQt.cmake)
 
-# ---------------------------------------------------------------------------
-# Local Qt6 discovery (kit matches the active compiler: MinGW vs MSVC)
-# ---------------------------------------------------------------------------
-set(BREP_QT_ROOT "C:/Qt6" CACHE PATH "Qt install root (contains <version>/<kit>)")
-
-function(brep_detect_qt_prefix out_var)
-  if(DEFINED ENV{CMAKE_PREFIX_PATH})
-    foreach(p IN LISTS ENV{CMAKE_PREFIX_PATH})
-      if(EXISTS "${p}/lib/cmake/Qt6/Qt6Config.cmake")
-        set(${out_var} "${p}" PARENT_SCOPE)
-        return()
-      endif()
-    endforeach()
-  endif()
-
-  foreach(p IN LISTS CMAKE_PREFIX_PATH)
-    if(EXISTS "${p}/lib/cmake/Qt6/Qt6Config.cmake")
-      set(${out_var} "${p}" PARENT_SCOPE)
-      return()
-    endif()
-  endforeach()
-
-  if(EXISTS "${BREP_QT_ROOT}/lib/cmake/Qt6/Qt6Config.cmake")
-    set(${out_var} "${BREP_QT_ROOT}" PARENT_SCOPE)
-    return()
-  endif()
-
-  # Match Qt ABI to the compiler. CLion/MinGW → mingw_64; MSVC → msvc*_64.
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-     OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC))
-    set(_kits mingw_64 msvc2022_64 msvc2019_64)
-  else()
-    set(_kits msvc2022_64 msvc2019_64 mingw_64)
-  endif()
-
-  if(EXISTS "${BREP_QT_ROOT}")
-    file(GLOB _qt_versions LIST_DIRECTORIES true "${BREP_QT_ROOT}/*")
-    list(SORT _qt_versions ORDER DESCENDING)
-    foreach(ver_dir IN LISTS _qt_versions)
-      foreach(kit IN LISTS _kits)
-        set(candidate "${ver_dir}/${kit}")
-        if(EXISTS "${candidate}/lib/cmake/Qt6/Qt6Config.cmake")
-          set(${out_var} "${candidate}" PARENT_SCOPE)
-          return()
-        endif()
-      endforeach()
-    endforeach()
-  endif()
-
-  set(${out_var} "" PARENT_SCOPE)
-endfunction()
-
-# ---------------------------------------------------------------------------
-# Optional Qt6 + Vulkan viewer (local Qt install)
-# ---------------------------------------------------------------------------
 option(BREP_BUILD_VIEWER "Build Qt/Vulkan B-Rep viewer" ON)
 if(BREP_BUILD_VIEWER)
+  include(${BREP_REPO_ROOT}/cmake/BrepViewerDeps.cmake)
+
   brep_detect_qt_prefix(_brep_qt_prefix)
   if(_brep_qt_prefix)
     list(PREPEND CMAKE_PREFIX_PATH "${_brep_qt_prefix}")
@@ -212,7 +54,6 @@ if(BREP_BUILD_VIEWER)
     message(WARNING
       "BREP_BUILD_VIEWER=ON but Qt6 not found.\n"
       "Set BREP_QT_ROOT (e.g. -DBREP_QT_ROOT=C:/Qt6),\n"
-      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.8.3/mingw_64  (CLion/MinGW)\n"
-      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.8.3/msvc2022_64 (MSVC)")
+      "or -DCMAKE_PREFIX_PATH=C:/Qt6/6.8.3/mingw_64")
   endif()
 endif()

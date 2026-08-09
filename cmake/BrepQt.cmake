@@ -1,0 +1,48 @@
+# Local Qt6 prefix discovery. Sets BREP_QT_ROOT cache; call brep_detect_qt_prefix.
+set(BREP_QT_ROOT "C:/Qt6" CACHE PATH "Qt install root (contains <version>/<kit>)")
+
+function(brep_detect_qt_prefix out_var)
+  if(DEFINED ENV{CMAKE_PREFIX_PATH})
+    foreach(p IN LISTS ENV{CMAKE_PREFIX_PATH})
+      if(EXISTS "${p}/lib/cmake/Qt6/Qt6Config.cmake")
+        set(${out_var} "${p}" PARENT_SCOPE)
+        return()
+      endif()
+    endforeach()
+  endif()
+
+  foreach(p IN LISTS CMAKE_PREFIX_PATH)
+    if(EXISTS "${p}/lib/cmake/Qt6/Qt6Config.cmake")
+      set(${out_var} "${p}" PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+
+  if(EXISTS "${BREP_QT_ROOT}/lib/cmake/Qt6/Qt6Config.cmake")
+    set(${out_var} "${BREP_QT_ROOT}" PARENT_SCOPE)
+    return()
+  endif()
+
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+     OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC))
+    set(_kits mingw_64 msvc2022_64 msvc2019_64)
+  else()
+    set(_kits msvc2022_64 msvc2019_64 mingw_64)
+  endif()
+
+  if(EXISTS "${BREP_QT_ROOT}")
+    file(GLOB _qt_versions LIST_DIRECTORIES true "${BREP_QT_ROOT}/*")
+    list(SORT _qt_versions ORDER DESCENDING)
+    foreach(ver_dir IN LISTS _qt_versions)
+      foreach(kit IN LISTS _kits)
+        set(candidate "${ver_dir}/${kit}")
+        if(EXISTS "${candidate}/lib/cmake/Qt6/Qt6Config.cmake")
+          set(${out_var} "${candidate}" PARENT_SCOPE)
+          return()
+        endif()
+      endforeach()
+    endforeach()
+  endif()
+
+  set(${out_var} "" PARENT_SCOPE)
+endfunction()

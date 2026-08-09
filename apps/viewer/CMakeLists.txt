@@ -1,3 +1,46 @@
+cmake_minimum_required(VERSION 3.20)
+
+# Nested under repo root, or standalone with find_package(Brep) (ADR 0004 phase B).
+project(brep_viewer LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+get_filename_component(BREP_VIEWER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
+get_filename_component(BREP_REPO_ROOT "${BREP_VIEWER_SOURCE_DIR}/../.." ABSOLUTE)
+set(BREP_CMAKE_DIR "${BREP_REPO_ROOT}/cmake")
+
+set(_brep_viewer_standalone FALSE)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(_brep_viewer_standalone TRUE)
+endif()
+
+if(_brep_viewer_standalone)
+  include(${BREP_CMAKE_DIR}/BrepLibType.cmake)
+  include(${BREP_CMAKE_DIR}/BrepQt.cmake)
+  include(${BREP_CMAKE_DIR}/BrepViewerDeps.cmake)
+
+  brep_detect_qt_prefix(_brep_qt_prefix)
+  if(_brep_qt_prefix)
+    list(PREPEND CMAKE_PREFIX_PATH "${_brep_qt_prefix}")
+    message(STATUS "Using Qt prefix: ${_brep_qt_prefix}")
+  endif()
+
+  find_package(Brep CONFIG REQUIRED)
+  message(STATUS "Standalone viewer: using find_package(Brep)")
+endif()
+
+if(NOT TARGET brep AND NOT TARGET Brep::brep)
+  message(FATAL_ERROR
+    "Brep kernel not found. Build from repository root (add_subdirectory), "
+    "or configure Viewer standalone with CMAKE_PREFIX_PATH / Brep_DIR "
+    "pointing at an installed or build-tree Brep package.")
+endif()
+if(NOT TARGET brep AND TARGET Brep::brep)
+  add_library(brep ALIAS Brep::brep)
+endif()
+
 set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
@@ -83,7 +126,7 @@ endfunction()
 # shared library `viewer_runtime` so DLL linking stays acyclic.
 # ---------------------------------------------------------------------------
 
-include(${CMAKE_SOURCE_DIR}/cmake/BrepLibType.cmake)
+include(${BREP_CMAKE_DIR}/BrepLibType.cmake)
 
 add_library(viewer_adapter ${BREP_LIB_TYPE}
   adapter/scene_adapter.cpp
@@ -176,6 +219,26 @@ target_link_libraries(brep_viewer PRIVATE viewer_ui)
 set_target_properties(brep_viewer PROPERTIES
   WIN32_EXECUTABLE FALSE
 )
+
+# Deploy kernel SHARED libs next to the exe (needed for install / standalone builds).
+if(BREP_BUILD_SHARED)
+  foreach(_brep_dll IN ITEMS brep_core brep_feat brep_asm brep_io)
+    if(TARGET ${_brep_dll})
+      set(_brep_dll_tgt ${_brep_dll})
+    elseif(TARGET Brep::${_brep_dll})
+      set(_brep_dll_tgt Brep::${_brep_dll})
+    else()
+      continue()
+    endif()
+    add_custom_command(TARGET brep_viewer POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "$<TARGET_FILE:${_brep_dll_tgt}>"
+              "$<TARGET_FILE_DIR:brep_viewer>"
+      COMMENT "Deploy $<TARGET_FILE_NAME:${_brep_dll_tgt}>"
+      VERBATIM
+    )
+  endforeach()
+endif()
 
 add_custom_command(TARGET brep_viewer POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory

@@ -1,0 +1,32 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "mingw-debug",
+      "displayName": "Kernel MinGW Debug",
+      "description": "Standalone kernel: libs + examples + tests (no Viewer)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build-kernel",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "C:/Qt6/Tools/mingw1310_64/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "C:/Qt6/Tools/mingw1310_64/bin/g++.exe",
+        "BREP_BUILD_SHARED": "ON"
+      },
+      "environment": {
+        "PATH": "C:/Qt6/Tools/mingw1310_64/bin;$penv{PATH}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "mingw-debug",
+      "configurePreset": "mingw-debug"
+    }
+  ]
+}

@@ -9,7 +9,8 @@
 1. **Adapter 放在 `apps/viewer/adapter/`** — 仅 Viewer 使用，不建顶层 `adapter/`；未来若有 CLI/headless 再抽公共层。  
 2. **测试框架：GoogleTest** — 内核测试 `tests/kernel/`；Viewer/Adapter 测试 `apps/viewer/tests/`。  
 3. **内核目录物理搬迁** — `include/` → `kernel/include/`，`src/` → `kernel/src/`（Phase 1 一并完成）。  
-4. **实施顺序** — 先做 **Phase 2**（Viewer 大文件拆分），再做 **Phase 1**（CMake 内核模块化 + 目录搬迁）；整体：**Phase 0 → 2 → 1 → 3 → 4**。
+4. **同仓多子工程（ADR 0004）** — 根薄聚合 + `project(brep_kernel)` / `project(brep_viewer)`；examples 由 kernel 接入；install/find_package 二期。  
+5. **实施顺序** — 先做 **Phase 2**（Viewer 大文件拆分），再做 **Phase 1**（CMake 内核模块化 + 目录搬迁）；整体：**Phase 0 → 2 → 1 → 3 → 4**。
 
 ---
 
@@ -19,12 +20,13 @@
 
 ```
 brepkernelstudy/
-├── CMakeLists.txt          # 构建 kernel + examples + 可选 brep_viewer
+├── CMakeLists.txt          # 薄聚合：add_subdirectory(kernel) + 可选 viewer
 ├── kernel/
-│   ├── include/brep/       # 内核公开头文件（自 include/ 迁入）
-│   └── src/                # 内核实现（自 src/ 迁入）
-├── apps/viewer/            # Qt6 + Vulkan Viewer
-├── examples/               # 内核回归示例
+│   ├── CMakeLists.txt      # project(brep_kernel)：libs + examples + tests
+│   ├── include/brep/       # 内核公开头文件
+│   └── src/                # 内核实现
+├── apps/viewer/            # project(brep_viewer)；消费根侧 brep target
+├── examples/               # 源码在根；由 kernel 子工程 add_executable
 └── third_party/            # eigen, spdlog, volk, entt, googletest, …
 ```
 
@@ -185,9 +187,11 @@ Phase 1–3 完成后推荐布局（路径迁移可渐进，不必一步到位�
 
 ```
 brepkernelstudy/
+├── CMakeLists.txt              # project(brepkernelstudy) — 薄聚合（ADR 0004）
 ├── cmake/
 │   ├── BrepLibType.cmake       # BREP_BUILD_SHARED / 输出目录
-│   ├── BrepKernelIncludes.cmake
+│   ├── BrepThirdPartyKernel.cmake
+│   ├── BrepKernelIncludes.cmake  # BREP_KERNEL_DIR（可 -S kernel）
 │   ├── BrepCore.cmake
 │   ├── BrepFeat.cmake
 │   ├── BrepIO.cmake
@@ -197,6 +201,7 @@ brepkernelstudy/
 │   ├── architecture/           # 本文档 + ADR
 │   └── viewer/
 ├── kernel/
+│   ├── CMakeLists.txt          # project(brep_kernel)
 │   ├── include/brep/
 │   │   ├── api/                # 分级公开头（Phase 4）
 │   │   │   ├── core.hpp
@@ -209,7 +214,7 @@ brepkernelstudy/
 │       ├── feat/, io/, asm/, …
 ├── apps/
 │   └── viewer/
-│       ├── CMakeLists.txt
+│       ├── CMakeLists.txt      # project(brep_viewer)
 │       ├── main.cpp            # 薄入口
 │       ├── adapter/            # Viewer 专用适配层（已确认）
 │       │   ├── scene_adapter.hpp / .cpp
@@ -222,8 +227,8 @@ brepkernelstudy/
 │       ├── io/                 # dxf_export
 │       ├── i18n/
 │       └── tests/              # Viewer/Adapter 单元测试（可选）
-├── examples/                   # 内核回归，保持不变
-├── tests/                      # 内核单元测试
+├── examples/                   # 源码在根；由 kernel CMake 添加目标
+├── tests/                      # 由 kernel 子工程接入
 │   └── kernel/
 └── third_party/
 ```
@@ -556,8 +561,9 @@ endif()
 - [x] `main_window.cpp` < 400 行；`vulkan_renderer.cpp` 已拆且无单 TU > 600 行
 - [x] Viewer 无 `#include "brep/brep.hpp"`；UI/命令无 Feature 具体类 `static_cast`（仅 `adapter` 内封装）
 - [x] `tests/kernel/` 与 `apps/viewer/tests/` 覆盖内核与 Adapter 关键路径（math + adapter；可继续加厚）
+- [x] 同仓多子工程一期（ADR 0004）：根薄聚合；嵌套 `project(brep_kernel|brep_viewer)`；examples 归 kernel；`-S kernel` 可独立构建
 - [ ] `ctest` 全绿；Viewer 冒烟清单全通过（`ctest` 已绿；冒烟待手动执行）
-- [x] 文档：`docs/architecture/` 含本文档 + ADR（0001–0003）+ `api-module-owners.md`
+- [x] 文档：`docs/architecture/` 含本文档 + ADR（0001–0004）+ `api-module-owners.md`
 
 ---
 
@@ -579,7 +585,7 @@ endif()
 ### B. 相关文档
 
 - [Viewer 中英双语设计](../viewer/i18n-zh-en-bilingual-design.md)
-- ADR：[`docs/architecture/adr/`](adr/)（0001 重构决策、0002 API 分级、0003 SHARED 动态库）
+- ADR：[`docs/architecture/adr/`](adr/)（0001 重构决策、0002 API 分级、0003 SHARED、[0004 同仓多子工程](adr/0004-monorepo-subprojects.md)）
 
 ### C. 修订记录
 
@@ -592,6 +598,11 @@ endif()
 | 2026-08-09 | v0.5 | Phase 4 完整：include 边界脚本 + PRIVATE `kernel/internal` |
 | 2026-08-09 | v0.6 | 同步勾选已完成验收项；未完成项保留为冒烟 / 编译基线 / CI / Ninja 增量 |
 | 2026-08-09 | v0.7 | SHARED 动态库分层（ADR 0003）：`viewer_runtime` + Part/Document 归 feat |
+| 2026-08-09 | v0.8 | 新增 ADR 0004 同仓多子工程草案（未实施，待确认） |
+| 2026-08-09 | v0.9 | ADR 0004 已接受：A 为主 / B 二期；examples 归 kernel |
+| 2026-08-09 | v0.10 | ADR 0004 一期落地：嵌套 project + 薄根 + examples/tests 归 kernel CMake |
+| 2026-08-09 | v0.11 | ADR 0004 二期：install(EXPORT) / BrepConfig + Viewer find_package(Brep) |
+
 
 ---
 
@@ -604,5 +615,7 @@ endif()
 | 3 | 测试框架 | **GoogleTest**（FetchContent 或 submodule） |
 | 4 | 目录迁移 | **接受** `include/` → `kernel/include/`，`src/` → `kernel/src/` |
 | 5 | 动态库 | **接受 SHARED**（ADR 0003）；scene/commands/render 合并为 `viewer_runtime` |
+| 6 | 同仓多子工程 | **已接受 ADR 0004**：A 嵌套 project 为主；install/find_package 为二期；examples 归 kernel |
+
 
 按 **Phase 0 → 2 → 1 → 3 → 4** 逐步落地。

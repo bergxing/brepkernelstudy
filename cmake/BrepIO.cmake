@@ -1,9 +1,13 @@
 include(${CMAKE_CURRENT_LIST_DIR}/BrepKernelIncludes.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/BrepLibType.cmake)
 
+if(NOT BREP_KERNEL_DIR)
+  message(FATAL_ERROR "BREP_KERNEL_DIR is not set")
+endif()
+
 add_library(brep_io ${BREP_LIB_TYPE}
-  kernel/src/io/xl_document.cpp
-  kernel/src/io/bks_cache.cpp
+  ${BREP_KERNEL_DIR}/src/io/xl_document.cpp
+  ${BREP_KERNEL_DIR}/src/io/bks_cache.cpp
 )
 brep_kernel_include_dirs(brep_io)
 target_link_libraries(brep_io PUBLIC brep_feat brep_asm)
