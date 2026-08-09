@@ -43,6 +43,18 @@
         <translation>复制选中立方体：基点 → 放置点</translation>
     </message>
     <message>
+        <source>&amp;Delete</source>
+        <translation>删除(&amp;D)</translation>
+    </message>
+    <message>
+        <source>Delete selected objects</source>
+        <translation>删除选中对象</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>删除</translation>
+    </message>
+    <message>
         <source>&amp;Modeling</source>
         <translation>建模(&amp;M)</translation>
     </message>

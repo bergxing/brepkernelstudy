@@ -59,6 +59,12 @@ class SceneAdapter {
   [[nodiscard]] Body* add_box(const BoxSpec& spec);
   void record_append_feature(feat::FeatureId id, BoxSpec undo_spec);
 
+  /// Remove a feature via FeatureHistory (supports undo/redo).
+  bool remove_feature(feat::FeatureId id);
+
+  [[nodiscard]] std::optional<feat::FeatureId> feature_id_for(
+      Guid feature_guid, Guid body_guid) const;
+
   void undo_feature(int steps = 1);
   void redo_feature(int steps = 1);
 

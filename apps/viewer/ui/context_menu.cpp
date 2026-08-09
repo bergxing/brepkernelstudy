@@ -31,9 +31,11 @@ void MainWindow::show_viewport_context_menu(VulkanWindow* window, float x,
 
   QMenu menu(this);
   auto* act_copy = menu.addAction(tr("Copy"));
+  auto* act_delete = menu.addAction(tr("Delete"));
   menu.addSeparator();
   auto* act_undo = menu.addAction(tr("Undo"));
   auto* act_redo = menu.addAction(tr("Redo"));
+  act_delete->setEnabled(ecs::selected_count(registry) > 0);
   act_undo->setEnabled(command_manager_.history().can_undo());
   act_redo->setEnabled(command_manager_.history().can_redo());
 
@@ -48,6 +50,10 @@ void MainWindow::show_viewport_context_menu(VulkanWindow* window, float x,
       request_all_views_update();
     }
     run_command("edit.copy");
+    return;
+  }
+  if (chosen == act_delete) {
+    run_command("edit.delete");
     return;
   }
   if (chosen == act_undo) {

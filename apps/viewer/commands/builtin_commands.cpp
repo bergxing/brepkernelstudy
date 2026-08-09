@@ -17,6 +17,7 @@
 #include <QFileInfo>
 #include <QMessageBox>
 
+#include <algorithm>
 #include <vector>
 
 namespace brep::viewer::commands {
@@ -331,6 +332,115 @@ class CreateBoxInstantCommand final : public ICommand {
   }
 };
 
+class DeleteSelectionCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    return "edit.delete";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override {
+    return "Delete";
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.world != nullptr && ctx.world->document() != nullptr &&
+           ctx.world->document()->main_part() != nullptr &&
+           ecs::selected_count(ctx.world->registry()) > 0;
+  }
+
+  CommandResult execute(CommandContext& ctx) override {
+    adapter::SceneAdapter scene(ctx.world->document());
+    Part* part = scene.main_part();
+    if (!part) {
+      return CommandResult::failed(QStringLiteral("当前没有 Part"));
+    }
+
+    auto& registry = ctx.world->registry();
+    std::vector<feat::FeatureId> to_remove;
+    auto view = registry.view<ecs::SelectedTag>();
+    for (auto entity : view) {
+      Guid feature_guid{};
+      Guid body_guid{};
+      if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity)) {
+        feature_guid = fref->feature_guid;
+      }
+      if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
+        body_guid = body->guid;
+      }
+      if (auto fid = scene.feature_id_for(feature_guid, body_guid)) {
+        to_remove.push_back(*fid);
+      }
+    }
+
+    // Stable unique (multi-select of same feature should only remove once).
+    std::sort(to_remove.begin(), to_remove.end(),
+              [](const feat::FeatureId& a, const feat::FeatureId& b) {
+                return a.guid < b.guid;
+              });
+    to_remove.erase(std::unique(to_remove.begin(), to_remove.end()),
+                    to_remove.end());
+
+    if (to_remove.empty()) {
+      return CommandResult::failed(QStringLiteral("选中对象无法删除"));
+    }
+
+    int removed = 0;
+    for (const auto& fid : to_remove) {
+      if (scene.remove_feature(fid)) ++removed;
+    }
+    if (removed == 0) {
+      return CommandResult::failed(QStringLiteral("删除失败"));
+    }
+
+    Material material = ctx.wood_albedo_path.empty()
+                            ? Material{}
+                            : make_wood_material(ctx.wood_albedo_path);
+    ctx.world->sync_part_bodies(*part, std::move(material));
+    if (ctx.session) ctx.session->mark_dirty();
+    if (ctx.request_redraw) ctx.request_redraw();
+
+    const std::string wood = ctx.wood_albedo_path;
+    ecs::World* world = ctx.world;
+    Part* part_ptr = part;
+    const int undo_steps = removed;
+    if (ctx.history) {
+      ctx.history->push({
+          .label = QStringLiteral("删除 %1 个对象").arg(removed),
+          .undo =
+              [world, part_ptr, wood, undo_steps, session = ctx.session,
+               redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
+                if (!world || !part_ptr) return;
+                adapter::SceneAdapter scene_u(world->document());
+                scene_u.undo_feature(undo_steps);
+                Material mat =
+                    wood.empty() ? Material{} : make_wood_material(wood);
+                world->sync_part_bodies(*part_ptr, std::move(mat));
+                if (session) session->mark_dirty();
+                if (redraw) redraw();
+                if (refresh) refresh();
+              },
+          .redo =
+              [world, part_ptr, wood, undo_steps, session = ctx.session,
+               redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
+                if (!world || !part_ptr) return;
+                adapter::SceneAdapter scene_r(world->document());
+                scene_r.redo_feature(undo_steps);
+                Material mat =
+                    wood.empty() ? Material{} : make_wood_material(wood);
+                world->sync_part_bodies(*part_ptr, std::move(mat));
+                if (session) session->mark_dirty();
+                if (redraw) redraw();
+                if (refresh) refresh();
+              },
+      });
+    }
+
+    if (ctx.refresh_ui) ctx.refresh_ui();
+    const QString msg = QStringLiteral("已删除 %1 个对象").arg(removed);
+    if (ctx.report_status) ctx.report_status(msg);
+    return CommandResult::ok(msg);
+  }
+};
+
 class UndoCommand final : public ICommand {
  public:
   [[nodiscard]] std::string_view id() const noexcept override {
@@ -397,6 +507,7 @@ void register_builtin_commands(CommandRegistry& registry) {
   add<CreateBoxCommand>(registry);
   add<CreateBoxInstantCommand>(registry);
   add<CopyCommand>(registry);
+  add<DeleteSelectionCommand>(registry);
   add<UndoCommand>(registry);
   add<RedoCommand>(registry);
   BREP_INFO("registered builtin commands: {}", registry.ids().size());

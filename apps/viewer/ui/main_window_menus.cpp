@@ -148,6 +148,12 @@ void MainWindow::setup_menus() {
       tr("Copy selected boxes: base point → place point"));
   bind_action(act_copy, "edit.copy");
 
+  auto* act_delete = edit_menu->addAction(tr("&Delete"));
+  act_delete->setObjectName(QStringLiteral("act_edit_delete"));
+  act_delete->setShortcut(QKeySequence::Delete);
+  act_delete->setToolTip(tr("Delete selected objects"));
+  bind_action(act_delete, "edit.delete");
+
   auto* model_menu = menuBar()->addMenu(tr("&Modeling"));
   model_menu->setObjectName(QStringLiteral("menu_model"));
   auto* act_box = model_menu->addAction(tr("Create &Box…"));
@@ -277,6 +283,8 @@ void MainWindow::retranslate_ui() {
   set_act("act_edit_copy", tr("&Copy…"));
   set_tip("act_edit_copy",
           tr("Copy selected boxes: base point → place point"));
+  set_act("act_edit_delete", tr("&Delete"));
+  set_tip("act_edit_delete", tr("Delete selected objects"));
 
   set_menu("menu_model", tr("&Modeling"));
   set_act("act_model_box", tr("Create &Box…"));

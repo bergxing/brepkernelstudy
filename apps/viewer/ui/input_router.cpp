@@ -56,6 +56,13 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
       event->accept();
       return;
     }
+  } else if (event->key() == Qt::Key_Delete ||
+             event->key() == Qt::Key_Backspace) {
+    if (ecs::selected_count(world_.registry()) > 0) {
+      run_command("edit.delete");
+      event->accept();
+      return;
+    }
   }
   QMainWindow::keyPressEvent(event);
 }
@@ -171,21 +178,28 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 
   if (handle_tool_mouse(event)) return true;
 
-  if (event->type() == QEvent::KeyPress &&
-      command_manager_.has_active_tool()) {
+  if (event->type() == QEvent::KeyPress) {
     auto* ke = static_cast<QKeyEvent*>(event);
-    if (ke->key() == Qt::Key_Escape) {
+    if (command_manager_.has_active_tool()) {
+      if (ke->key() == Qt::Key_Escape) {
+        auto ctx = make_command_context();
+        command_manager_.cancel_active_tool(ctx);
+        sync_tool_ui();
+        return true;
+      }
       auto ctx = make_command_context();
-      command_manager_.cancel_active_tool(ctx);
-      sync_tool_ui();
-      return true;
-    }
-    auto ctx = make_command_context();
-    if (command_manager_.tool_key_press(ctx, int(ke->key()))) {
-      sync_tool_ui();
-      refresh_edit_actions();
-      update_property_panel(ecs::selected_entity(world_.registry()));
-      return true;
+      if (command_manager_.tool_key_press(ctx, int(ke->key()))) {
+        sync_tool_ui();
+        refresh_edit_actions();
+        update_property_panel(ecs::selected_entity(world_.registry()));
+        return true;
+      }
+    } else if (ke->key() == Qt::Key_Delete ||
+               ke->key() == Qt::Key_Backspace) {
+      if (ecs::selected_count(world_.registry()) > 0) {
+        run_command("edit.delete");
+        return true;
+      }
     }
   }
 

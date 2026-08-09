@@ -122,6 +122,48 @@ void SceneAdapter::record_append_feature(feat::FeatureId id, BoxSpec undo_spec) 
   part->feature_history().record(std::move(tx));
 }
 
+std::optional<feat::FeatureId> SceneAdapter::feature_id_for(
+    Guid feature_guid, Guid body_guid) const {
+  const Part* part = main_part_const();
+  if (!part) return std::nullopt;
+  const feat::IFeature* f = nullptr;
+  if (!feature_guid.is_nil()) {
+    f = part->features().find(feat::FeatureId{feature_guid});
+  }
+  if (!f && !body_guid.is_nil()) {
+    f = part->features().find_by_body(body_guid);
+  }
+  if (!f) return std::nullopt;
+  return f->id();
+}
+
+bool SceneAdapter::remove_feature(feat::FeatureId id) {
+  Part* part = main_part();
+  if (!part || id.is_nil()) return false;
+  feat::IFeature* f = part->features().find(id);
+  if (!f) return false;
+
+  feat::FeatureTransaction tx;
+  tx.kind = feat::TxKind::RemoveFeature;
+  tx.feature = id;
+  tx.feature_type = std::string(f->type_name());
+  tx.sketch_name = f->display_name();
+
+  if (tx.feature_type == "Box") {
+    const auto& box = static_cast<const feat::BoxFeature&>(*f);
+    tx.box_spec = box.to_spec(part->parameters());
+    tx.box_origin = box.origin();
+  } else if (tx.feature_type == "Extrude") {
+    const auto& ext = static_cast<const feat::ExtrudeFeature&>(*f);
+    tx.sketch_feature = ext.sketch_feature_id();
+    tx.extrude_distance =
+        part->parameters().get(ext.distance_id()).value_or(1.0);
+  }
+
+  part->feature_history().apply_and_record(*part, std::move(tx));
+  return true;
+}
+
 void SceneAdapter::undo_feature(int steps) {
   Part* part = main_part();
   if (!part) return;

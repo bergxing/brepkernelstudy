@@ -81,6 +81,27 @@ TEST(SceneAdapter, SetBoxParamsAndUndo) {
   EXPECT_EQ(scene.main_part()->model().bodies().size(), 1u);
 }
 
+TEST(SceneAdapter, RemoveFeatureAndUndo) {
+  auto doc = SceneAdapter::create_blank();
+  SceneAdapter scene(doc.get());
+  Body* body = scene.add_box(BoxSpec{
+      .min = Point3d{0.0, 0.0, 0.0},
+      .max = Point3d{1.0, 1.0, 1.0},
+      .name = "box",
+  });
+  ASSERT_NE(body, nullptr);
+  auto obj = scene.object_for_body(body->guid);
+  ASSERT_TRUE(obj.has_value());
+
+  ASSERT_TRUE(scene.remove_feature(feat::FeatureId{obj->feature_guid}));
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 0u);
+
+  scene.undo_feature();
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 1u);
+  scene.redo_feature();
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 0u);
+}
+
 TEST(SceneAdapter, BoxSpecForFeature) {
   auto doc = SceneAdapter::create_blank();
   SceneAdapter scene(doc.get());
