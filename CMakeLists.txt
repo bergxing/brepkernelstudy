@@ -85,44 +85,7 @@ if(TARGET volk)
   target_link_libraries(volk PUBLIC Vulkan::Headers)
 endif()
 
-add_library(brep
-  src/geometry.cpp
-  src/topology.cpp
-  src/model.cpp
-  src/builder.cpp
-  src/validate.cpp
-  src/dump.cpp
-  src/log.cpp
-  src/mesh.cpp
-  src/guid.cpp
-  src/object_registry.cpp
-  src/part.cpp
-  src/document.cpp
-  src/param/parameter.cpp
-  src/feat/feature_tree.cpp
-  src/feat/regenerator.cpp
-  src/feat/box_feature.cpp
-  src/feat/feature_history.cpp
-  src/feat/context.cpp
-  src/feat/sketch_feature.cpp
-  src/feat/extrude_feature.cpp
-  src/sketch/sketch.cpp
-  src/solve2d/solver.cpp
-  src/ops/extrude.cpp
-  src/asm/assembly.cpp
-  src/io/xl_document.cpp
-  src/io/bks_cache.cpp
-)
-target_include_directories(brep
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${BREP_SPDLOG_DIR}/include   # fmt via spdlog (public log API)
-)
-target_link_libraries(brep PUBLIC Eigen3::Eigen brep_boost_uuid)
-
-if(MSVC)
-  target_compile_options(brep PUBLIC /utf-8)
-endif()
+include(cmake/BrepAll.cmake)
 
 add_executable(box_demo examples/box_demo.cpp)
 target_link_libraries(box_demo PRIVATE brep)
