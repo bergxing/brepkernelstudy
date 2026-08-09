@@ -143,6 +143,8 @@ add_library(viewer_runtime ${BREP_LIB_TYPE}
   commands/command_manager.cpp
   commands/document_history.cpp
   commands/picking.cpp
+  commands/snap/snap_settings.cpp
+  commands/snap/accusnap.cpp
   commands/command_palette.cpp
   commands/tools/create_box_tool.cpp
   commands/tools/create_sphere_tool.cpp

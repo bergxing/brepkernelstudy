@@ -19,6 +19,8 @@ class VulkanWindow;
 namespace brep::viewer::commands {
 
 class DocumentHistory;
+struct SnapSession;
+struct SnapSettings;
 
 enum class CommandStatus {
   Ok,
@@ -58,6 +60,8 @@ struct CommandContext {
   QWidget* parent_widget{nullptr};
   Camera* view_camera{nullptr};
   VulkanWindow* viewport{nullptr};
+  SnapSettings* snap_settings{nullptr};
+  SnapSession* snap_session{nullptr};
   std::string wood_albedo_path;
   int viewport_w{1};
   int viewport_h{1};

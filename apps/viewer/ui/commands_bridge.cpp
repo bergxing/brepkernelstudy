@@ -23,6 +23,8 @@ commands::CommandContext MainWindow::make_command_context() {
   auto* container = active_viewport_container();
   ctx.viewport = vw;
   ctx.view_camera = vw ? &vw->camera() : nullptr;
+  ctx.snap_settings = &snap_settings_;
+  ctx.snap_session = &snap_session_;
 
   if (vw && vw->width() > 0 && vw->height() > 0) {
     ctx.viewport_w = vw->width();

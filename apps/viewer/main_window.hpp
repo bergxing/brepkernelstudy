@@ -3,6 +3,7 @@
 #include "adapter/scene_adapter.hpp"
 #include "commands/command_manager.hpp"
 #include "commands/command_registry.hpp"
+#include "commands/snap/snap_settings.hpp"
 #include "document.hpp"
 #include "ecs/world.hpp"
 #include "property_panel.hpp"
@@ -109,6 +110,8 @@ class MainWindow final : public QMainWindow {
   adapter::SceneAdapter scene_adapter_;
   commands::CommandRegistry commands_;
   commands::CommandManager command_manager_;
+  commands::SnapSettings snap_settings_;
+  commands::SnapSession snap_session_;
   std::unique_ptr<QVulkanInstance> vulkan_instance_;
   QMdiArea* mdi_area_{nullptr};
   QHash<QMdiSubWindow*, VulkanWindow*> view_windows_;
