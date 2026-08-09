@@ -64,6 +64,17 @@ commands::CommandContext MainWindow::make_command_context() {
       active->clear_preview();
     }
   };
+  ctx.set_snap_overlay = [this](EdgeMesh edges) {
+    if (auto* active = active_vulkan_window()) {
+      active->set_snap_overlay(std::move(edges));
+    }
+  };
+  ctx.clear_snap_overlay = [this] {
+    if (auto* active = active_vulkan_window()) {
+      active->clear_snap_overlay();
+    }
+  };
+  ctx.refresh_cursor_tip = [this] { refresh_cursor_tip(); };
   return ctx;
 }
 
@@ -72,6 +83,12 @@ void MainWindow::sync_tool_ui() {
   const bool allow_sel = command_manager_.active_tool_allows_selection();
   for (auto* window : view_windows_) {
     if (window) window->set_selection_enabled(!tool || allow_sel);
+  }
+  if (!tool || allow_sel) {
+    snap_session_.active_snap.reset();
+    for (auto* window : view_windows_) {
+      if (window) window->clear_snap_overlay();
+    }
   }
 
   // Crosshair only while the tool owns picking (base / place), not during

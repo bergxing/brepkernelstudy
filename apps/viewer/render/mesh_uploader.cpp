@@ -246,6 +246,12 @@ void VulkanRenderer::upload_preview() {
   preview_dirty_ = false;
 }
 
+void VulkanRenderer::upload_snap_overlay() {
+  upload_colored_edges(snap_overlay_edges_, 0.2f, 1.0f, 0.85f,
+                       snap_overlay_vb_, snap_overlay_vertex_count_);
+  snap_overlay_dirty_ = false;
+}
+
 void VulkanRenderer::upload_highlight() {
   // Orange selection outline.
   upload_colored_edges(highlight_edges_, 1.0f, 0.55f, 0.1f, highlight_vb_,

@@ -14,3 +14,16 @@ gtest_discover_tests(viewer_adapter_tests
   WORKING_DIRECTORY $<TARGET_FILE_DIR:viewer_adapter_tests>
   DISCOVERY_MODE PRE_TEST
 )
+
+add_executable(viewer_snap_tests
+  test_snap_overlay.cpp
+)
+set_target_properties(viewer_snap_tests PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+target_link_libraries(viewer_snap_tests PRIVATE
+  viewer_runtime
+  GTest::gtest_main
+)
+gtest_discover_tests(viewer_snap_tests
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:viewer_snap_tests>
+  DISCOVERY_MODE PRE_TEST
+)

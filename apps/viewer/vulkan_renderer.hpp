@@ -34,6 +34,10 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void set_preview(EdgeMesh edges, TriangleMesh solid);
   void clear_preview();
 
+  /// AccuSnap glyph drawn after the tool preview.
+  void set_snap_overlay(EdgeMesh edges);
+  void clear_snap_overlay();
+
   /// Selection outline (drawn on top of scene meshes, under tool preview).
   void set_highlight_edges(EdgeMesh edges);
   void clear_highlight();
@@ -80,6 +84,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   void upload_axes();
   void upload_preview();
   void upload_preview_solid();
+  void upload_snap_overlay();
   void upload_highlight();
   void create_albedo_texture();
   void create_selection_albedo_texture();
@@ -104,6 +109,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   EdgeMesh selection_edges_;
   EdgeMesh preview_edges_;
   TriangleMesh preview_solid_;
+  EdgeMesh snap_overlay_edges_;
   EdgeMesh highlight_edges_;
   Material material_{};
   Material selection_material_{};
@@ -112,6 +118,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   bool selection_meshes_dirty_{false};
   bool selection_material_dirty_{false};
   bool preview_dirty_{false};
+  bool snap_overlay_dirty_{false};
   bool highlight_dirty_{false};
   std::uint64_t synced_scene_version_{0};
 
@@ -124,6 +131,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   GpuBuffer axis_vb_{};
   GpuBuffer preview_vb_{};
   GpuBuffer preview_solid_vb_{};
+  GpuBuffer snap_overlay_vb_{};
   GpuBuffer highlight_vb_{};
   GpuBuffer ubo_{};             // scene MVP + wood albedo
   GpuBuffer selection_ubo_{};   // same MVP + orange selection albedo
@@ -151,6 +159,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer {
   std::uint32_t axis_vertex_count_{0};
   std::uint32_t preview_vertex_count_{0};
   std::uint32_t preview_solid_vertex_count_{0};
+  std::uint32_t snap_overlay_vertex_count_{0};
   std::uint32_t highlight_vertex_count_{0};
 };
 

@@ -304,6 +304,37 @@
     </message>
 </context>
 <context>
+    <name>SnapKind</name>
+    <message>
+        <source>Endpoint</source>
+        <translation>端点</translation>
+    </message>
+    <message>
+        <source>Midpoint</source>
+        <translation>中点</translation>
+    </message>
+    <message>
+        <source>Center</source>
+        <translation>中心</translation>
+    </message>
+    <message>
+        <source>Intersection</source>
+        <translation>交点</translation>
+    </message>
+    <message>
+        <source>Perpendicular</source>
+        <translation>垂足</translation>
+    </message>
+    <message>
+        <source>Nearest</source>
+        <translation>最近点</translation>
+    </message>
+    <message>
+        <source>Grid</source>
+        <translation>网格点</translation>
+    </message>
+</context>
+<context>
     <name>brep::viewer::PropertyPanel</name>
     <message>
         <source>No selection</source>

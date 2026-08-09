@@ -1,6 +1,7 @@
 #include "main_window.hpp"
 
 #include "commands/command_manager.hpp"
+#include "commands/snap/snap_overlay.hpp"
 
 #include <QCursor>
 #include <QLabel>
@@ -72,6 +73,14 @@ QString MainWindow::resolve_cursor_tip_text(VulkanWindow* window, float x,
   if (command_manager_.has_active_tool()) {
     QString prompt = command_manager_.active_prompt();
     prompt.remove(QStringLiteral(" (ESC 取消)"));
+    if (snap_session_.active_snap) {
+      const QString snap_name =
+          commands::snap_kind_name(*snap_session_.active_snap);
+      if (!snap_name.isEmpty()) {
+        if (!prompt.isEmpty()) prompt += QLatin1Char('\n');
+        prompt += snap_name;
+      }
+    }
     if (!prompt.isEmpty()) return prompt;
   }
 

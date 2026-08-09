@@ -65,6 +65,8 @@ class VulkanWindow final : public QVulkanWindow {
   void set_preview_edges(EdgeMesh edges);
   void set_preview(EdgeMesh edges, TriangleMesh solid);
   void clear_preview();
+  void set_snap_overlay(EdgeMesh edges);
+  void clear_snap_overlay();
 
  protected:
   void mousePressEvent(QMouseEvent* event) override;

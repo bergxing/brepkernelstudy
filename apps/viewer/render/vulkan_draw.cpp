@@ -79,6 +79,7 @@ void VulkanRenderer::releaseResources() {
   destroy_buffer(axis_vb_);
   destroy_buffer(preview_vb_);
   destroy_buffer(preview_solid_vb_);
+  destroy_buffer(snap_overlay_vb_);
   destroy_buffer(highlight_vb_);
   destroy_buffer(ubo_);
   destroy_buffer(selection_ubo_);
@@ -87,6 +88,7 @@ void VulkanRenderer::releaseResources() {
   destroy_texture(selection_albedo_);
   preview_vertex_count_ = 0;
   preview_solid_vertex_count_ = 0;
+  snap_overlay_vertex_count_ = 0;
   highlight_vertex_count_ = 0;
   sel_index_count_ = 0;
   sel_line_vertex_count_ = 0;
@@ -190,6 +192,15 @@ void VulkanRenderer::startNextFrame() {
     } catch (const std::exception& ex) {
       BREP_ERROR("upload_preview failed: {}", ex.what());
       preview_dirty_ = false;
+    }
+  }
+
+  if (snap_overlay_dirty_) {
+    try {
+      upload_snap_overlay();
+    } catch (const std::exception& ex) {
+      BREP_ERROR("upload_snap_overlay failed: {}", ex.what());
+      snap_overlay_dirty_ = false;
     }
   }
 
@@ -348,6 +359,13 @@ void VulkanRenderer::startNextFrame() {
     VkDeviceSize offset = 0;
     dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &preview_vb_.buffer, &offset);
     dev_->vkCmdDraw(cmd, preview_vertex_count_, 1, 0, 0);
+  }
+  if (snap_overlay_vertex_count_ > 0 && axis_pipeline_ &&
+      snap_overlay_vb_.buffer) {
+    dev_->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, axis_pipeline_);
+    VkDeviceSize offset = 0;
+    dev_->vkCmdBindVertexBuffers(cmd, 0, 1, &snap_overlay_vb_.buffer, &offset);
+    dev_->vkCmdDraw(cmd, snap_overlay_vertex_count_, 1, 0, 0);
   }
 
   // Screen-space orientation triad (bottom-left). Uses a separate UBO so it

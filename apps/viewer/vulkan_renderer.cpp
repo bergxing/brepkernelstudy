@@ -61,6 +61,20 @@ void VulkanRenderer::clear_preview() {
   preview_dirty_ = true;
 }
 
+void VulkanRenderer::set_snap_overlay(EdgeMesh edges) {
+  snap_overlay_edges_ = std::move(edges);
+  snap_overlay_dirty_ = true;
+}
+
+void VulkanRenderer::clear_snap_overlay() {
+  if (snap_overlay_edges_.positions.empty() &&
+      snap_overlay_vertex_count_ == 0) {
+    return;
+  }
+  snap_overlay_edges_ = {};
+  snap_overlay_dirty_ = true;
+}
+
 void VulkanRenderer::set_highlight_edges(EdgeMesh edges) {
   highlight_edges_ = std::move(edges);
   highlight_dirty_ = true;

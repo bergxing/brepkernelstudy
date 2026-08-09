@@ -27,6 +27,7 @@ struct SnapSession {
   int dynamic_input_mode{0};
 
   std::optional<SnapKind> hold_override;
+  std::optional<SnapKind> active_snap;
 };
 
 }  // namespace brep::viewer::commands

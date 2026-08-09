@@ -2,6 +2,7 @@
 
 #include "commands/command_types.hpp"
 #include "commands/picking.hpp"
+#include "commands/snap/snap_overlay.hpp"
 
 #include "api/modeling.hpp"
 
@@ -30,6 +31,25 @@ std::uint32_t effective_kernel_kinds(
     return static_cast<std::uint32_t>(*override_kind) & kKernelKinds;
   }
   return settings.kinds & kKernelKinds;
+}
+
+PickResult finish_resolve(CommandContext& ctx, PickResult result) {
+  const bool show_snap = result.snapped && result.kind != SnapKind::Workplane;
+  if (ctx.snap_session) {
+    if (show_snap) {
+      ctx.snap_session->active_snap = result.kind;
+    } else {
+      ctx.snap_session->active_snap.reset();
+    }
+  }
+
+  if (show_snap && ctx.set_snap_overlay) {
+    ctx.set_snap_overlay(make_snap_marker(result.kind, result.point));
+  } else if (ctx.clear_snap_overlay) {
+    ctx.clear_snap_overlay();
+  }
+  if (ctx.refresh_cursor_tip) ctx.refresh_cursor_tip();
+  return result;
 }
 
 }  // namespace
@@ -115,13 +135,13 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy) {
   const Camera* camera =
       ctx.view_camera ? ctx.view_camera
                       : (ctx.world ? ctx.world->main_camera() : nullptr);
-  if (!camera) return {};
+  if (!camera) return finish_resolve(ctx, {});
 
   Point3d ray_origin;
   Vector3d ray_direction;
   if (!screen_to_ray(*camera, ctx.viewport_w, ctx.viewport_h, sx, sy,
                      ray_origin, ray_direction)) {
-    return {};
+    return finish_resolve(ctx, {});
   }
 
   Point3d workplane_point;
@@ -152,22 +172,23 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy) {
         if (auto best = pick_best_candidate(
                 candidates, *camera, ctx.viewport_w, ctx.viewport_h, sx, sy,
                 std::max(0, settings->aperture_px), override_kind)) {
-          return {.point = best->point,
-                  .kind = best->kind,
-                  .snapped = true,
-                  .candidate = std::move(best)};
+          return finish_resolve(
+              ctx, {.point = best->point,
+                    .kind = best->kind,
+                    .snapped = true,
+                    .candidate = std::move(best)});
         }
       }
     }
   }
 
   if (have_workplane) {
-    return {.point = workplane_point,
-            .kind = SnapKind::Workplane,
-            .snapped = false,
-            .candidate = std::nullopt};
+    return finish_resolve(ctx, {.point = workplane_point,
+                                .kind = SnapKind::Workplane,
+                                .snapped = false,
+                                .candidate = std::nullopt});
   }
-  return {};
+  return finish_resolve(ctx, {});
 }
 
 }  // namespace brep::viewer::commands

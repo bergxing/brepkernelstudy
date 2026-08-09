@@ -42,6 +42,18 @@ void VulkanWindow::clear_preview() {
   requestUpdate();
 }
 
+void VulkanWindow::set_snap_overlay(EdgeMesh edges) {
+  if (!renderer_) return;
+  renderer_->set_snap_overlay(std::move(edges));
+  requestUpdate();
+}
+
+void VulkanWindow::clear_snap_overlay() {
+  if (!renderer_) return;
+  renderer_->clear_snap_overlay();
+  requestUpdate();
+}
+
 QVulkanWindowRenderer* VulkanWindow::createRenderer() {
   renderer_ = new VulkanRenderer(this);
   sync_renderer();

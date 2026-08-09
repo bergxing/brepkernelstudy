@@ -74,6 +74,9 @@ struct CommandContext {
   /// Wire + optional translucent solid fill for interactive tool previews.
   std::function<void(EdgeMesh, TriangleMesh)> set_preview;
   std::function<void()> clear_preview;
+  std::function<void(EdgeMesh)> set_snap_overlay;
+  std::function<void()> clear_snap_overlay;
+  std::function<void()> refresh_cursor_tip;
 };
 
 }  // namespace brep::viewer::commands
