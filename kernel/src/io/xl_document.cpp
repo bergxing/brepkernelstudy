@@ -3,6 +3,7 @@
 #include "brep/feat/box_feature.hpp"
 #include "brep/feat/extrude_feature.hpp"
 #include "brep/feat/sketch_feature.hpp"
+#include "brep/feat/sphere_feature.hpp"
 #include "brep/io/bks_cache.hpp"
 #include "brep/log.hpp"
 
@@ -147,7 +148,7 @@ class BinReader {
   std::string error_;
 };
 
-enum class FeatType : std::uint8_t { Box = 1, Sketch = 2, Extrude = 3 };
+enum class FeatType : std::uint8_t { Box = 1, Sketch = 2, Extrude = 3, Sphere = 4 };
 
 void write_plane(BinWriter& w, const Plane& p) {
   w.f64(p.origin.x());
@@ -187,6 +188,19 @@ void write_feature(BinWriter& w, const feat::IFeature& f) {
     w.guid(box.width_id().guid);
     w.guid(box.height_id().guid);
     w.guid(box.body_guid());
+    return;
+  }
+  if (f.type_name() == "Sphere") {
+    const auto& sph = static_cast<const feat::SphereFeature&>(f);
+    w.u8(static_cast<std::uint8_t>(FeatType::Sphere));
+    w.guid(sph.id().guid);
+    w.str(sph.display_name());
+    w.u8(sph.suppressed() ? 1 : 0);
+    w.f64(sph.center().x());
+    w.f64(sph.center().y());
+    w.f64(sph.center().z());
+    w.guid(sph.radius_id().guid);
+    w.guid(sph.body_guid());
     return;
   }
   if (f.type_name() == "Sketch") {
@@ -256,6 +270,23 @@ bool read_feature(BinReader& r, Part& part) {
     if (!r.ok()) return false;
     auto feature = std::make_unique<feat::BoxFeature>(
         feat::FeatureId{fid}, name, origin, length, width, height);
+    feature->set_body_guid(body);
+    feature->set_suppressed(suppressed);
+    feature->set_status(feat::FeatureStatus::Dirty);
+    part.features().append(std::move(feature));
+    return true;
+  }
+
+  if (type == FeatType::Sphere) {
+    const Guid fid = r.guid();
+    const std::string name = r.str();
+    const bool suppressed = r.u8() != 0;
+    const Point3d center{r.f64(), r.f64(), r.f64()};
+    const param::ParameterId radius{r.guid()};
+    const Guid body = r.guid();
+    if (!r.ok()) return false;
+    auto feature = std::make_unique<feat::SphereFeature>(
+        feat::FeatureId{fid}, name, center, radius);
     feature->set_body_guid(body);
     feature->set_suppressed(suppressed);
     feature->set_status(feat::FeatureStatus::Dirty);

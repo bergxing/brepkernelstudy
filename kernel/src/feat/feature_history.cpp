@@ -3,6 +3,7 @@
 #include "brep/feat/box_feature.hpp"
 #include "brep/feat/extrude_feature.hpp"
 #include "brep/feat/sketch_feature.hpp"
+#include "brep/feat/sphere_feature.hpp"
 #include "brep/part.hpp"
 
 namespace brep::feat {
@@ -53,6 +54,12 @@ bool FeatureHistory::apply_forward(Part& part, FeatureTransaction& tx) {
       }
       if (tx.feature_type == "Box") {
         auto feature = BoxFeature::create(part.parameters(), tx.box_spec);
+        tx.feature = part.features().append(std::move(feature));
+        regen(part);
+        return true;
+      }
+      if (tx.feature_type == "Sphere") {
+        auto feature = SphereFeature::create(part.parameters(), tx.sphere_spec);
         tx.feature = part.features().append(std::move(feature));
         regen(part);
         return true;

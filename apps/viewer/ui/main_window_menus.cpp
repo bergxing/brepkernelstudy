@@ -163,6 +163,13 @@ void MainWindow::setup_menus() {
   act_box->setToolTip(tr("Three-point box: base corners + height"));
   bind_action(act_box, "part.create_box");
 
+  auto* act_sphere = model_menu->addAction(tr("Create &Sphere…"));
+  act_sphere->setObjectName(QStringLiteral("act_model_sphere"));
+  act_sphere->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+S")));
+  act_sphere->setToolTip(
+      tr("Two-point sphere: center on surface/ground + radius"));
+  bind_action(act_sphere, "part.create_sphere");
+
   auto* act_box_fast = model_menu->addAction(tr("Quick Box (default size)"));
   act_box_fast->setObjectName(QStringLiteral("act_model_box_fast"));
   act_box_fast->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+B")));
@@ -204,6 +211,11 @@ void MainWindow::setup_toolbar() {
   act_box->setObjectName(QStringLiteral("tb_box"));
   act_box->setToolTip(tr("Three-point box (Ctrl+B)"));
   bind_action(act_box, "part.create_box");
+
+  auto* act_sphere = toolbar_->addAction(tr("Sphere"));
+  act_sphere->setObjectName(QStringLiteral("tb_sphere"));
+  act_sphere->setToolTip(tr("Two-point sphere (Ctrl+Shift+S)"));
+  bind_action(act_sphere, "part.create_sphere");
 
   auto* act_copy = toolbar_->addAction(tr("Copy"));
   act_copy->setObjectName(QStringLiteral("tb_copy"));
@@ -291,6 +303,9 @@ void MainWindow::retranslate_ui() {
   set_menu("menu_model", tr("&Modeling"));
   set_act("act_model_box", tr("Create &Box…"));
   set_tip("act_model_box", tr("Three-point box: base corners + height"));
+  set_act("act_model_sphere", tr("Create &Sphere…"));
+  set_tip("act_model_sphere",
+          tr("Two-point sphere: center on surface/ground + radius"));
   set_act("act_model_box_fast", tr("Quick Box (default size)"));
 
   set_menu("menu_tools", tr("&Tools"));
@@ -315,6 +330,8 @@ void MainWindow::retranslate_ui() {
   set_act("tb_save", tr("Save"));
   set_act("tb_box", tr("Box"));
   set_tip("tb_box", tr("Three-point box (Ctrl+B)"));
+  set_act("tb_sphere", tr("Sphere"));
+  set_tip("tb_sphere", tr("Two-point sphere (Ctrl+Shift+S)"));
   set_act("tb_copy", tr("Copy"));
   set_tip("tb_copy", tr("Copy selected objects (Ctrl+Shift+C)"));
   set_act("tb_export", tr("Export DXF"));

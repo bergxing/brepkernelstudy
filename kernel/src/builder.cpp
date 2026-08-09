@@ -3,8 +3,11 @@
 #include "brep/log.hpp"
 
 #include <array>
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace brep {
@@ -177,6 +180,180 @@ Body* make_box(Model& model, const BoxSpec& spec) {
   }
 
   BREP_INFO("make_box '{}' done: 8 verts, 12 edges, 6 faces", spec.name);
+  return body;
+}
+
+Body* make_sphere(Model& model, const SphereSpec& spec) {
+  if (!(spec.radius > 0.0)) {
+    BREP_ERROR("make_sphere: invalid radius={}", spec.radius);
+    throw std::invalid_argument("make_sphere: radius must be positive");
+  }
+
+  const int slices = std::max(3, spec.slices);
+  const int stacks = std::max(2, spec.stacks);
+  const double r = spec.radius;
+  const double tol = spec.tolerance;
+  constexpr double kPi = 3.14159265358979323846;
+
+  BREP_INFO("make_sphere '{}' center={} r={:.6g} slices={} stacks={}",
+            spec.name, spec.center, r, slices, stacks);
+
+  // Vertex grid: (stacks+1) rows × slices columns; poles share row verts.
+  std::vector<Vertex*> verts;
+  verts.reserve(static_cast<std::size_t>((stacks + 1) * slices));
+
+  auto add_vertex = [&](Point3d p, const std::string& name) -> Vertex* {
+    Point* pt = model.make_point(p, name);
+    return model.make_vertex(pt, tol, name);
+  };
+
+  for (int i = 0; i <= stacks; ++i) {
+    const double v = static_cast<double>(i) / static_cast<double>(stacks);
+    const double phi = v * kPi;  // 0..pi
+    const double y = std::cos(phi);
+    const double ring_r = std::sin(phi);
+    for (int j = 0; j < slices; ++j) {
+      if (i == 0 || i == stacks) {
+        // Poles: one vertex per row (reuse first column).
+        if (j == 0) {
+          verts.push_back(add_vertex(
+              Point3d{spec.center.x(), spec.center.y() + r * y,
+                      spec.center.z()},
+              "sv_pole_" + std::to_string(i)));
+        } else {
+          verts.push_back(verts[static_cast<std::size_t>(i * slices)]);
+        }
+        continue;
+      }
+      const double u = static_cast<double>(j) / static_cast<double>(slices);
+      const double theta = u * 2.0 * kPi;
+      const double x = ring_r * std::cos(theta);
+      const double z = ring_r * std::sin(theta);
+      verts.push_back(add_vertex(
+          Point3d{spec.center.x() + r * x, spec.center.y() + r * y,
+                  spec.center.z() + r * z},
+          "sv_" + std::to_string(i) + "_" + std::to_string(j)));
+    }
+  }
+
+  auto vid = [&](int i, int j) -> std::size_t {
+    return static_cast<std::size_t>(i * slices + (j % slices));
+  };
+
+  struct EdgeKey {
+    Id a;
+    Id b;
+    bool operator==(const EdgeKey& o) const noexcept {
+      return a == o.a && b == o.b;
+    }
+  };
+  struct EdgeKeyHash {
+    std::size_t operator()(const EdgeKey& k) const noexcept {
+      return (static_cast<std::size_t>(k.a) * 1315423911u) ^
+             static_cast<std::size_t>(k.b);
+    }
+  };
+
+  std::unordered_map<EdgeKey, Edge*, EdgeKeyHash> edge_map;
+  std::unordered_map<Edge*, std::vector<CoEdge*>> by_edge;
+
+  auto get_or_make_edge = [&](Vertex* va, Vertex* vb) -> Edge* {
+    const Id ia = va->id;
+    const Id ib = vb->id;
+    const EdgeKey key = ia < ib ? EdgeKey{ia, ib} : EdgeKey{ib, ia};
+    if (auto it = edge_map.find(key); it != edge_map.end()) return it->second;
+    Vertex* lo = ia < ib ? va : vb;
+    Vertex* hi = ia < ib ? vb : va;
+    LineCurve* curve = model.make_line(lo->position(), hi->position());
+    Edge* e =
+        model.make_edge(curve, lo, hi, 0.0, curve->length(), tol);
+    edge_map.emplace(key, e);
+    return e;
+  };
+
+  Body* body = model.make_body(BodyType::Solid, spec.name);
+  Shell* shell = model.make_shell(true, spec.name + "_shell");
+  body->shells.push_back(shell);
+
+  auto add_tri = [&](Vertex* a, Vertex* b, Vertex* c, int face_i) {
+    if (a == b || b == c || a == c) return;
+    const Point3d pa = a->position();
+    const Point3d pb = b->position();
+    const Point3d pc = c->position();
+    Vector3d n = (pb - pa).cross(pc - pa);
+    if (n.norm() < 1e-14) return;
+    n = n.normalized();
+    // Outward = away from sphere center.
+    if (n.dot(pa - spec.center) < 0.0) {
+      std::swap(b, c);
+      n = -n;
+    }
+
+    const std::string fname =
+        spec.name + "_f" + std::to_string(face_i);
+    PlaneSurface* surf =
+        model.make_plane(pa, (b->position() - pa).normalized(),
+                         (c->position() - pa).normalized(), fname);
+    Face* face = model.make_face(surf, Orientation::Forward, fname);
+    shell->faces.push_back(face);
+    Loop* loop = model.make_loop(face, LoopType::Outer, fname + "_outer");
+
+    Vertex* vv[3] = {a, b, c};
+    std::array<CoEdge*, 3> ces{};
+    for (int k = 0; k < 3; ++k) {
+      Vertex* v0 = vv[k];
+      Vertex* v1 = vv[(k + 1) % 3];
+      Edge* e = get_or_make_edge(v0, v1);
+      const bool forward = (e->v0 == v0);
+      const Orientation sense =
+          forward ? Orientation::Forward : Orientation::Reversed;
+      Point2d uva, uvb;
+      if (k == 0) {
+        uva = Point2d{0, 0};
+        uvb = Point2d{1, 0};
+      } else if (k == 1) {
+        uva = Point2d{1, 0};
+        uvb = Point2d{0.5, 1};
+      } else {
+        uva = Point2d{0.5, 1};
+        uvb = Point2d{0, 0};
+      }
+      Curve2d* pc = model.make_line2d(uva, uvb);
+      ces[k] = model.make_coedge(e, sense, pc,
+                                 fname + "_ce" + std::to_string(k));
+      by_edge[e].push_back(ces[k]);
+    }
+    Model::link_loop(loop, ces);
+  };
+
+  int face_i = 0;
+  for (int i = 0; i < stacks; ++i) {
+    for (int j = 0; j < slices; ++j) {
+      Vertex* v00 = verts[vid(i, j)];
+      Vertex* v10 = verts[vid(i + 1, j)];
+      Vertex* v01 = verts[vid(i, j + 1)];
+      Vertex* v11 = verts[vid(i + 1, j + 1)];
+      if (i == 0) {
+        add_tri(v00, v10, v11, face_i++);
+      } else if (i + 1 == stacks) {
+        add_tri(v00, v10, v01, face_i++);
+      } else {
+        add_tri(v00, v10, v11, face_i++);
+        add_tri(v00, v11, v01, face_i++);
+      }
+    }
+  }
+
+  for (auto& [e, ces] : by_edge) {
+    if (ces.size() != 2) {
+      BREP_ERROR("make_sphere: edge radial degree={}", ces.size());
+      throw std::runtime_error(
+          "make_sphere: each edge must be shared by exactly two faces");
+    }
+    Model::pair_partners(ces[0], ces[1]);
+  }
+
+  BREP_INFO("make_sphere '{}' done: {} faces", spec.name, face_i);
   return body;
 }
 

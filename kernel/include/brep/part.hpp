@@ -48,6 +48,9 @@ class Part final : public IObject {
   /// Build box via BoxFeature + regenerate. Returns the Body.
   Body* add_box(const BoxSpec& spec = {});
 
+  /// Build sphere via SphereFeature + regenerate. Returns the Body.
+  Body* add_sphere(const SphereSpec& spec = {});
+
   /// Append a rectangle sketch feature (for parametric extrude workflows).
   feat::FeatureId add_rectangle_sketch(std::string name, Point2d min,
                                        Point2d max);
@@ -70,6 +73,9 @@ class Part final : public IObject {
 
   /// Replace or create an AABB box body, preserving Guid when possible.
   Body* rebuild_box_body(Guid keep_guid, const BoxSpec& spec);
+
+  /// Replace or create a sphere body, preserving Guid when possible.
+  Body* rebuild_sphere_body(Guid keep_guid, const SphereSpec& spec);
 
   /// Replace or create an extruded body, preserving Guid when possible.
   Body* rebuild_extrude_body(Guid keep_guid, const ops::ExtrudeSpec& spec);

@@ -24,6 +24,7 @@
 #include "brep/feat/feature_tree.hpp"
 #include "brep/feat/regenerator.hpp"
 #include "brep/feat/sketch_feature.hpp"
+#include "brep/feat/sphere_feature.hpp"
 #include "brep/geometry.hpp"
 #include "brep/guid.hpp"
 #include "brep/io/bks_cache.hpp"

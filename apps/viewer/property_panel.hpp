@@ -19,7 +19,7 @@ class QEvent;
 
 namespace brep::viewer {
 
-/// Right-dock properties view: editable box L/W/H via SceneAdapter.
+/// Right-dock properties: box L/W/H or sphere Radius via SceneAdapter.
 class PropertyPanel final : public QWidget {
   Q_OBJECT
  public:
@@ -44,6 +44,8 @@ class PropertyPanel final : public QWidget {
   void refresh_dim_hint();
   void on_dim_edited();
   void block_dim_signals(bool block);
+  void set_box_mode(bool on);
+  void set_sphere_mode(bool on);
 
   adapter::SceneAdapter* adapter_{nullptr};
   ParamsChangedFn on_params_changed_;
@@ -53,9 +55,10 @@ class PropertyPanel final : public QWidget {
   QLineEdit* name_edit_{nullptr};
   QLineEdit* type_edit_{nullptr};
   QLineEdit* guid_edit_{nullptr};
-  QDoubleSpinBox* length_spin_{nullptr};  // X
+  QDoubleSpinBox* length_spin_{nullptr};  // X / unused for sphere
   QDoubleSpinBox* width_spin_{nullptr};   // Z
   QDoubleSpinBox* height_spin_{nullptr};  // Y
+  QDoubleSpinBox* radius_spin_{nullptr};
   QLabel* empty_label_{nullptr};
   QLabel* dims_hint_{nullptr};
   QWidget* form_host_{nullptr};
@@ -66,7 +69,9 @@ class PropertyPanel final : public QWidget {
   QLabel* length_row_label_{nullptr};
   QLabel* width_row_label_{nullptr};
   QLabel* height_row_label_{nullptr};
+  QLabel* radius_row_label_{nullptr};
   bool box_params_visible_{false};
+  bool sphere_params_visible_{false};
 };
 
 }  // namespace brep::viewer

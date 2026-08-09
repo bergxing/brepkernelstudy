@@ -9,6 +9,8 @@
 #include <QLineEdit>
 #include <QVBoxLayout>
 
+#include <optional>
+
 namespace brep::viewer {
 namespace {
 
@@ -61,12 +63,15 @@ PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent) {
   length_spin_ = make_dim_spin(dims_group_, true);
   width_spin_ = make_dim_spin(dims_group_, true);
   height_spin_ = make_dim_spin(dims_group_, true);
+  radius_spin_ = make_dim_spin(dims_group_, true);
   length_row_label_ = new QLabel(tr("Length (X)"), dims_group_);
   width_row_label_ = new QLabel(tr("Width (Z)"), dims_group_);
   height_row_label_ = new QLabel(tr("Height (Y)"), dims_group_);
+  radius_row_label_ = new QLabel(tr("Radius"), dims_group_);
   dim_form->addRow(length_row_label_, length_spin_);
   dim_form->addRow(width_row_label_, width_spin_);
   dim_form->addRow(height_row_label_, height_spin_);
+  dim_form->addRow(radius_row_label_, radius_spin_);
   dims_hint_ = new QLabel(dims_group_);
   dims_hint_->setStyleSheet(QStringLiteral("color:#888;"));
   dim_form->addRow(dims_hint_);
@@ -81,6 +86,8 @@ PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent) {
                    this, [this](double) { on_dim_edited(); });
   QObject::connect(height_spin_, qOverload<double>(&QDoubleSpinBox::valueChanged),
                    this, [this](double) { on_dim_edited(); });
+  QObject::connect(radius_spin_, qOverload<double>(&QDoubleSpinBox::valueChanged),
+                   this, [this](double) { on_dim_edited(); });
 
   clear();
 }
@@ -94,15 +101,16 @@ void PropertyPanel::retranslate_ui() {
   length_row_label_->setText(tr("Length (X)"));
   width_row_label_->setText(tr("Width (Z)"));
   height_row_label_->setText(tr("Height (Y)"));
+  radius_row_label_->setText(tr("Radius"));
   refresh_dim_hint();
 }
 
 void PropertyPanel::refresh_dim_hint() {
-  if (box_params_visible_) {
+  if (box_params_visible_ || sphere_params_visible_) {
     dims_hint_->setText(
         tr("Parameter-driven · edits regenerate the model"));
   } else if (form_host_->isVisible()) {
-    dims_hint_->setText(tr("No box parameters"));
+    dims_hint_->setText(tr("No editable parameters"));
   } else {
     dims_hint_->clear();
   }
@@ -119,6 +127,25 @@ void PropertyPanel::block_dim_signals(bool block) {
   length_spin_->blockSignals(block);
   width_spin_->blockSignals(block);
   height_spin_->blockSignals(block);
+  radius_spin_->blockSignals(block);
+}
+
+void PropertyPanel::set_box_mode(bool on) {
+  length_row_label_->setVisible(on);
+  width_row_label_->setVisible(on);
+  height_row_label_->setVisible(on);
+  length_spin_->setVisible(on);
+  width_spin_->setVisible(on);
+  height_spin_->setVisible(on);
+  length_spin_->setEnabled(on);
+  width_spin_->setEnabled(on);
+  height_spin_->setEnabled(on);
+}
+
+void PropertyPanel::set_sphere_mode(bool on) {
+  radius_row_label_->setVisible(on);
+  radius_spin_->setVisible(on);
+  radius_spin_->setEnabled(on);
 }
 
 void PropertyPanel::set_enabled(bool enabled) {
@@ -130,6 +157,7 @@ void PropertyPanel::clear() {
   set_enabled(false);
   current_feature_ = {};
   box_params_visible_ = false;
+  sphere_params_visible_ = false;
   name_edit_->clear();
   type_edit_->clear();
   guid_edit_->clear();
@@ -137,10 +165,10 @@ void PropertyPanel::clear() {
   length_spin_->setValue(0.0);
   width_spin_->setValue(0.0);
   height_spin_->setValue(0.0);
+  radius_spin_->setValue(0.0);
   block_dim_signals(false);
-  length_spin_->setEnabled(false);
-  width_spin_->setEnabled(false);
-  height_spin_->setEnabled(false);
+  set_box_mode(false);
+  set_sphere_mode(false);
   refresh_dim_hint();
 }
 
@@ -171,10 +199,16 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
   }
 
   const bool is_box = obj && obj->box.has_value();
-  type_edit_->setText(is_box ? QStringLiteral("BoxFeature")
-                             : (registry.all_of<ecs::BodyRef>(entity)
-                                    ? QStringLiteral("Body")
-                                    : QStringLiteral("Renderable")));
+  const bool is_sphere = obj && obj->sphere.has_value();
+  if (is_box) {
+    type_edit_->setText(QStringLiteral("BoxFeature"));
+  } else if (is_sphere) {
+    type_edit_->setText(QStringLiteral("SphereFeature"));
+  } else {
+    type_edit_->setText(registry.all_of<ecs::BodyRef>(entity)
+                            ? QStringLiteral("Body")
+                            : QStringLiteral("Renderable"));
+  }
 
   if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
     guid_edit_->setText(QString::fromStdString(body->guid.to_string()));
@@ -183,22 +217,16 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
   }
 
   block_dim_signals(true);
+  set_box_mode(is_box);
+  set_sphere_mode(is_sphere);
+  box_params_visible_ = is_box;
+  sphere_params_visible_ = is_sphere;
   if (is_box) {
     length_spin_->setValue(obj->box->length);
     width_spin_->setValue(obj->box->width);
     height_spin_->setValue(obj->box->height);
-    length_spin_->setEnabled(true);
-    width_spin_->setEnabled(true);
-    height_spin_->setEnabled(true);
-    box_params_visible_ = true;
-  } else {
-    length_spin_->setValue(0.0);
-    width_spin_->setValue(0.0);
-    height_spin_->setValue(0.0);
-    length_spin_->setEnabled(false);
-    width_spin_->setEnabled(false);
-    height_spin_->setEnabled(false);
-    box_params_visible_ = false;
+  } else if (is_sphere) {
+    radius_spin_->setValue(obj->sphere->radius);
   }
   block_dim_signals(false);
   refresh_dim_hint();
@@ -208,10 +236,16 @@ void PropertyPanel::on_dim_edited() {
   if (updating_ui_ || !adapter_ || current_feature_.is_nil()) return;
 
   updating_ui_ = true;
-  adapter_->set_box_params(current_feature_,
-                           adapter::BoxParams{.length = length_spin_->value(),
-                                              .width = width_spin_->value(),
-                                              .height = height_spin_->value()});
+  if (box_params_visible_) {
+    adapter_->set_box_params(current_feature_,
+                             adapter::BoxParams{.length = length_spin_->value(),
+                                                .width = width_spin_->value(),
+                                                .height = height_spin_->value()});
+  } else if (sphere_params_visible_) {
+    adapter_->set_sphere_params(
+        current_feature_,
+        adapter::SphereParams{.radius = radius_spin_->value()});
+  }
   updating_ui_ = false;
 
   if (on_params_changed_) on_params_changed_(current_feature_);

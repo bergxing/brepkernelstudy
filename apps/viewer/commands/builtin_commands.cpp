@@ -3,6 +3,7 @@
 #include "commands/itool.hpp"
 #include "commands/tools/copy_tool.hpp"
 #include "commands/tools/create_box_tool.hpp"
+#include "commands/tools/create_sphere_tool.hpp"
 #include "ecs/systems.hpp"
 
 #include "adapter/document_service.hpp"
@@ -236,6 +237,29 @@ class CreateBoxCommand final : public ICommand {
   [[nodiscard]] std::unique_ptr<ITool> make_tool(
       CommandContext& /*ctx*/) const override {
     return std::make_unique<CreateBoxTool>();
+  }
+};
+
+class CreateSphereCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    return "part.create_sphere";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override {
+    return "Create Sphere (interactive)";
+  }
+  [[nodiscard]] CommandKind kind() const noexcept override {
+    return CommandKind::Interactive;
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.world != nullptr && ctx.world->document() != nullptr &&
+           ctx.world->document()->main_part() != nullptr;
+  }
+
+  [[nodiscard]] std::unique_ptr<ITool> make_tool(
+      CommandContext& /*ctx*/) const override {
+    return std::make_unique<CreateSphereTool>();
   }
 };
 
@@ -505,6 +529,7 @@ void register_builtin_commands(CommandRegistry& registry) {
   add<SaveXlCommand>(registry);
   add<ExportDxfCommand>(registry);
   add<CreateBoxCommand>(registry);
+  add<CreateSphereCommand>(registry);
   add<CreateBoxInstantCommand>(registry);
   add<CopyCommand>(registry);
   add<DeleteSelectionCommand>(registry);

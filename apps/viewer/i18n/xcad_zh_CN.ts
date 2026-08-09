@@ -67,6 +67,14 @@
         <translation>三点拾取创建：底面两点 + 高度点</translation>
     </message>
     <message>
+        <source>Create &amp;Sphere…</source>
+        <translation>创建球(&amp;S)…</translation>
+    </message>
+    <message>
+        <source>Two-point sphere: center on surface/ground + radius</source>
+        <translation>两点创建球：表面/地面取球心 + 半径</translation>
+    </message>
+    <message>
         <source>Quick Box (default size)</source>
         <translation>快速立方体（默认尺寸）</translation>
     </message>
@@ -141,6 +149,14 @@
     <message>
         <source>Three-point box (Ctrl+B)</source>
         <translation>三点创建盒子 (Ctrl+B)</translation>
+    </message>
+    <message>
+        <source>Sphere</source>
+        <translation>球体</translation>
+    </message>
+    <message>
+        <source>Two-point sphere (Ctrl+Shift+S)</source>
+        <translation>两点创建球 (Ctrl+Shift+S)</translation>
     </message>
     <message>
         <source>Copy</source>
@@ -322,16 +338,63 @@
         <translation>高 (Y)</translation>
     </message>
     <message>
+        <source>Radius</source>
+        <translation>半径</translation>
+    </message>
+    <message>
         <source>Parameter-driven · edits regenerate the model</source>
         <translation>参数驱动 · 修改后自动再生</translation>
     </message>
     <message>
-        <source>No box parameters</source>
-        <translation>无 Box 参数</translation>
+        <source>No editable parameters</source>
+        <translation>无可编辑参数</translation>
     </message>
     <message>
         <source>(unnamed)</source>
         <translation>(未命名)</translation>
+    </message>
+</context>
+<context>
+    <name>CreateSphereTool</name>
+    <message>
+        <source>Create sphere: pick center on a surface or ground (ESC cancel)</source>
+        <translation>创建球：在表面或地面上拾取球心（ESC 取消）</translation>
+    </message>
+    <message>
+        <source>Create sphere: pick radius point (ESC cancel)</source>
+        <translation>创建球：拾取半径点（ESC 取消）</translation>
+    </message>
+    <message>
+        <source>No active document</source>
+        <translation>无活动文档</translation>
+    </message>
+    <message>
+        <source>No main part</source>
+        <translation>无主零件</translation>
+    </message>
+    <message>
+        <source>Failed to create sphere</source>
+        <translation>创建球体失败</translation>
+    </message>
+    <message>
+        <source>Create sphere</source>
+        <translation>创建球体</translation>
+    </message>
+    <message>
+        <source>Created sphere %1</source>
+        <translation>已创建球体 %1</translation>
+    </message>
+    <message>
+        <source>Missed surface/ground — try another angle</source>
+        <translation>未命中表面/地面 — 请换个角度</translation>
+    </message>
+    <message>
+        <source>Radius too small — pick farther</source>
+        <translation>半径过小 — 请拾取更远的点</translation>
+    </message>
+    <message>
+        <source>Cancelled create sphere</source>
+        <translation>已取消创建球体</translation>
     </message>
 </context>
 </TS>

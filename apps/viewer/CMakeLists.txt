@@ -145,6 +145,7 @@ add_library(viewer_runtime ${BREP_LIB_TYPE}
   commands/picking.cpp
   commands/command_palette.cpp
   commands/tools/create_box_tool.cpp
+  commands/tools/create_sphere_tool.cpp
   commands/tools/copy_tool.cpp
   io/dxf_export.cpp
   document.cpp

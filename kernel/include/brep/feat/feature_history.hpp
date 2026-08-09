@@ -26,8 +26,9 @@ enum class TxKind {
 struct FeatureTransaction {
   TxKind kind{TxKind::AppendFeature};
   FeatureId feature{};
-  std::string feature_type;  // "Box", "Sketch", "Extrude"
+  std::string feature_type;  // "Box", "Sphere", "Sketch", "Extrude"
   BoxSpec box_spec{};
+  SphereSpec sphere_spec{};
   Point3d box_origin{};
   std::string sketch_name;
   FeatureId sketch_feature{};  // for Extrude upstream

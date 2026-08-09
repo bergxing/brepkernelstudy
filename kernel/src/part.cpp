@@ -4,6 +4,7 @@
 #include "brep/feat/box_feature.hpp"
 #include "brep/feat/extrude_feature.hpp"
 #include "brep/feat/sketch_feature.hpp"
+#include "brep/feat/sphere_feature.hpp"
 #include "brep/log.hpp"
 #include "brep/ops/profile.hpp"
 
@@ -53,6 +54,17 @@ Body* Part::rebuild_box_body(Guid keep_guid, const BoxSpec& spec) {
   return body;
 }
 
+Body* Part::rebuild_sphere_body(Guid keep_guid, const SphereSpec& spec) {
+  if (!keep_guid.is_nil()) {
+    unregister_body(keep_guid);
+    model_.remove_body(keep_guid);
+  }
+  Body* body = make_sphere(model_, spec);
+  if (!keep_guid.is_nil()) body->guid = keep_guid;
+  register_body(*body);
+  return body;
+}
+
 Body* Part::rebuild_extrude_body(Guid keep_guid, const ops::ExtrudeSpec& spec) {
   if (!keep_guid.is_nil()) {
     unregister_body(keep_guid);
@@ -75,6 +87,19 @@ Body* Part::add_box(const BoxSpec& spec) {
   const auto result = regenerate();
   if (!result.ok) {
     BREP_WARN("Part::add_box regenerate failed: {}", result.message);
+    return nullptr;
+  }
+  auto* f = features_.find(fid);
+  if (!f) return nullptr;
+  return find_body(f->body_guid());
+}
+
+Body* Part::add_sphere(const SphereSpec& spec) {
+  auto feature = feat::SphereFeature::create(params_, spec);
+  const feat::FeatureId fid = features_.append(std::move(feature));
+  const auto result = regenerate();
+  if (!result.ok) {
+    BREP_WARN("Part::add_sphere regenerate failed: {}", result.message);
     return nullptr;
   }
   auto* f = features_.find(fid);
@@ -143,6 +168,15 @@ bool Part::edit_feature_params(
                                        params_.get(ids[i]).value_or(0.0));
           tx.param_after.emplace_back(ids[i], value);
         }
+      }
+    }
+  } else if (feature->type_name() == "Sphere") {
+    auto* sph = static_cast<feat::SphereFeature*>(feature);
+    for (const auto& [key, value] : named_vals) {
+      if (key == "Radius") {
+        tx.param_before.emplace_back(sph->radius_id(),
+                                     params_.get(sph->radius_id()).value_or(0.0));
+        tx.param_after.emplace_back(sph->radius_id(), value);
       }
     }
   } else {

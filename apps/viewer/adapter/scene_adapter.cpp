@@ -70,6 +70,11 @@ std::optional<SceneObject> SceneAdapter::object_for_feature(
   obj.type_name = std::string(f->type_name());
   if (f->type_name() == "Box") {
     obj.box = box_params_from_feature(*f);
+  } else if (f->type_name() == "Sphere") {
+    const auto& sph = static_cast<const feat::SphereFeature&>(*f);
+    obj.sphere = SphereParams{
+        .radius = part->parameters().get(sph.radius_id()).value_or(0.0),
+    };
   }
   return obj;
 }
@@ -122,6 +127,45 @@ void SceneAdapter::record_append_feature(feat::FeatureId id, BoxSpec undo_spec) 
   part->feature_history().record(std::move(tx));
 }
 
+Body* SceneAdapter::add_sphere(const SphereSpec& spec) {
+  Part* part = main_part();
+  if (!part) return nullptr;
+  return part->add_sphere(spec);
+}
+
+void SceneAdapter::record_append_sphere(feat::FeatureId id,
+                                        SphereSpec undo_spec) {
+  Part* part = main_part();
+  if (!part || id.is_nil()) return;
+  feat::FeatureTransaction tx;
+  tx.kind = feat::TxKind::AppendFeature;
+  tx.feature = id;
+  tx.feature_type = "Sphere";
+  tx.sphere_spec = std::move(undo_spec);
+  part->feature_history().record(std::move(tx));
+}
+
+std::optional<SphereParams> SceneAdapter::sphere_params(
+    feat::FeatureId id) const {
+  const Part* part = main_part_const();
+  if (!part || id.is_nil()) return std::nullopt;
+  const auto* f = part->features().find(id);
+  if (!f || f->type_name() != "Sphere") return std::nullopt;
+  const auto& sph = static_cast<const feat::SphereFeature&>(*f);
+  return SphereParams{
+      .radius = part->parameters().get(sph.radius_id()).value_or(0.0),
+  };
+}
+
+bool SceneAdapter::set_sphere_params(feat::FeatureId id,
+                                     const SphereParams& params) {
+  Part* part = main_part();
+  if (!part) return false;
+  const auto* f = part->features().find(id);
+  if (!f || f->type_name() != "Sphere") return false;
+  return part->edit_feature_params(id, {{"Radius", params.radius}});
+}
+
 std::optional<feat::FeatureId> SceneAdapter::feature_id_for(
     Guid feature_guid, Guid body_guid) const {
   const Part* part = main_part_const();
@@ -153,6 +197,9 @@ bool SceneAdapter::remove_feature(feat::FeatureId id) {
     const auto& box = static_cast<const feat::BoxFeature&>(*f);
     tx.box_spec = box.to_spec(part->parameters());
     tx.box_origin = box.origin();
+  } else if (tx.feature_type == "Sphere") {
+    const auto& sph = static_cast<const feat::SphereFeature&>(*f);
+    tx.sphere_spec = sph.to_spec(part->parameters());
   } else if (tx.feature_type == "Extrude") {
     const auto& ext = static_cast<const feat::ExtrudeFeature&>(*f);
     tx.sketch_feature = ext.sketch_feature_id();

@@ -17,6 +17,10 @@ struct BoxParams {
   double height{0.0};
 };
 
+struct SphereParams {
+  double radius{0.0};
+};
+
 struct MeshBundle {
   TriangleMesh faces;
   EdgeMesh edges;
@@ -26,8 +30,9 @@ struct SceneObject {
   Guid body_guid;
   Guid feature_guid;
   std::string name;
-  std::string type_name;  // "Box", "Extrude", …
+  std::string type_name;  // "Box", "Sphere", "Extrude", …
   std::optional<BoxParams> box;
+  std::optional<SphereParams> sphere;
 };
 
 /// Viewer-facing facade over Document / Part / mesh (no concrete Feature*).
@@ -58,6 +63,13 @@ class SceneAdapter {
 
   [[nodiscard]] Body* add_box(const BoxSpec& spec);
   void record_append_feature(feat::FeatureId id, BoxSpec undo_spec);
+
+  [[nodiscard]] Body* add_sphere(const SphereSpec& spec);
+  void record_append_sphere(feat::FeatureId id, SphereSpec undo_spec);
+
+  [[nodiscard]] std::optional<SphereParams> sphere_params(
+      feat::FeatureId id) const;
+  bool set_sphere_params(feat::FeatureId id, const SphereParams& params);
 
   /// Remove a feature via FeatureHistory (supports undo/redo).
   bool remove_feature(feat::FeatureId id);
