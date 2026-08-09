@@ -178,6 +178,7 @@ add_library(viewer_commands ALIAS viewer_runtime)
 add_library(viewer_render ALIAS viewer_runtime)
 
 add_library(viewer_ui ${BREP_LIB_TYPE}
+  app/viewer_app.cpp
   main_window.cpp
   ui/view_manager.cpp
   ui/cursor_tip.cpp
@@ -216,8 +217,12 @@ endif()
 qt_add_executable(brep_viewer main.cpp)
 target_link_libraries(brep_viewer PRIVATE viewer_ui)
 
+# Thin exe has no Q_OBJECT types; keep AUTOMOC off so moc stays in viewer_ui.
 set_target_properties(brep_viewer PROPERTIES
   WIN32_EXECUTABLE FALSE
+  AUTOMOC OFF
+  AUTOUIC OFF
+  AUTORCC OFF
 )
 
 # Deploy kernel SHARED libs next to the exe (needed for install / standalone builds).
@@ -310,12 +315,15 @@ if(WIN32)
     NO_DEFAULT_PATH
   )
   if(WINDEPLOYQT_EXECUTABLE)
+    # Thin exe only imports viewer_*.dll; scan those for Qt deps.
     add_custom_command(TARGET brep_viewer POST_BUILD
       COMMAND "${WINDEPLOYQT_EXECUTABLE}"
               --no-translations
               --no-system-d3d-compiler
-              "$<TARGET_FILE:brep_viewer>"
-      COMMENT "windeployqt brep_viewer"
+              --dir "$<TARGET_FILE_DIR:brep_viewer>"
+              "$<TARGET_FILE:viewer_ui>"
+              "$<TARGET_FILE:viewer_runtime>"
+      COMMENT "windeployqt viewer shared libs"
       VERBATIM
     )
   else()
