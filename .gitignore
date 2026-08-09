@@ -16,6 +16,7 @@ out/
 *.log
 *_out.txt
 compile_commands.json
+.superpowers/
 
 # vcpkg local build artifacts (keep the submodule itself)
 third_party/vcpkg/buildtrees/
