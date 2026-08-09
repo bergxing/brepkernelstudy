@@ -105,6 +105,24 @@ add_test(NAME smoke COMMAND smoke)
 add_test(NAME parametric_smoke COMMAND parametric_smoke)
 add_test(NAME xl_roundtrip COMMAND xl_roundtrip)
 
+# Phase 4: include boundary check (Viewer → api/* only; no public brep/internal).
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(
+    NAME include_boundaries
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/scripts/check_include_boundaries.py
+            --root ${CMAKE_SOURCE_DIR}
+  )
+  set_tests_properties(include_boundaries PROPERTIES
+    LABELS "lint;phase4"
+  )
+else()
+  message(WARNING
+    "Python3 not found: include_boundaries ctest will be skipped. "
+    "Install Python 3 to enforce Phase 4 API include rules.")
+endif()
+
 # ---------------------------------------------------------------------------
 # GoogleTest unit tests (optional)
 # ---------------------------------------------------------------------------

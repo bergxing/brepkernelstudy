@@ -1,3 +1,5 @@
+include(${CMAKE_CURRENT_LIST_DIR}/BrepKernelIncludes.cmake)
+
 add_library(brep_core STATIC
   kernel/src/geometry.cpp
   kernel/src/topology.cpp
@@ -12,9 +14,9 @@ add_library(brep_core STATIC
   kernel/src/part.cpp
   kernel/src/document.cpp
 )
+brep_kernel_include_dirs(brep_core)
 target_include_directories(brep_core
   PUBLIC
-    ${CMAKE_SOURCE_DIR}/kernel/include
     ${BREP_SPDLOG_DIR}/include   # fmt via spdlog (public log API)
 )
 target_link_libraries(brep_core PUBLIC Eigen3::Eigen brep_boost_uuid)

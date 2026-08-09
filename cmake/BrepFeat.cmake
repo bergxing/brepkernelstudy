@@ -1,3 +1,5 @@
+include(${CMAKE_CURRENT_LIST_DIR}/BrepKernelIncludes.cmake)
+
 add_library(brep_feat STATIC
   kernel/src/param/parameter.cpp
   kernel/src/feat/feature_tree.cpp
@@ -11,6 +13,7 @@ add_library(brep_feat STATIC
   kernel/src/solve2d/solver.cpp
   kernel/src/ops/extrude.cpp
 )
+brep_kernel_include_dirs(brep_feat)
 target_link_libraries(brep_feat PUBLIC brep_core)
 
 if(MSVC)
