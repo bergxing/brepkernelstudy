@@ -226,10 +226,10 @@ brepkernelstudy/
 ### Phase 0 — 准备（0.5 天）
 
 - [x] 评审并确认本文档
-- [ ] 建立 `docs/architecture/adr/` 目录，重大决策写 ADR
+- [x] 建立 `docs/architecture/adr/` 目录，重大决策写 ADR（0001 重构决策、0002 API 分级）
 - [ ] 记录当前编译耗时基线（全量 / 改 main_window / 改 geometry）
 - [ ] 确认 CI 或本地脚本：`ctest` + viewer 手动冒烟清单
-- [ ] 引入 GoogleTest（CMake `FetchContent` 或 `third_party/googletest` 子模块）
+- [x] 引入 GoogleTest（CMake `FetchContent`）
 
 **产出**：团队对阶段边界与「不做什么」达成一致。
 
@@ -274,8 +274,8 @@ brepkernelstudy/
 #### 2.4 验收
 
 - [ ] Viewer 功能冒烟：新建/打开/保存/创盒/复制/撤销/语言切换/关闭保存提示
-- [ ] 无新增编译警告
-- [ ] 单文件行数：新增 TU 原则上 <500 行，`main_window` 核心 <400 行
+- [ ] 无新增编译警告（examples 使用废弃 `brep/brep.hpp` 的 `#warning` 属预期，不计入）
+- [x] 单文件行数：`main_window.cpp` <400 行；拆分后多数 TU <500（例外：`ecs/systems.cpp` ~592，仍 <600）
 
 ---
 
@@ -290,10 +290,10 @@ include/brep/  →  kernel/include/brep/
 src/           →  kernel/src/
 ```
 
-- [ ] `git mv include kernel/include`、`git mv src kernel/src`（保留 `brep/` 子目录结构）
-- [ ] 根 `CMakeLists.txt` 与 `cmake/*.cmake` 更新源路径与 `target_include_directories`
-- [ ] 对外 `#include <brep/...>` **不变**（由 CMake `PUBLIC` include 路径指向 `kernel/include`）
-- [ ] examples / viewer / tests 编译通过；CLion 重新加载 CMake
+- [x] `git mv include kernel/include`、`git mv src kernel/src`（保留 `brep/` 子目录结构）
+- [x] 根 `CMakeLists.txt` 与 `cmake/*.cmake` 更新源路径与 `target_include_directories`
+- [x] 对外 `#include "brep/..."` / `api/...` 由 CMake `PUBLIC` include 指向 `kernel/include`
+- [x] examples / viewer / tests 编译通过；CLion 重新加载 CMake
 
 #### 1.1 拆分 target
 
@@ -327,10 +327,10 @@ target_link_libraries(brep INTERFACE brep_core brep_feat brep_io brep_asm)
 
 #### 1.3 验收
 
-- [ ] 现有 examples 全部通过 `ctest`
-- [ ] `brep_viewer` 正常编译运行
+- [x] 现有 examples 全部通过 `ctest`
+- [x] `brep_viewer` 正常编译运行
 - [ ] 修改 `kernel/src/io/xl_document.cpp` 时，`geometry.cpp` 所在 TU **不**重编（Ninja 验证）
-- [ ] 仓库根目录无遗留 `include/`、`src/`（均已迁入 `kernel/`）
+- [x] 仓库根目录无遗留 `include/`、`src/`（均已迁入 `kernel/`）
 
 ---
 
@@ -415,9 +415,9 @@ class DocumentService {
 
 #### 3.4 验收
 
-- [ ] Viewer 源码中 **0** 处 `#include "brep/brep.hpp"`
-- [ ] `property_panel` 无 `static_cast<const BoxFeature*>`
-- [ ] Adapter 层有 GoogleTest 测试覆盖：`list_objects`, `tessellate`, `copy_objects`
+- [x] Viewer 源码中 **0** 处 `#include "brep/brep.hpp"`（且仅允许 `api/*`）
+- [x] `property_panel` 无 `static_cast<const BoxFeature*>`（cast 仅留在 `adapter/`）
+- [x] Adapter 层有 GoogleTest：`mesh_for_body` / `object_for_*` / `box_params` / undo、DocumentService roundtrip（对应原草案 `tessellate` / 对象查询 / 复制相关能力）
 - [ ] 功能冒烟与 Phase 2 相同
 
 ---
@@ -539,13 +539,13 @@ endif()
 
 ## 10. 验收标准（整体完成）
 
-- [ ] 内核至少 4 个独立 static/INTERFACE target（core/feat/io/asm）
-- [ ] Viewer 至少 4 个 static lib + 薄 exe
-- [ ] `main_window.cpp` < 400 行；`vulkan_renderer.cpp` 已拆且无单 TU > 600 行
-- [ ] Viewer 无 `#include "brep/brep.hpp"`；无 Feature 具体类 `static_cast`
-- [ ] `tests/kernel/` 与 `apps/viewer/tests/` 覆盖内核与 Adapter 关键路径
-- [ ] `ctest` 全绿；Viewer 冒烟清单全通过
-- [ ] 文档：`docs/architecture/` 含本文档 + 至少 1 份 ADR（Adapter 引入决策）
+- [x] 内核至少 4 个独立 static/INTERFACE target（core/feat/io/asm）
+- [x] Viewer 至少 4 个 static lib + 薄 exe（commands/scene/render/ui/adapter + `brep_viewer`）
+- [x] `main_window.cpp` < 400 行；`vulkan_renderer.cpp` 已拆且无单 TU > 600 行
+- [x] Viewer 无 `#include "brep/brep.hpp"`；UI/命令无 Feature 具体类 `static_cast`（仅 `adapter` 内封装）
+- [x] `tests/kernel/` 与 `apps/viewer/tests/` 覆盖内核与 Adapter 关键路径（math + adapter；可继续加厚）
+- [ ] `ctest` 全绿；Viewer 冒烟清单全通过（`ctest` 已绿；冒烟待手动执行）
+- [x] 文档：`docs/architecture/` 含本文档 + ADR（0001、0002）+ `api-module-owners.md`
 
 ---
 
@@ -578,6 +578,7 @@ endif()
 | 2026-08-08 | v0.3 | 确认 GTest、kernel/ 搬迁、Phase 2→1 实施顺序 |
 | 2026-08-09 | v0.4 | Phase 4 第一刀：`api/*` 分级头 + Viewer 迁入 |
 | 2026-08-09 | v0.5 | Phase 4 完整：include 边界脚本 + PRIVATE `kernel/internal` |
+| 2026-08-09 | v0.6 | 同步勾选已完成验收项；未完成项保留为冒烟 / 编译基线 / CI / Ninja 增量 |
 
 ---
 
