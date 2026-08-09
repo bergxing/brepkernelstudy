@@ -1,7 +1,7 @@
 # AccuSnap Design (Phase 1)
 
 Date: 2026-08-09  
-Status: Draft for review  
+Status: Accepted / Implemented Phase 1 — automated verification passed; manual GUI smoke still recommended  
 Branch context: `cursor/modern-cpp-brep-kernel`
 
 ## Goals
