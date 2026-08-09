@@ -9,4 +9,8 @@ target_link_libraries(viewer_adapter_tests PRIVATE
   viewer_adapter
   GTest::gtest_main
 )
-gtest_discover_tests(viewer_adapter_tests)
+# SHARED: discover/run next to DLLs in bin/
+gtest_discover_tests(viewer_adapter_tests
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:viewer_adapter_tests>
+  DISCOVERY_MODE PRE_TEST
+)

@@ -103,44 +103,53 @@ Qt6 / Vulkan / EnTT
 
 ### 3.1 分层总览
 
+> **链接形态（ADR 0003）**：默认构建为 **SHARED**（`.dll` / `.so`）。  
+> Viewer 侧原 `scene` / `commands` / `render` 因互引合并为 **`viewer_runtime`**；CMake 仍提供同名 ALIAS。
+
 ```mermaid
 flowchart TB
   subgraph apps ["应用层 apps/"]
-    viewer["brep_viewer<br/>(Qt + Vulkan 薄壳)"]
+    viewer["brep_viewer.exe"]
     cli["future: brep_cli / headless"]
   end
 
-  subgraph viewer_libs ["Viewer 库 apps/viewer/*"]
-    ui["viewer_ui"]
-    render["viewer_render"]
-    scene["viewer_scene"]
-    commands["viewer_commands"]
-    adapter["viewer_adapter<br/>SceneAdapter / DocumentService"]
+  subgraph viewer_libs ["Viewer 动态库"]
+    ui["viewer_ui.dll"]
+    runtime["viewer_runtime.dll<br/>scene + commands + render"]
+    adapter["viewer_adapter.dll"]
   end
 
-  subgraph kernel ["内核层 kernel/"]
-    core["brep_core<br/>geometry + topology + model + mesh"]
-    feat["brep_feat<br/>特征树 + 参数 + sketch"]
-    io["brep_io<br/>.xl / .bks"]
-    asm["brep_asm<br/>装配"]
+  subgraph kernel ["内核动态库 kernel/"]
+    core["brep_core.dll"]
+    feat["brep_feat.dll<br/>+ Part/Document 实现"]
+    io["brep_io.dll"]
+    asm["brep_asm.dll"]
   end
 
   viewer --> ui
-  viewer --> render
-  viewer --> scene
-  viewer --> commands
-  ui --> scene
-  commands --> scene
-  commands --> adapter
-  render --> scene
-  scene --> adapter
+  ui --> runtime
   ui --> adapter
+  runtime --> adapter
+  adapter --> io
   adapter --> feat
   adapter --> core
-  adapter --> io
-  feat --> core
   io --> feat
-  asm --> core
+  io --> asm
+  feat --> core
+  asm --> feat
+```
+
+运行时依赖方向（上依赖下，禁止反向）：
+
+```text
+brep_viewer.exe
+  └─ viewer_ui
+       ├─ viewer_runtime
+       │    └─ viewer_adapter
+       │         └─ brep_io → brep_feat → brep_core
+       │              ↓         ↑
+       │           brep_asm ────┘
+       └─ viewer_adapter …
 ```
 
 ### 3.2 内核内部分层（逻辑依赖）
@@ -163,9 +172,10 @@ io (xl_document, bks_cache)
 
 1. **Viewer 库**（`apps/viewer/*`）通过 **`apps/viewer/adapter/`** 访问内核，UI/命令/scene 不直接 `#include` 内核 `internal/` 头或具体 Feature 类。
 2. **`apps/viewer/adapter/`** 只依赖内核 **公开 API**（`kernel/include/brep/`，Phase 4 前为现有头文件布局），不反向依赖 `ui/`、`render/`。
-3. **kernel/** 各子库：`brep_feat` → `brep_core`；`brep_io` → `brep_feat`；禁止反向。
+3. **kernel/** 各子库：`brep_feat` → `brep_core`；`brep_asm` → `brep_feat`；`brep_io` → `brep_feat`+`brep_asm`；禁止反向。`Part`/`Document` 实现位于 `brep_feat`（见 ADR 0003）。
 4. 内核**不得**链接 Qt、Vulkan、EnTT。
 5. **顶层不建 `adapter/`**；若日后出现第二个客户端（CLI 等），再从 `viewer/adapter` 提炼可复用部分到公共层。
+6. **默认 SHARED**（`BREP_BUILD_SHARED=ON`）；产物输出到构建树 `bin/`，exe 与 DLL 同目录。
 
 ---
 
@@ -176,11 +186,13 @@ Phase 1–3 完成后推荐布局（路径迁移可渐进，不必一步到位�
 ```
 brepkernelstudy/
 ├── cmake/
+│   ├── BrepLibType.cmake       # BREP_BUILD_SHARED / 输出目录
+│   ├── BrepKernelIncludes.cmake
 │   ├── BrepCore.cmake
 │   ├── BrepFeat.cmake
 │   ├── BrepIO.cmake
 │   ├── BrepAsm.cmake
-│   └── BrepAll.cmake           # INTERFACE 聚合，兼容旧 target 名 brep
+│   └── BrepAll.cmake           # INTERFACE 聚合 brep
 ├── docs/
 │   ├── architecture/           # 本文档 + ADR
 │   └── viewer/
@@ -243,12 +255,12 @@ brepkernelstudy/
 
 | Target | 内容 |
 |--------|------|
-| `viewer_render` | `vulkan_renderer`, `vulkan_window`, `camera`, shader 资源 |
-| `viewer_scene` | `ecs/world`, `ecs/systems`, `ecs/components` |
-| `viewer_commands` | `commands/*` |
+| `viewer_runtime` | 原 scene + commands + render（SHARED 合并，破环） |
 | `viewer_adapter` | `adapter/*`（`SceneAdapter`, `DocumentService`） |
 | `viewer_ui` | `main_window`, `home_window`, `property_panel`, `view_cube`, … |
-| `brep_viewer` | 仅 `main.cpp` + link 上述库 |
+| `brep_viewer` | 仅 `main.cpp` + link `viewer_ui` |
+
+> 逻辑源码仍可按 `ecs/`、`commands/`、`render/` 分子目录；链接单元以 `viewer_runtime` 为准。ALIAS：`viewer_scene`/`viewer_commands`/`viewer_render` → `viewer_runtime`。
 
 #### 2.2 `main_window.cpp` 拆分
 
@@ -299,11 +311,11 @@ src/           →  kernel/src/
 
 | Target | 源文件 | 依赖 |
 |--------|--------|------|
-| `brep_core` | geometry, topology, model, builder, mesh, validate, dump, log, guid, math | Eigen |
-| `brep_feat` | feat/, param/, sketch/, solve2d/, ops/ | brep_core |
-| `brep_io` | io/ | brep_feat |
-| `brep_asm` | asm/ | brep_core |
-| `brep` (INTERFACE) | — | 聚合上述全部，兼容现有 `target_link_libraries(… brep)` |
+| `brep_core` | geometry, topology, model, builder, mesh, validate, dump, log, guid, object_registry | Eigen |
+| `brep_feat` | feat/, param/, sketch/, solve2d/, ops/, **part.cpp**, **document.cpp** | brep_core |
+| `brep_io` | io/ | brep_feat, brep_asm |
+| `brep_asm` | asm/ | brep_feat |
+| `brep` (INTERFACE) | — | 聚合上述全部 |
 
 #### 1.2 示例 CMake 片段
 
@@ -540,12 +552,12 @@ endif()
 ## 10. 验收标准（整体完成）
 
 - [x] 内核至少 4 个独立 static/INTERFACE target（core/feat/io/asm）
-- [x] Viewer 至少 4 个 static lib + 薄 exe（commands/scene/render/ui/adapter + `brep_viewer`）
+- [x] Viewer 至少 4 个 lib + 薄 exe（`viewer_ui` / `viewer_runtime` / `viewer_adapter` + 内核；默认 SHARED）
 - [x] `main_window.cpp` < 400 行；`vulkan_renderer.cpp` 已拆且无单 TU > 600 行
 - [x] Viewer 无 `#include "brep/brep.hpp"`；UI/命令无 Feature 具体类 `static_cast`（仅 `adapter` 内封装）
 - [x] `tests/kernel/` 与 `apps/viewer/tests/` 覆盖内核与 Adapter 关键路径（math + adapter；可继续加厚）
 - [ ] `ctest` 全绿；Viewer 冒烟清单全通过（`ctest` 已绿；冒烟待手动执行）
-- [x] 文档：`docs/architecture/` 含本文档 + ADR（0001、0002）+ `api-module-owners.md`
+- [x] 文档：`docs/architecture/` 含本文档 + ADR（0001–0003）+ `api-module-owners.md`
 
 ---
 
@@ -567,7 +579,7 @@ endif()
 ### B. 相关文档
 
 - [Viewer 中英双语设计](../viewer/i18n-zh-en-bilingual-design.md)
-- ADR：[`docs/architecture/adr/`](adr/)（含 0001 重构决策、0002 API 分级）
+- ADR：[`docs/architecture/adr/`](adr/)（0001 重构决策、0002 API 分级、0003 SHARED 动态库）
 
 ### C. 修订记录
 
@@ -579,6 +591,7 @@ endif()
 | 2026-08-09 | v0.4 | Phase 4 第一刀：`api/*` 分级头 + Viewer 迁入 |
 | 2026-08-09 | v0.5 | Phase 4 完整：include 边界脚本 + PRIVATE `kernel/internal` |
 | 2026-08-09 | v0.6 | 同步勾选已完成验收项；未完成项保留为冒烟 / 编译基线 / CI / Ninja 增量 |
+| 2026-08-09 | v0.7 | SHARED 动态库分层（ADR 0003）：`viewer_runtime` + Part/Document 归 feat |
 
 ---
 
@@ -590,5 +603,6 @@ endif()
 | 2 | Adapter 位置 | **`apps/viewer/adapter/`**（仅 Viewer） |
 | 3 | 测试框架 | **GoogleTest**（FetchContent 或 submodule） |
 | 4 | 目录迁移 | **接受** `include/` → `kernel/include/`，`src/` → `kernel/src/` |
+| 5 | 动态库 | **接受 SHARED**（ADR 0003）；scene/commands/render 合并为 `viewer_runtime` |
 
 按 **Phase 0 → 2 → 1 → 3 → 4** 逐步落地。

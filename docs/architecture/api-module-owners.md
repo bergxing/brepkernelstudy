@@ -6,8 +6,16 @@
 |--------|----------|-------------------|--------------|
 | `api/core.hpp` | 高 | `brep_core` | `Point3d`, `Vector3d`, `Guid`, `IObject`, `ObjectKind`, `Model`, `Body` / 拓扑实体, `Material`, `Plane`, `RigidTransform`, 日志宏 |
 | `api/mesh.hpp` | 中 | `brep_core` | `MeshVertex`, `TriangleMesh`, `EdgeMesh`, `tessellate_body`, `extract_edges` |
-| `api/modeling.hpp` | 中 | `brep_core` + `brep_feat` | `Document`, `Part`, `BoxSpec`, `BoxFeature`, `ExtrudeFeature`, `IFeature`, `FeatureId`, `FeatureTree`, `FeatureHistory`, `ParameterStore`, `Sketch`, `ConstraintSolver`, `Profile2d`, `ExtrudeSpec` |
+| `api/modeling.hpp` | 中 | `brep_feat`（含 Part/Document 实现） | `Document`, `Part`, `BoxSpec`, `BoxFeature`, `ExtrudeFeature`, `IFeature`, `FeatureId`, `FeatureTree`, `FeatureHistory`, `ParameterStore`, `Sketch`, `ConstraintSolver`, `Profile2d`, `ExtrudeSpec` |
 | `api/persistence.hpp` | 低 | `brep_io` | `XlSaveResult`, `XlLoadResult`, `BodyMeshCache`, `load_xl` / `save_xl`, `load_bks_cache` / `save_bks_cache` |
+
+## Viewer 动态库归属
+
+| 库 | 内容 |
+|----|------|
+| `viewer_adapter` | `SceneAdapter`, `DocumentService` |
+| `viewer_runtime` | ECS scene、commands/tools、Vulkan render、`DocumentSession`（原三分库合并） |
+| `viewer_ui` | MainWindow / Home / 属性面板 / 菜单 |
 
 ## 未进入分级聚合、但仍在 `brep/` 公开树中的类型
 
@@ -25,3 +33,4 @@
 
 - 静态检查：[`scripts/check_include_boundaries.py`](../../scripts/check_include_boundaries.py)（`ctest -R include_boundaries`）
 - CMake：`kernel/include` = PUBLIC；`kernel/internal` = PRIVATE（见 `cmake/BrepKernelIncludes.cmake`）
+- 默认 SHARED：`BREP_BUILD_SHARED=ON`（见 ADR 0003）

@@ -85,6 +85,7 @@ if(TARGET volk)
   target_link_libraries(volk PUBLIC Vulkan::Headers)
 endif()
 
+include(cmake/BrepLibType.cmake)
 include(cmake/BrepAll.cmake)
 
 add_executable(box_demo examples/box_demo.cpp)

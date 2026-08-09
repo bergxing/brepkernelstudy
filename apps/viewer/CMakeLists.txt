@@ -74,11 +74,18 @@ function(brep_viewer_configure_lib target)
 endfunction()
 
 # ---------------------------------------------------------------------------
-# Phase 2/3: viewer static libraries
-# Mutual refs (scene↔commands, scene↔render) resolve at the final link.
+# Viewer libraries (SHARED when BREP_BUILD_SHARED=ON)
+#
+# DAG (top → bottom):
+#   brep_viewer.exe → viewer_ui → viewer_runtime → viewer_adapter → brep_*
+#
+# scene / commands / render historically had mutual includes; they ship as one
+# shared library `viewer_runtime` so DLL linking stays acyclic.
 # ---------------------------------------------------------------------------
 
-add_library(viewer_adapter STATIC
+include(${CMAKE_SOURCE_DIR}/cmake/BrepLibType.cmake)
+
+add_library(viewer_adapter ${BREP_LIB_TYPE}
   adapter/scene_adapter.cpp
   adapter/document_service.cpp
 )
@@ -86,7 +93,11 @@ brep_viewer_configure_lib(viewer_adapter)
 set_target_properties(viewer_adapter PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
 target_link_libraries(viewer_adapter PUBLIC brep)
 
-add_library(viewer_commands STATIC
+add_library(viewer_runtime ${BREP_LIB_TYPE}
+  # former viewer_scene
+  ecs/world.cpp
+  ecs/systems.cpp
+  # former viewer_commands
   commands/command_registry.cpp
   commands/builtin_commands.cpp
   commands/command_manager.cpp
@@ -96,18 +107,8 @@ add_library(viewer_commands STATIC
   commands/tools/create_box_tool.cpp
   commands/tools/copy_tool.cpp
   io/dxf_export.cpp
-)
-brep_viewer_configure_lib(viewer_commands)
-target_link_libraries(viewer_commands PUBLIC viewer_adapter brep EnTT::EnTT Qt6::Widgets)
-
-add_library(viewer_scene STATIC
-  ecs/world.cpp
-  ecs/systems.cpp
-)
-brep_viewer_configure_lib(viewer_scene)
-target_link_libraries(viewer_scene PUBLIC viewer_adapter brep EnTT::EnTT Qt6::Gui Vulkan::Headers)
-
-add_library(viewer_render STATIC
+  document.cpp
+  # former viewer_render
   vulkan_window.cpp
   vulkan_renderer.cpp
   render/vulkan_buffer.cpp
@@ -117,11 +118,23 @@ add_library(viewer_render STATIC
   render/vulkan_draw.cpp
   select_rect_overlay.cpp
 )
-brep_viewer_configure_lib(viewer_render)
-add_dependencies(viewer_render brep_viewer_shaders)
-target_link_libraries(viewer_render PUBLIC brep EnTT::EnTT Qt6::Widgets Qt6::Gui Vulkan::Headers)
+brep_viewer_configure_lib(viewer_runtime)
+add_dependencies(viewer_runtime brep_viewer_shaders)
+target_link_libraries(viewer_runtime PUBLIC
+  viewer_adapter
+  brep
+  EnTT::EnTT
+  Qt6::Widgets
+  Qt6::Gui
+  Vulkan::Headers
+)
 
-add_library(viewer_ui STATIC
+# Compatibility aliases (source layout / docs still refer to these names).
+add_library(viewer_scene ALIAS viewer_runtime)
+add_library(viewer_commands ALIAS viewer_runtime)
+add_library(viewer_render ALIAS viewer_runtime)
+
+add_library(viewer_ui ${BREP_LIB_TYPE}
   main_window.cpp
   ui/view_manager.cpp
   ui/cursor_tip.cpp
@@ -133,7 +146,6 @@ add_library(viewer_ui STATIC
   ui/view_cube_layout.cpp
   ui/input_router.cpp
   home_window.cpp
-  document.cpp
   splash_screen.cpp
   view_cube.cpp
   view_mdi_subwindow.cpp
@@ -143,9 +155,7 @@ add_library(viewer_ui STATIC
 brep_viewer_configure_lib(viewer_ui)
 target_link_libraries(viewer_ui PUBLIC
   viewer_adapter
-  viewer_commands
-  viewer_scene
-  viewer_render
+  viewer_runtime
   brep
   EnTT::EnTT
   Qt6::Widgets
