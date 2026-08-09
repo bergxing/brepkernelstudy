@@ -192,6 +192,7 @@ add_library(viewer_ui ${BREP_LIB_TYPE}
   ui/window_lifecycle.cpp
   ui/view_cube_layout.cpp
   ui/input_router.cpp
+  ui/snap_settings_dialog.cpp
   home_window.cpp
   splash_screen.cpp
   view_cube.cpp

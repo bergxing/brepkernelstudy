@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <optional>
 
+class QSettings;
+
 namespace brep::viewer::commands {
 
 [[nodiscard]] std::uint32_t default_snap_kinds() noexcept;
@@ -16,6 +18,9 @@ struct SnapSettings {
   bool grid_enabled{false};
   double grid_spacing{1.0};
 };
+
+[[nodiscard]] SnapSettings load_snap_settings(QSettings& storage);
+void save_snap_settings(QSettings& storage, const SnapSettings& settings);
 
 struct SnapSession {
   std::optional<Point3d> last_point;

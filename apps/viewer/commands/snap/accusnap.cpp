@@ -80,6 +80,18 @@ int snap_kind_priority(SnapKind kind) noexcept {
   return 8;
 }
 
+std::optional<SnapCandidate> make_grid_candidate(
+    const Point3d& workplane_point, double grid_spacing) {
+  if (!std::isfinite(grid_spacing) || grid_spacing <= 0.0) {
+    return std::nullopt;
+  }
+  Point3d point = workplane_point;
+  point.x() = std::round(point.x() / grid_spacing) * grid_spacing;
+  point.y() = 0.0;
+  point.z() = std::round(point.z() / grid_spacing) * grid_spacing;
+  return SnapCandidate{.kind = SnapKind::Grid, .point = point};
+}
+
 std::optional<SnapCandidate> pick_best_candidate(
     const std::vector<SnapCandidate>& candidates, const Camera& camera,
     int viewport_w, int viewport_h, float sx, float sy, int aperture_px,
@@ -155,6 +167,7 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy) {
   const std::optional<SnapKind> override_kind =
       session ? session->hold_override : std::nullopt;
 
+  std::vector<SnapCandidate> candidates;
   if (settings && settings->enabled && ctx.world && ctx.world->document()) {
     Part* part = ctx.world->document()->main_part();
     if (part) {
@@ -170,17 +183,29 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy) {
       if (session) query.reference_point = session->last_point;
 
       if (query.kinds != 0 && !bodies.empty()) {
-        const auto candidates = query_snap_candidates(bodies, query);
-        if (auto best = pick_best_candidate(
-                candidates, *camera, ctx.viewport_w, ctx.viewport_h, sx, sy,
-                std::max(0, settings->aperture_px), override_kind)) {
-          return finish_resolve(
-              ctx, {.point = best->point,
-                    .kind = best->kind,
-                    .snapped = true,
-                    .candidate = std::move(best)});
-        }
+        candidates = query_snap_candidates(bodies, query);
       }
+    }
+  }
+
+  const bool grid_requested =
+      settings && (settings->grid_enabled ||
+                   override_kind == std::optional{SnapKind::Grid});
+  if (settings && settings->enabled && grid_requested && have_workplane) {
+    if (auto grid = make_grid_candidate(workplane_point,
+                                        settings->grid_spacing)) {
+      candidates.push_back(std::move(*grid));
+    }
+  }
+
+  if (settings && settings->enabled) {
+    if (auto best = pick_best_candidate(
+            candidates, *camera, ctx.viewport_w, ctx.viewport_h, sx, sy,
+            std::max(0, settings->aperture_px), override_kind)) {
+      return finish_resolve(ctx, {.point = best->point,
+                                  .kind = best->kind,
+                                  .snapped = true,
+                                  .candidate = std::move(best)});
     }
   }
 

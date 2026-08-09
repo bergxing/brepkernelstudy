@@ -1,15 +1,19 @@
 #include "main_window.hpp"
 
 #include "assets/asset_catalog.hpp"
+#include "commands/snap/accusnap.hpp"
 #include "i18n/language_manager.hpp"
+#include "ui/snap_settings_dialog.hpp"
 
 #include <QAction>
 #include <QActionGroup>
+#include <QDialog>
 #include <QDockWidget>
 #include <QIcon>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QSize>
 #include <QToolBar>
@@ -184,6 +188,14 @@ void MainWindow::setup_menus() {
           &MainWindow::on_command_palette);
 
   tools_menu->addSeparator();
+  auto* act_snap_settings =
+      tools_menu->addAction(tr("Snap &Settings…"));
+  act_snap_settings->setObjectName(
+      QStringLiteral("act_tools_snap_settings"));
+  connect(act_snap_settings, &QAction::triggered, this,
+          &MainWindow::show_snap_settings);
+
+  tools_menu->addSeparator();
   setup_language_menu(tools_menu);
 
   setup_window_menu();
@@ -225,6 +237,46 @@ void MainWindow::setup_toolbar() {
   auto* act_export = toolbar_->addAction(tr("Export DXF"));
   act_export->setObjectName(QStringLiteral("tb_export"));
   bind_action(act_export, "file.export_dxf");
+
+  toolbar_->addSeparator();
+  act_snap_enabled_ = toolbar_->addAction(tr("Snap"));
+  act_snap_enabled_->setObjectName(QStringLiteral("tb_snap_enabled"));
+  act_snap_enabled_->setCheckable(true);
+  act_snap_enabled_->setChecked(snap_settings_.enabled);
+  act_snap_enabled_->setToolTip(tr("Enable AccuSnap (F3)"));
+  connect(act_snap_enabled_, &QAction::toggled, this,
+          &MainWindow::set_snap_enabled);
+}
+
+void MainWindow::show_snap_settings() {
+  SnapSettingsDialog dialog(snap_settings_, this);
+  if (dialog.exec() != QDialog::Accepted) return;
+  snap_settings_ = dialog.snap_settings();
+  save_snap_settings();
+  sync_snap_action();
+  auto ctx = make_command_context();
+  commands::AccuSnap::clear_feedback(ctx);
+  request_all_views_update();
+}
+
+void MainWindow::set_snap_enabled(bool enabled) {
+  snap_settings_.enabled = enabled;
+  save_snap_settings();
+  sync_snap_action();
+  auto ctx = make_command_context();
+  commands::AccuSnap::clear_feedback(ctx);
+  request_all_views_update();
+}
+
+void MainWindow::save_snap_settings() {
+  QSettings storage;
+  commands::save_snap_settings(storage, snap_settings_);
+}
+
+void MainWindow::sync_snap_action() {
+  if (!act_snap_enabled_) return;
+  const QSignalBlocker blocker(act_snap_enabled_);
+  act_snap_enabled_->setChecked(snap_settings_.enabled);
 }
 
 void MainWindow::setup_view_toolbar() {
@@ -310,6 +362,7 @@ void MainWindow::retranslate_ui() {
 
   set_menu("menu_tools", tr("&Tools"));
   set_act("act_tools_palette", tr("Command &Palette…"));
+  set_act("act_tools_snap_settings", tr("Snap &Settings…"));
   set_menu("menu_language", tr("&Language"));
   set_act("act_lang_system", tr("Follow System"));
   set_act("act_lang_zh", tr("Simplified Chinese"));
@@ -335,6 +388,8 @@ void MainWindow::retranslate_ui() {
   set_act("tb_copy", tr("Copy"));
   set_tip("tb_copy", tr("Copy selected objects (Ctrl+Shift+C)"));
   set_act("tb_export", tr("Export DXF"));
+  set_act("tb_snap_enabled", tr("Snap"));
+  set_tip("tb_snap_enabled", tr("Enable AccuSnap (F3)"));
 
   if (view_toolbar_) view_toolbar_->setWindowTitle(tr("View Orientation"));
   set_act("tb_view_front", tr("Front"));

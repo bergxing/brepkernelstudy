@@ -15,6 +15,7 @@
 #include <QVulkanInstance>
 
 #include <memory>
+#include <vector>
 
 class QAction;
 class QActionGroup;
@@ -45,6 +46,7 @@ class MainWindow final : public QMainWindow {
   void changeEvent(QEvent* event) override;
   bool eventFilter(QObject* watched, QEvent* event) override;
   void keyPressEvent(QKeyEvent* event) override;
+  void keyReleaseEvent(QKeyEvent* event) override;
 
  private slots:
   void on_run_command();
@@ -72,6 +74,11 @@ class MainWindow final : public QMainWindow {
   void setup_language_menu(QMenu* tools_menu);
   void setup_toolbar();
   void setup_view_toolbar();
+  void show_snap_settings();
+  void set_snap_enabled(bool enabled);
+  void save_snap_settings();
+  void sync_snap_action();
+  bool handle_snap_key(QKeyEvent* event, bool pressed);
   void retranslate_ui();
   void sync_language_menu_checks();
   void refresh_view_titles();
@@ -126,10 +133,12 @@ class MainWindow final : public QMainWindow {
   QAction* act_undo_{nullptr};
   QAction* act_redo_{nullptr};
   QAction* act_ortho_{nullptr};
+  QAction* act_snap_enabled_{nullptr};
   QActionGroup* lang_action_group_{nullptr};
   QAction* act_lang_system_{nullptr};
   QAction* act_lang_zh_{nullptr};
   QAction* act_lang_en_{nullptr};
+  std::vector<int> held_snap_override_keys_;
   bool tool_cursor_overridden_{false};
 };
 

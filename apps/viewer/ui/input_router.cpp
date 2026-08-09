@@ -1,5 +1,6 @@
 #include "main_window.hpp"
 
+#include "commands/snap/accusnap.hpp"
 #include "ecs/components.hpp"
 #include "ecs/systems.hpp"
 
@@ -23,6 +24,25 @@ int wheel_delta_y(const QWheelEvent* event) {
   return 0;
 }
 
+std::optional<SnapKind> snap_override_for_key(int key) {
+  switch (key) {
+    case Qt::Key_E:
+      return SnapKind::Endpoint;
+    case Qt::Key_M:
+      return SnapKind::Midpoint;
+    case Qt::Key_C:
+      return SnapKind::Center;
+    case Qt::Key_I:
+      return SnapKind::Intersection;
+    case Qt::Key_P:
+      return SnapKind::Perpendicular;
+    case Qt::Key_G:
+      return SnapKind::Grid;
+    default:
+      return std::nullopt;
+  }
+}
+
 }  // namespace
 
 bool MainWindow::is_view_layout_object(const QObject* watched) const {
@@ -40,6 +60,10 @@ void MainWindow::apply_wheel_zoom(VulkanWindow* window, int dy) {
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* event) {
+  if (handle_snap_key(event, true)) {
+    event->accept();
+    return;
+  }
   if (command_manager_.has_active_tool()) {
     if (event->key() == Qt::Key_Escape) {
       auto ctx = make_command_context();
@@ -65,6 +89,43 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
     }
   }
   QMainWindow::keyPressEvent(event);
+}
+
+void MainWindow::keyReleaseEvent(QKeyEvent* event) {
+  if (handle_snap_key(event, false)) {
+    event->accept();
+    return;
+  }
+  QMainWindow::keyReleaseEvent(event);
+}
+
+bool MainWindow::handle_snap_key(QKeyEvent* event, bool pressed) {
+  if (!event) return false;
+  if (event->key() == Qt::Key_F3) {
+    if (pressed && !event->isAutoRepeat()) {
+      set_snap_enabled(!snap_settings_.enabled);
+    }
+    return true;
+  }
+
+  const auto override_kind = snap_override_for_key(event->key());
+  if (!override_kind || !command_manager_.has_active_tool()) return false;
+  if (event->isAutoRepeat()) return true;
+
+  const int key = event->key();
+  std::erase(held_snap_override_keys_, key);
+  if (pressed) held_snap_override_keys_.push_back(key);
+
+  if (held_snap_override_keys_.empty()) {
+    snap_session_.hold_override.reset();
+  } else {
+    snap_session_.hold_override =
+        snap_override_for_key(held_snap_override_keys_.back());
+  }
+  auto ctx = make_command_context();
+  commands::AccuSnap::clear_feedback(ctx);
+  request_all_views_update();
+  return true;
 }
 
 bool MainWindow::handle_tool_mouse(QEvent* event) {
@@ -130,6 +191,18 @@ bool MainWindow::handle_tool_mouse(QEvent* event) {
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  if ((event->type() == QEvent::ApplicationDeactivate ||
+       event->type() == QEvent::WindowDeactivate) &&
+      !held_snap_override_keys_.empty()) {
+    held_snap_override_keys_.clear();
+    snap_session_.hold_override.reset();
+    snap_session_.active_snap.reset();
+    for (auto* window : view_windows_) {
+      if (window) window->clear_snap_overlay();
+    }
+    refresh_cursor_tip();
+  }
+
   if (event->type() == QEvent::MouseMove ||
       event->type() == QEvent::HoverMove) {
     QPoint global;
@@ -180,6 +253,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 
   if (event->type() == QEvent::KeyPress) {
     auto* ke = static_cast<QKeyEvent*>(event);
+    if (handle_snap_key(ke, true)) return true;
     if (command_manager_.has_active_tool()) {
       if (ke->key() == Qt::Key_Escape) {
         auto ctx = make_command_context();
@@ -201,6 +275,9 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
         return true;
       }
     }
+  } else if (event->type() == QEvent::KeyRelease) {
+    auto* ke = static_cast<QKeyEvent*>(event);
+    if (handle_snap_key(ke, false)) return true;
   }
 
   if (event->type() == QEvent::Wheel) {

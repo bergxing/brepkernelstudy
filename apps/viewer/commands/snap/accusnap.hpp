@@ -23,6 +23,10 @@ struct PickResult {
 /// Lower values win when candidates have the same screen distance.
 [[nodiscard]] int snap_kind_priority(SnapKind kind) noexcept;
 
+/// Quantize a default y=0 workplane hit to the configured grid spacing.
+[[nodiscard]] std::optional<SnapCandidate> make_grid_candidate(
+    const Point3d& workplane_point, double grid_spacing);
+
 /// Rank visible candidates by aperture distance, kind priority, then depth.
 [[nodiscard]] std::optional<SnapCandidate> pick_best_candidate(
     const std::vector<SnapCandidate>& candidates, const Camera& camera,

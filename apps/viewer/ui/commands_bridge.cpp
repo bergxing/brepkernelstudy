@@ -81,6 +81,10 @@ commands::CommandContext MainWindow::make_command_context() {
 void MainWindow::sync_tool_ui() {
   const bool tool = command_manager_.has_active_tool();
   const bool allow_sel = command_manager_.active_tool_allows_selection();
+  if (!tool) {
+    held_snap_override_keys_.clear();
+    snap_session_.hold_override.reset();
+  }
   for (auto* window : view_windows_) {
     if (window) window->set_selection_enabled(!tool || allow_sel);
   }

@@ -9,6 +9,7 @@
 #include <QApplication>
 #include <QMdiArea>
 #include <QMdiSubWindow>
+#include <QSettings>
 #include <QStatusBar>
 #include <QTimer>
 #include <QVersionNumber>
@@ -23,6 +24,8 @@ MainWindow::MainWindow(QWidget* parent)
   resize(1100, 720);
 
   commands::register_builtin_commands(commands_);
+  QSettings settings;
+  snap_settings_ = commands::load_snap_settings(settings);
 
   vulkan_instance_ = std::make_unique<QVulkanInstance>();
   vulkan_instance_->setApiVersion(QVersionNumber(1, 2, 0));

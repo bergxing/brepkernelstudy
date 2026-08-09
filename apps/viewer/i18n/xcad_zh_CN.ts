@@ -302,6 +302,77 @@
         <source>&amp;Redo %1</source>
         <translation>重做(&amp;R) %1</translation>
     </message>
+    <message>
+        <source>Snap &amp;Settings…</source>
+        <translation>捕捉设置(&amp;S)…</translation>
+    </message>
+    <message>
+        <source>Snap</source>
+        <translation>捕捉</translation>
+    </message>
+    <message>
+        <source>Enable AccuSnap (F3)</source>
+        <translation>启用 AccuSnap (F3)</translation>
+    </message>
+</context>
+<context>
+    <name>brep::viewer::SnapSettingsDialog</name>
+    <message>
+        <source>Snap Settings</source>
+        <translation>捕捉设置</translation>
+    </message>
+    <message>
+        <source>Enable AccuSnap</source>
+        <translation>启用 AccuSnap</translation>
+    </message>
+    <message>
+        <source>Snap modes</source>
+        <translation>捕捉模式</translation>
+    </message>
+    <message>
+        <source>Endpoint (E)</source>
+        <translation>端点 (E)</translation>
+    </message>
+    <message>
+        <source>Midpoint (M)</source>
+        <translation>中点 (M)</translation>
+    </message>
+    <message>
+        <source>Center (C)</source>
+        <translation>中心 (C)</translation>
+    </message>
+    <message>
+        <source>Intersection (I)</source>
+        <translation>交点 (I)</translation>
+    </message>
+    <message>
+        <source>Perpendicular (P)</source>
+        <translation>垂足 (P)</translation>
+    </message>
+    <message>
+        <source>Nearest</source>
+        <translation>最近点</translation>
+    </message>
+    <message>
+        <source>Grid (G)</source>
+        <translation>网格点 (G)</translation>
+    </message>
+    <message>
+        <source> px</source>
+        <translation> 像素</translation>
+    </message>
+    <message>
+        <source>Aperture:</source>
+        <translation>捕捉范围：</translation>
+    </message>
+    <message>
+        <source>Grid spacing:</source>
+        <translation>网格间距：</translation>
+    </message>
+    <message>
+        <source>Dynamic input (AccuDraw, coming soon)</source>
+        <translation>动态输入（AccuDraw，即将推出）</translation>
+    </message>
 </context>
 <context>
     <name>SnapKind</name>
