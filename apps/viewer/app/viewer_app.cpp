@@ -1,5 +1,6 @@
 #include "app/viewer_app.hpp"
 
+#include "assets/asset_catalog.hpp"
 #include "home_window.hpp"
 #include "i18n/language_manager.hpp"
 #include "main_window.hpp"
@@ -79,6 +80,7 @@ void open_home_window(QApplication& app) {
 
 int run_viewer(int argc, char* argv[]) {
   ::brep::init_logging("brep_viewer.log", ::brep::LogLevel::Info);
+  AssetCatalog::ensure_initialized();
 
   QApplication app(argc, argv);
   QApplication::setOrganizationName(QStringLiteral("XCAD"));

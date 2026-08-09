@@ -1,0 +1,12 @@
+<RCC>
+  <qresource prefix="/assets">
+    <file>splash_xcad.png</file>
+    <file>views/front.png</file>
+    <file>views/back.png</file>
+    <file>views/left.png</file>
+    <file>views/right.png</file>
+    <file>views/top.png</file>
+    <file>views/bottom.png</file>
+    <file>views/iso.png</file>
+  </qresource>
+</RCC>

@@ -92,7 +92,6 @@ class MainWindow final : public QMainWindow {
   [[nodiscard]] bool confirm_close_or_save();
   [[nodiscard]] commands::CommandContext make_command_context();
   [[nodiscard]] QString wood_albedo_path() const;
-  [[nodiscard]] QString view_icon_path(const QString& filename) const;
   bool handle_tool_mouse(QEvent* event);
   void show_viewport_context_menu(VulkanWindow* window, float x, float y);
   void setup_cursor_tip();

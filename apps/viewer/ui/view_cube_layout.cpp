@@ -1,8 +1,7 @@
 #include "main_window.hpp"
 
-#include <QCoreApplication>
-#include <QDir>
-#include <QFileInfo>
+#include "assets/asset_catalog.hpp"
+
 #include <QMdiArea>
 #include <QMdiSubWindow>
 #include <QSignalBlocker>
@@ -10,23 +9,9 @@
 namespace brep::viewer {
 
 QString MainWindow::wood_albedo_path() const {
-  QString wood_path = QStringLiteral(BREP_VIEWER_ASSETS_DIR "/wood.png");
-  if (!QFileInfo::exists(wood_path)) {
-    wood_path = QDir(QCoreApplication::applicationDirPath())
-                    .filePath(QStringLiteral("assets/wood.png"));
-  }
-  return wood_path;
-}
-
-QString MainWindow::view_icon_path(const QString& filename) const {
-  QString path =
-      QDir(QStringLiteral(BREP_VIEWER_ASSETS_DIR)).filePath(
-          QStringLiteral("views/") + filename);
-  if (!QFileInfo::exists(path)) {
-    path = QDir(QCoreApplication::applicationDirPath())
-               .filePath(QStringLiteral("assets/views/") + filename);
-  }
-  return path;
+  // QImage (Vulkan texture upload) accepts Qt resource URLs.
+  if (!AssetCatalog::exists(QStringLiteral("wood.png"))) return {};
+  return AssetCatalog::url(QStringLiteral("wood.png"));
 }
 
 void MainWindow::apply_standard_view(char face) {

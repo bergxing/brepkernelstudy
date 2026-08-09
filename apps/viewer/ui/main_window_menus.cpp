@@ -1,5 +1,6 @@
 #include "main_window.hpp"
 
+#include "assets/asset_catalog.hpp"
 #include "i18n/language_manager.hpp"
 
 #include <QAction>
@@ -237,7 +238,8 @@ void MainWindow::setup_view_toolbar() {
   };
 
   for (const auto& spec : kSpecs) {
-    const QIcon icon(view_icon_path(QString::fromUtf8(spec.file)));
+    const QIcon icon = AssetCatalog::icon(QStringLiteral("views/") +
+                                          QString::fromUtf8(spec.file));
     auto* act = view_toolbar_->addAction(icon, QString());
     act->setObjectName(QString::fromUtf8(spec.object_name));
     const char face = spec.face;

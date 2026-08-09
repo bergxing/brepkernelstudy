@@ -1,8 +1,7 @@
 #include "splash_screen.hpp"
 
-#include <QCoreApplication>
-#include <QDir>
-#include <QFileInfo>
+#include "assets/asset_catalog.hpp"
+
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -25,20 +24,8 @@ SplashScreen::SplashScreen(QWidget* parent) : QWidget(parent) {
 }
 
 bool SplashScreen::load_artwork() {
-  QStringList candidates;
-  candidates << QStringLiteral(BREP_VIEWER_ASSETS_DIR "/splash_xcad.png");
-  candidates << QDir(QCoreApplication::applicationDirPath())
-                    .filePath(QStringLiteral("assets/splash_xcad.png"));
-  candidates << QDir(QCoreApplication::applicationDirPath())
-                    .filePath(QStringLiteral("../assets/splash_xcad.png"));
-
-  for (const QString& path : candidates) {
-    if (QFileInfo::exists(path)) {
-      pixmap_ = QPixmap(path);
-      if (!pixmap_.isNull()) return true;
-    }
-  }
-  return false;
+  pixmap_ = AssetCatalog::pixmap(QStringLiteral("splash_xcad.png"));
+  return !pixmap_.isNull();
 }
 
 void SplashScreen::showEvent(QShowEvent* event) {

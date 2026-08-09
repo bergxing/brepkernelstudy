@@ -104,14 +104,11 @@ add_custom_target(brep_viewer_shaders DEPENDS ${VIEWER_SPV_OUTPUTS})
 # Shared viewer paths (PUBLIC so all viewer_* libs see the same defines)
 # ---------------------------------------------------------------------------
 set(VIEWER_I18N_DIR ${CMAKE_CURRENT_SOURCE_DIR}/i18n)
-set(VIEWER_ASSETS_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets)
-file(MAKE_DIRECTORY ${VIEWER_ASSETS_DIR})
 
 function(brep_viewer_configure_lib target)
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_definitions(${target} PUBLIC
     BREP_VIEWER_SPV_DIR="${VIEWER_SPV_DIR}"
-    BREP_VIEWER_ASSETS_DIR="${VIEWER_ASSETS_DIR}"
     BREP_VIEWER_I18N_DIR="${VIEWER_I18N_DIR}"
   )
 endfunction()
@@ -179,6 +176,8 @@ add_library(viewer_render ALIAS viewer_runtime)
 
 add_library(viewer_ui ${BREP_LIB_TYPE}
   app/viewer_app.cpp
+  assets/asset_catalog.cpp
+  assets/assets.qrc
   main_window.cpp
   ui/view_manager.cpp
   ui/cursor_tip.cpp
@@ -197,6 +196,9 @@ add_library(viewer_ui ${BREP_LIB_TYPE}
   i18n/language_manager.cpp
 )
 brep_viewer_configure_lib(viewer_ui)
+set_target_properties(viewer_ui PROPERTIES
+  AUTORCC ON
+)
 target_link_libraries(viewer_ui PUBLIC
   viewer_adapter
   viewer_runtime
@@ -244,17 +246,6 @@ if(BREP_BUILD_SHARED)
     )
   endforeach()
 endif()
-
-add_custom_command(TARGET brep_viewer POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_directory
-          ${CMAKE_CURRENT_SOURCE_DIR}/assets
-          ${VIEWER_ASSETS_DIR}
-  COMMAND ${CMAKE_COMMAND} -E copy_directory
-          ${CMAKE_CURRENT_SOURCE_DIR}/assets
-          $<TARGET_FILE_DIR:brep_viewer>/assets
-  COMMENT "Copy viewer material assets"
-  VERBATIM
-)
 
 # Compile .ts → .qm when lrelease is available; always deploy translations/.
 find_program(LRELEASE_EXECUTABLE NAMES lrelease lrelease-qt6 lrelease.exe
