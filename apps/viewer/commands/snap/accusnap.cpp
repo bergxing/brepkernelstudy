@@ -68,9 +68,10 @@ std::optional<SnapCandidate> pick_best_candidate(
 
   Point3d ray_origin;
   Vector3d ray_direction;
-  const bool have_ray =
-      screen_to_ray(camera, viewport_w, viewport_h, sx, sy, ray_origin,
-                    ray_direction);
+  if (!screen_to_ray(camera, viewport_w, viewport_h, sx, sy, ray_origin,
+                     ray_direction)) {
+    return std::nullopt;
+  }
   const double aperture_squared =
       static_cast<double>(aperture_px) * aperture_px;
 
@@ -96,7 +97,8 @@ std::optional<SnapCandidate> pick_best_candidate(
     if (distance_squared > aperture_squared) continue;
 
     const double depth =
-        have_ray ? (candidate.point - ray_origin).dot(ray_direction) : 0.0;
+        (candidate.point - ray_origin).dot(ray_direction);
+    if (depth < 0.0) continue;
     const auto score = std::tuple{distance_squared,
                                   snap_kind_priority(candidate.kind), depth};
     if (score < best_score) {

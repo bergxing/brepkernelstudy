@@ -15,7 +15,7 @@ struct CommandContext;
 
 struct PickResult {
   Point3d point{};
-  SnapKind kind{SnapKind::Workplane};
+  SnapKind kind{SnapKind::None};
   bool snapped{false};
   std::optional<SnapCandidate> candidate;
 };
