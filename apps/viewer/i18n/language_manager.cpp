@@ -1,6 +1,6 @@
 #include "i18n/language_manager.hpp"
 
-#include "brep/log.hpp"
+#include "api/core.hpp"
 
 #include <QCoreApplication>
 #include <QDir>

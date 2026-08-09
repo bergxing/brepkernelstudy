@@ -3,10 +3,8 @@
 #include "adapter/scene_adapter.hpp"
 #include "ecs/systems.hpp"
 
-#include "brep/document.hpp"
-#include "brep/log.hpp"
-#include "brep/material.hpp"
-#include "brep/part.hpp"
+#include "api/core.hpp"
+#include "api/modeling.hpp"
 
 #include <vector>
 

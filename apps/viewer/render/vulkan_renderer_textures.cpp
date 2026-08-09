@@ -2,7 +2,7 @@
 
 #include "vulkan_window.hpp"
 
-#include "brep/log.hpp"
+#include "api/core.hpp"
 
 #include <QImage>
 #include <QVulkanDeviceFunctions>

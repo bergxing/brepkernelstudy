@@ -3,7 +3,7 @@
 #include "main_window.hpp"
 #include "splash_screen.hpp"
 
-#include "brep/log.hpp"
+#include "api/core.hpp"
 
 #include <QApplication>
 #include <QMessageBox>

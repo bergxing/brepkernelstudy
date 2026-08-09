@@ -1,9 +1,7 @@
 #pragma once
 
-#include "brep/guid.hpp"
-#include "brep/material.hpp"
-#include "brep/math.hpp"
-#include "brep/mesh.hpp"
+#include "api/core.hpp"
+#include "api/mesh.hpp"
 #include "camera.hpp"
 
 #include <entt/entt.hpp>

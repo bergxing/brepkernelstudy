@@ -1,5 +1,18 @@
 #pragma once
 
+// Deprecated umbrella. Prefer graded headers:
+//   #include "api/core.hpp"
+//   #include "api/mesh.hpp"
+//   #include "api/modeling.hpp"
+//   #include "api/persistence.hpp"
+#if defined(_MSC_VER)
+#pragma message( \
+    "brep/brep.hpp is deprecated; include api/core.hpp, api/mesh.hpp, api/modeling.hpp, or api/persistence.hpp instead")
+#elif defined(__GNUC__) || defined(__clang__)
+#warning \
+    "brep/brep.hpp is deprecated; include api/core.hpp, api/mesh.hpp, api/modeling.hpp, or api/persistence.hpp instead"
+#endif
+
 #include "brep/asm/assembly.hpp"
 #include "brep/builder.hpp"
 #include "brep/document.hpp"
@@ -32,3 +45,12 @@
 #include "brep/topology.hpp"
 #include "brep/types.hpp"
 #include "brep/validate.hpp"
+
+namespace brep {
+
+[[deprecated(
+    "Include api/core.hpp, api/mesh.hpp, api/modeling.hpp, or "
+    "api/persistence.hpp instead of brep/brep.hpp")]]
+inline constexpr bool k_brep_umbrella_deprecated = true;
+
+}  // namespace brep

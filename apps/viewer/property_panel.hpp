@@ -3,7 +3,7 @@
 #include "adapter/scene_adapter.hpp"
 #include "ecs/components.hpp"
 
-#include "brep/feat/feature.hpp"
+#include "api/modeling.hpp"
 
 #include <QWidget>
 

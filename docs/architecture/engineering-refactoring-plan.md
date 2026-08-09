@@ -439,10 +439,15 @@ class DocumentService {
 - Viewer / Adapter 只允许 include `api/*`
 - `internal/` 目录不进入 PUBLIC include path
 
+> **第一刀（2026-08-09）**：已新增 `kernel/include/api/{core,mesh,modeling,persistence}.hpp`；Viewer/Adapter 已迁入 `api/*`；`brep.hpp` 已废弃提示。`internal/` 与 include 边界检查脚本仍属后续完整 Phase 4。
+
 #### 4.3 验收
 
 - [ ] CMake `target_compile_definitions` 或 include 检查脚本验证依赖边界
 - [ ] 文档列出每个公开类型的所有者模块
+- [x] Viewer / Adapter 只 include `api/*`（第一刀）
+- [x] `brep/brep.hpp` 废弃提示（第一刀）
+- [x] ADR：`docs/architecture/adr/0002-api-header-tiers.md`
 
 ---
 
@@ -560,7 +565,7 @@ endif()
 ### B. 相关文档
 
 - [Viewer 中英双语设计](../viewer/i18n-zh-en-bilingual-design.md)
-- ADR 目录（待建）：`docs/architecture/adr/`
+- ADR：[`docs/architecture/adr/`](adr/)（含 0001 重构决策、0002 API 分级）
 
 ### C. 修订记录
 
@@ -569,6 +574,7 @@ endif()
 | 2026-08-08 | v0.1 | 初稿 |
 | 2026-08-08 | v0.2 | 确认 Adapter 位于 `apps/viewer/adapter/` |
 | 2026-08-08 | v0.3 | 确认 GTest、kernel/ 搬迁、Phase 2→1 实施顺序 |
+| 2026-08-09 | v0.4 | Phase 4 第一刀：`api/*` 分级头 + Viewer 迁入 |
 
 ---
 

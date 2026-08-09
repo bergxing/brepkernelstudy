@@ -3,7 +3,7 @@
 #include "document.hpp"
 #include "ecs/world.hpp"
 
-#include "brep/mesh.hpp"
+#include "api/mesh.hpp"
 
 #include <QString>
 #include <QWidget>

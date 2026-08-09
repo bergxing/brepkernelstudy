@@ -7,10 +7,8 @@
 
 #include "adapter/document_service.hpp"
 #include "adapter/scene_adapter.hpp"
-#include "brep/builder.hpp"
-#include "brep/log.hpp"
-#include "brep/material.hpp"
-#include "brep/part.hpp"
+#include "api/core.hpp"
+#include "api/modeling.hpp"
 #include "ecs/components.hpp"
 #include "io/dxf_export.hpp"
 

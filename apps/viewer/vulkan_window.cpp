@@ -3,7 +3,7 @@
 #include "ecs/systems.hpp"
 #include "select_rect_overlay.hpp"
 
-#include "brep/log.hpp"
+#include "api/core.hpp"
 
 #include <QKeyEvent>
 #include <QMouseEvent>

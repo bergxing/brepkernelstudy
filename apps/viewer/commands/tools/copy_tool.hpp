@@ -2,8 +2,8 @@
 
 #include "commands/itool.hpp"
 
-#include "brep/builder.hpp"
-#include "brep/math.hpp"
+#include "api/core.hpp"
+#include "api/modeling.hpp"
 
 #include <vector>
 

@@ -1,6 +1,6 @@
 #include "commands/command_registry.hpp"
 
-#include "brep/log.hpp"
+#include "api/core.hpp"
 
 #include <algorithm>
 

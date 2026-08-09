@@ -2,8 +2,8 @@
 
 #include "camera.hpp"
 
-#include "brep/math.hpp"
-#include "brep/mesh.hpp"
+#include "api/core.hpp"
+#include "api/mesh.hpp"
 
 namespace brep::viewer::commands {
 

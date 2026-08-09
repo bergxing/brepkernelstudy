@@ -1,8 +1,7 @@
 #include "adapter/scene_adapter.hpp"
 
-#include "brep/feat/box_feature.hpp"
-#include "brep/feat/feature_history.hpp"
-#include "brep/mesh.hpp"
+#include "api/mesh.hpp"
+#include "api/modeling.hpp"
 
 #include <utility>
 

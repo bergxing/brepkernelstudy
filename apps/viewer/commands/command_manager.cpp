@@ -1,6 +1,6 @@
 #include "commands/command_manager.hpp"
 
-#include "brep/log.hpp"
+#include "api/core.hpp"
 
 namespace brep::viewer::commands {
 

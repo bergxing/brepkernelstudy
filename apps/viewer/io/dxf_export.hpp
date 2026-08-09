@@ -1,7 +1,7 @@
 #pragma once
 
-#include "brep/math.hpp"
-#include "brep/mesh.hpp"
+#include "api/core.hpp"
+#include "api/mesh.hpp"
 
 #include <filesystem>
 #include <string>

@@ -1,8 +1,8 @@
 #include "main_window.hpp"
 
 #include "adapter/scene_adapter.hpp"
-#include "brep/material.hpp"
-#include "brep/part.hpp"
+#include "api/core.hpp"
+#include "api/modeling.hpp"
 #include "commands/document_history.hpp"
 #include "ecs/components.hpp"
 #include "ecs/systems.hpp"

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "brep/material.hpp"
-#include "brep/mesh.hpp"
+#include "api/core.hpp"
+#include "api/mesh.hpp"
 #include "camera.hpp"
 
 #include <QVulkanWindow>

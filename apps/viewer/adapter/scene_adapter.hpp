@@ -1,11 +1,9 @@
 #pragma once
 
-#include "brep/document.hpp"
-#include "brep/feat/feature.hpp"
-#include "brep/io/bks_cache.hpp"
-#include "brep/material.hpp"
-#include "brep/mesh.hpp"
-#include "brep/part.hpp"
+#include "api/core.hpp"
+#include "api/mesh.hpp"
+#include "api/modeling.hpp"
+#include "api/persistence.hpp"
 
 #include <memory>
 #include <optional>

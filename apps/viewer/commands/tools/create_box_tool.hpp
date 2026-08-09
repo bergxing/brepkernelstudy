@@ -2,7 +2,7 @@
 
 #include "commands/itool.hpp"
 
-#include "brep/math.hpp"
+#include "api/core.hpp"
 
 namespace brep::viewer::commands {
 

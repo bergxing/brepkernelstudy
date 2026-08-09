@@ -1,8 +1,8 @@
 #include "adapter/document_service.hpp"
 #include "adapter/scene_adapter.hpp"
 
-#include "brep/builder.hpp"
-#include "brep/math.hpp"
+#include "api/core.hpp"
+#include "api/modeling.hpp"
 
 #include <gtest/gtest.h>
 

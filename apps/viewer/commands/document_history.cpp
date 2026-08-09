@@ -1,6 +1,6 @@
 #include "commands/document_history.hpp"
 
-#include "brep/log.hpp"
+#include "api/core.hpp"
 
 namespace brep::viewer::commands {
 

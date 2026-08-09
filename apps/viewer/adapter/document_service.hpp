@@ -1,8 +1,8 @@
 #pragma once
 
-#include "brep/document.hpp"
-#include "brep/guid.hpp"
-#include "brep/io/bks_cache.hpp"
+#include "api/core.hpp"
+#include "api/modeling.hpp"
+#include "api/persistence.hpp"
 
 #include <memory>
 #include <string>

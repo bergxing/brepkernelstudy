@@ -1,6 +1,6 @@
 #include "main_window.hpp"
 
-#include "brep/log.hpp"
+#include "api/core.hpp"
 #include "ecs/components.hpp"
 #include "ecs/systems.hpp"
 

@@ -1,6 +1,6 @@
 #include "adapter/document_service.hpp"
 
-#include "brep/io/xl_document.hpp"
+#include "api/persistence.hpp"
 
 namespace brep::viewer::adapter {
 

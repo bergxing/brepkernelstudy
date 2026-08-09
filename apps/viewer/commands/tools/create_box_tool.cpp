@@ -4,11 +4,9 @@
 #include "commands/document_history.hpp"
 #include "commands/picking.hpp"
 
-#include "brep/builder.hpp"
-#include "brep/log.hpp"
-#include "brep/material.hpp"
-#include "brep/mesh.hpp"
-#include "brep/part.hpp"
+#include "api/core.hpp"
+#include "api/mesh.hpp"
+#include "api/modeling.hpp"
 
 #include <QMouseEvent>
 
