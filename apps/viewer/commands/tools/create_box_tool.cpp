@@ -3,6 +3,7 @@
 #include "adapter/scene_adapter.hpp"
 #include "commands/document_history.hpp"
 #include "commands/picking.hpp"
+#include "commands/snap/accusnap.hpp"
 
 #include "api/core.hpp"
 #include "api/mesh.hpp"
@@ -157,6 +158,7 @@ void CreateBoxTool::on_start(CommandContext& ctx) {
   step_ = 0;
   finished_ = false;
   result_ = CommandResult::cancelled();
+  if (ctx.snap_session) ctx.snap_session->last_point.reset();
   clear_preview(ctx);
   if (ctx.report_status) ctx.report_status(prompt());
   BREP_INFO("CreateBoxTool start (3-point: base + height)");
@@ -164,16 +166,10 @@ void CreateBoxTool::on_start(CommandContext& ctx) {
 
 bool CreateBoxTool::pick_ground(CommandContext& ctx, float x, float y,
                                 Point3d& hit) const {
-  Camera* cam = ctx.view_camera
-                    ? ctx.view_camera
-                    : (ctx.world ? ctx.world->main_camera() : nullptr);
-  if (!cam) return false;
-  Point3d origin;
-  Vector3d dir;
-  if (!screen_to_ray(*cam, ctx.viewport_w, ctx.viewport_h, x, y, origin, dir)) {
-    return false;
-  }
-  return intersect_plane_y(origin, dir, 0.0, hit);
+  const PickResult result = AccuSnap::resolve(ctx, x, y);
+  if (result.kind == SnapKind::None) return false;
+  hit = result.point;
+  return true;
 }
 
 bool CreateBoxTool::pick_height(CommandContext& ctx, float x, float y,
@@ -372,6 +368,7 @@ bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
       }
       return true;
     }
+    if (ctx.snap_session) ctx.snap_session->last_point = hit;
 
     BREP_INFO("CreateBoxTool picked ground point=({:.4f},{:.4f},{:.4f}) step={}",
               hit.x(), hit.y(), hit.z(), step_);

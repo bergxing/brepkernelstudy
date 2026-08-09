@@ -2,8 +2,7 @@
 
 #include "adapter/scene_adapter.hpp"
 #include "commands/document_history.hpp"
-#include "commands/picking.hpp"
-#include "ecs/components.hpp"
+#include "commands/snap/accusnap.hpp"
 
 #include "api/core.hpp"
 #include "api/mesh.hpp"
@@ -13,7 +12,6 @@
 #include <QMouseEvent>
 
 #include <cmath>
-#include <limits>
 
 namespace brep::viewer::commands {
 namespace {
@@ -131,43 +129,17 @@ void CreateSphereTool::on_start(CommandContext& ctx) {
   step_ = 0;
   finished_ = false;
   result_ = CommandResult::cancelled();
+  if (ctx.snap_session) ctx.snap_session->last_point.reset();
   clear_preview(ctx);
   if (ctx.report_status) ctx.report_status(prompt());
 }
 
 bool CreateSphereTool::pick_point(CommandContext& ctx, float x, float y,
                                   Point3d& hit) const {
-  Camera* cam = ctx.view_camera
-                    ? ctx.view_camera
-                    : (ctx.world ? ctx.world->main_camera() : nullptr);
-  if (!cam || !ctx.world) return false;
-  Point3d origin;
-  Vector3d dir;
-  if (!screen_to_ray(*cam, ctx.viewport_w, ctx.viewport_h, x, y, origin, dir)) {
-    return false;
-  }
-
-  auto& registry = ctx.world->registry();
-  double best_t = std::numeric_limits<double>::infinity();
-  bool mesh_hit = false;
-  auto view = registry.view<ecs::MeshComponent, ecs::Transform, ecs::RenderableTag>();
-  for (auto entity : view) {
-    const auto& mesh = view.get<ecs::MeshComponent>(entity);
-    const auto& xform = view.get<ecs::Transform>(entity);
-    double t = 0.0;
-    if (!intersect_mesh(origin, dir, mesh.triangles, xform.position, t)) {
-      continue;
-    }
-    if (t < best_t) {
-      best_t = t;
-      mesh_hit = true;
-    }
-  }
-  if (mesh_hit) {
-    hit = origin + dir * best_t;
-    return true;
-  }
-  return intersect_plane_y(origin, dir, 0.0, hit);
+  const PickResult result = AccuSnap::resolve(ctx, x, y);
+  if (result.kind == SnapKind::None) return false;
+  hit = result.point;
+  return true;
 }
 
 void CreateSphereTool::clear_preview(CommandContext& ctx) {
@@ -293,6 +265,7 @@ bool CreateSphereTool::on_mouse_press(CommandContext& ctx, float x, float y,
     }
     return true;
   }
+  if (ctx.snap_session) ctx.snap_session->last_point = hit;
 
   if (step_ == 0) {
     center_ = hit;
