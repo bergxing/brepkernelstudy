@@ -295,10 +295,9 @@ bool CopyTool::on_mouse_press(CommandContext& ctx, float x, float y,
     }
     return true;
   }
-  if (ctx.snap_session) ctx.snap_session->last_point = hit;
-
   if (step_ == 1) {
     base_ = hit;
+    if (ctx.snap_session) ctx.snap_session->last_point = hit;
     step_ = 2;
     if (ctx.set_preview_edges) {
       ctx.set_preview_edges(make_point_marker(base_));
@@ -308,6 +307,15 @@ bool CopyTool::on_mouse_press(CommandContext& ctx, float x, float y,
     return true;
   }
 
+  const Vector3d offset{hit.x() - base_.x(), hit.y() - base_.y(),
+                        hit.z() - base_.z()};
+  if (offset.norm() < 1e-6) {
+    if (ctx.report_status) {
+      ctx.report_status(QStringLiteral("放置点与基点重合，未复制"));
+    }
+    return true;
+  }
+  if (ctx.snap_session) ctx.snap_session->last_point = hit;
   commit_copies(ctx, hit);
   return true;
 }

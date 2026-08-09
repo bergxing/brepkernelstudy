@@ -265,10 +265,9 @@ bool CreateSphereTool::on_mouse_press(CommandContext& ctx, float x, float y,
     }
     return true;
   }
-  if (ctx.snap_session) ctx.snap_session->last_point = hit;
-
   if (step_ == 0) {
     center_ = hit;
+    if (ctx.snap_session) ctx.snap_session->last_point = hit;
     step_ = 1;
     if (ctx.set_preview_edges) {
       ctx.set_preview_edges(make_point_marker(center_));
@@ -285,6 +284,7 @@ bool CreateSphereTool::on_mouse_press(CommandContext& ctx, float x, float y,
     }
     return true;
   }
+  if (ctx.snap_session) ctx.snap_session->last_point = hit;
   commit_sphere(ctx, radius);
   return true;
 }

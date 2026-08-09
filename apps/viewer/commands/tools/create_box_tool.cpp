@@ -368,13 +368,12 @@ bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
       }
       return true;
     }
-    if (ctx.snap_session) ctx.snap_session->last_point = hit;
-
     BREP_INFO("CreateBoxTool picked ground point=({:.4f},{:.4f},{:.4f}) step={}",
               hit.x(), hit.y(), hit.z(), step_);
 
     if (step_ == 0) {
       corner_a_ = hit;
+      if (ctx.snap_session) ctx.snap_session->last_point = hit;
       step_ = 1;
       // Immediate feedback before the next move arrives.
       if (ctx.set_preview_edges) {
@@ -395,6 +394,7 @@ bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
       }
       return true;
     }
+    if (ctx.snap_session) ctx.snap_session->last_point = hit;
     corner_b_ = hit;
     step_ = 2;
     update_preview(ctx, x, y);
