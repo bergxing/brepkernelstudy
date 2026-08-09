@@ -1,8 +1,12 @@
 #include "ecs/world.hpp"
 
+#include "adapter/scene_adapter.hpp"
 #include "ecs/systems.hpp"
 
-#include "brep/brep.hpp"
+#include "brep/document.hpp"
+#include "brep/log.hpp"
+#include "brep/material.hpp"
+#include "brep/part.hpp"
 
 #include <vector>
 
@@ -100,7 +104,7 @@ bool World::update_body_renderable(const brep::Guid& body_guid,
 
 void World::sync_part_bodies(brep::Part& part, Material material,
                              const brep::io::BodyMeshCache* cache) {
-  using namespace brep;
+  adapter::SceneAdapter scene(document_.get());
   std::vector<Guid> live;
   for (const auto& body : part.model().bodies()) {
     if (!body) continue;
@@ -110,23 +114,16 @@ void World::sync_part_bodies(brep::Part& part, Material material,
       feature_guid = f->id().guid;
     }
 
-    TriangleMesh tris;
-    EdgeMesh edges;
-    if (cache && cache->has(body->guid)) {
-      tris = cache->triangles.at(body->guid);
-      edges = cache->edges.at(body->guid);
-    } else {
-      tris = tessellate_body(*body);
-      edges = extract_edges(*body);
-    }
+    auto mesh = scene.mesh_for_body(body->guid, cache);
 
     const entt::entity existing = find_body_renderable(body->guid);
     if (existing == entt::null) {
-      create_body_renderable(body->name, body->guid, std::move(tris),
-                             std::move(edges), material, Point3d{},
+      create_body_renderable(body->name, body->guid, std::move(mesh.faces),
+                             std::move(mesh.edges), material, Point3d{},
                              feature_guid);
     } else {
-      update_body_renderable(body->guid, std::move(tris), std::move(edges));
+      update_body_renderable(body->guid, std::move(mesh.faces),
+                             std::move(mesh.edges));
       if (!feature_guid.is_nil()) {
         if (registry_.all_of<FeatureRef>(existing)) {
           registry_.get<FeatureRef>(existing).feature_guid = feature_guid;
@@ -177,12 +174,10 @@ bool World::destroy_body_renderable(const brep::Guid& body_guid) {
 }
 
 void World::create_blank_scene() {
-  using namespace brep;
-
   clear_scene();
 
-  document_ = Document::create("Untitled");
-  Part& part = document_->add_part("MainPart");
+  document_ = adapter::SceneAdapter::create_blank("Untitled");
+  Part* part = document_->main_part();
 
   Camera cam;
   cam.target = Point3d{0.0, 0.0, 0.0};
@@ -190,17 +185,16 @@ void World::create_blank_scene() {
   create_camera(cam);
 
   BREP_INFO("blank scene: Document={} Part={} (no bodies)",
-            document_->guid.to_string(), part.guid.to_string());
+            document_->guid.to_string(),
+            part ? part->guid.to_string() : std::string{});
 }
 
 void World::create_demo_box_scene(const std::string& wood_albedo_path) {
-  using namespace brep;
-
   clear_scene();
 
-  document_ = Document::create("Untitled");
-  Part& part = document_->add_part("MainPart");
-  Body* body = part.add_box(BoxSpec{
+  document_ = adapter::SceneAdapter::create_blank("Untitled");
+  adapter::SceneAdapter scene(document_.get());
+  Body* body = scene.add_box(BoxSpec{
       .min = Point3d{0, 0, 0},
       .max = Point3d{2, 1, 3},
       .name = "demo_box",
@@ -212,25 +206,28 @@ void World::create_demo_box_scene(const std::string& wood_albedo_path) {
 
   Guid feature_guid{};
   if (body) {
-    if (const auto* f = part.features().find_by_body(body->guid)) {
-      feature_guid = f->id().guid;
+    if (auto obj = scene.object_for_body(body->guid)) {
+      feature_guid = obj->feature_guid;
     }
-    create_body_renderable("demo_box", body->guid, tessellate_body(*body),
-                           extract_edges(*body),
+    auto mesh = scene.mesh_for_body(body->guid);
+    create_body_renderable("demo_box", body->guid, std::move(mesh.faces),
+                           std::move(mesh.edges),
                            make_wood_material(wood_albedo_path), Point3d{},
                            feature_guid);
   }
 
   BREP_INFO(
       "demo scene: Document={} Part={} Body={} (guid={})",
-      document_->guid.to_string(), part.guid.to_string(), body->name,
-      body->guid.to_string());
+      document_->guid.to_string(),
+      document_->main_part() ? document_->main_part()->guid.to_string()
+                             : std::string{},
+      body ? body->name : std::string{},
+      body ? body->guid.to_string() : std::string{});
 }
 
 void World::adopt_document(std::unique_ptr<brep::Document> document,
                            Material material,
                            const brep::io::BodyMeshCache* cache) {
-  using namespace brep;
   if (!document) return;
 
   // Keep InputState / Selection / RenderCache; drop entities only.

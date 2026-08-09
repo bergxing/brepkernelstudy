@@ -1,9 +1,9 @@
 #pragma once
 
+#include "adapter/scene_adapter.hpp"
 #include "ecs/components.hpp"
 
 #include "brep/feat/feature.hpp"
-#include "brep/part.hpp"
 
 #include <QWidget>
 
@@ -19,13 +19,13 @@ class QEvent;
 
 namespace brep::viewer {
 
-/// Right-dock properties view: editable box L/W/H when a BoxFeature is selected.
+/// Right-dock properties view: editable box L/W/H via SceneAdapter.
 class PropertyPanel final : public QWidget {
   Q_OBJECT
  public:
   explicit PropertyPanel(QWidget* parent = nullptr);
 
-  void set_part(brep::Part* part) { part_ = part; }
+  void set_adapter(adapter::SceneAdapter* adapter) { adapter_ = adapter; }
 
   using ParamsChangedFn = std::function<void(brep::feat::FeatureId)>;
   void set_params_changed_callback(ParamsChangedFn cb) {
@@ -45,7 +45,7 @@ class PropertyPanel final : public QWidget {
   void on_dim_edited();
   void block_dim_signals(bool block);
 
-  brep::Part* part_{nullptr};
+  adapter::SceneAdapter* adapter_{nullptr};
   ParamsChangedFn on_params_changed_;
   brep::feat::FeatureId current_feature_{};
   bool updating_ui_{false};

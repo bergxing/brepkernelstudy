@@ -1,13 +1,16 @@
 #include "commands/tools/copy_tool.hpp"
 
+#include "adapter/scene_adapter.hpp"
 #include "commands/document_history.hpp"
 #include "commands/picking.hpp"
 #include "ecs/components.hpp"
 #include "ecs/systems.hpp"
 
-#include "brep/brep.hpp"
-#include "brep/feat/box_feature.hpp"
+#include "brep/builder.hpp"
 #include "brep/log.hpp"
+#include "brep/material.hpp"
+#include "brep/mesh.hpp"
+#include "brep/part.hpp"
 
 #include <QMouseEvent>
 #include <qnamespace.h>
@@ -69,42 +72,26 @@ BoxSpec translated(const BoxSpec& src, const Vector3d& offset) {
   return out;
 }
 
-const feat::BoxFeature* resolve_box_feature(brep::Part& part,
-                                            entt::registry& registry,
-                                            entt::entity entity) {
-  if (entity == entt::null || !registry.valid(entity)) return nullptr;
-
-  if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity)) {
-    if (auto* f =
-            part.features().find(feat::FeatureId{fref->feature_guid})) {
-      if (f->type_name() == "Box") {
-        return static_cast<const feat::BoxFeature*>(f);
-      }
-    }
-  }
-  if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
-    if (auto* f = part.features().find_by_body(body->guid)) {
-      if (f->type_name() == "Box") {
-        return static_cast<const feat::BoxFeature*>(f);
-      }
-    }
-  }
-  return nullptr;
-}
-
 std::vector<BoxSpec> collect_selected_box_specs(CommandContext& ctx) {
   std::vector<BoxSpec> specs;
   if (!ctx.world || !ctx.world->document()) return specs;
-  brep::Part* part = ctx.world->document()->main_part();
-  if (!part) return specs;
+  adapter::SceneAdapter scene(ctx.world->document());
+  if (!scene.main_part()) return specs;
 
   auto& registry = ctx.world->registry();
   auto view = registry.view<ecs::SelectedTag>();
   for (auto entity : view) {
-    const feat::BoxFeature* box =
-        resolve_box_feature(*part, registry, entity);
-    if (!box) continue;
-    specs.push_back(box->to_spec(part->parameters()));
+    Guid feature_guid{};
+    Guid body_guid{};
+    if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity)) {
+      feature_guid = fref->feature_guid;
+    }
+    if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
+      body_guid = body->guid;
+    }
+    if (auto spec = scene.box_spec_for(feature_guid, body_guid)) {
+      specs.push_back(*spec);
+    }
   }
   return specs;
 }
@@ -209,7 +196,8 @@ void CopyTool::commit_copies(CommandContext& ctx, const Point3d& place) {
     finished_ = true;
     return;
   }
-  Part* part = ctx.world->document()->main_part();
+  adapter::SceneAdapter scene(ctx.world->document());
+  Part* part = scene.main_part();
   if (!part) {
     result_ = CommandResult::failed(QStringLiteral("无零件"));
     finished_ = true;
@@ -231,23 +219,19 @@ void CopyTool::commit_copies(CommandContext& ctx, const Point3d& place) {
   int created = 0;
   for (const auto& src : sources_) {
     BoxSpec spec = translated(src, offset);
-    Body* body = part->add_box(spec);
+    Body* body = scene.add_box(spec);
     if (!body) continue;
 
     Guid feature_guid{};
-    if (const auto* feature = part->features().find_by_body(body->guid)) {
-      feature_guid = feature->id().guid;
-      feat::FeatureTransaction tx;
-      tx.kind = feat::TxKind::AppendFeature;
-      tx.feature = feature->id();
-      tx.feature_type = "Box";
-      tx.box_spec = spec;
-      part->feature_history().record(std::move(tx));
+    if (auto obj = scene.object_for_body(body->guid)) {
+      feature_guid = obj->feature_guid;
+      scene.record_append_feature(feat::FeatureId{feature_guid}, spec);
     }
 
+    auto mesh = scene.mesh_for_body(body->guid);
     ctx.world->create_body_renderable(body->name, body->guid,
-                                      tessellate_body(*body),
-                                      extract_edges(*body), material, Point3d{},
+                                      std::move(mesh.faces),
+                                      std::move(mesh.edges), material, Point3d{},
                                       feature_guid);
     ++created;
   }
@@ -273,9 +257,8 @@ void CopyTool::commit_copies(CommandContext& ctx, const Point3d& place) {
             [world, part_ptr, wood, undo_steps, session = ctx.session,
              redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
               if (!world || !part_ptr) return;
-              for (int i = 0; i < undo_steps; ++i) {
-                part_ptr->feature_history().undo(*part_ptr);
-              }
+              adapter::SceneAdapter scene_u(world->document());
+              scene_u.undo_feature(undo_steps);
               Material mat =
                   wood.empty() ? Material{} : make_wood_material(wood);
               world->sync_part_bodies(*part_ptr, std::move(mat));
@@ -287,9 +270,8 @@ void CopyTool::commit_copies(CommandContext& ctx, const Point3d& place) {
             [world, part_ptr, wood, undo_steps, session = ctx.session,
              redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
               if (!world || !part_ptr) return;
-              for (int i = 0; i < undo_steps; ++i) {
-                part_ptr->feature_history().redo(*part_ptr);
-              }
+              adapter::SceneAdapter scene_r(world->document());
+              scene_r.redo_feature(undo_steps);
               Material mat =
                   wood.empty() ? Material{} : make_wood_material(wood);
               world->sync_part_bodies(*part_ptr, std::move(mat));

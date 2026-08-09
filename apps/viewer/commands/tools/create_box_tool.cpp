@@ -1,10 +1,14 @@
 #include "commands/tools/create_box_tool.hpp"
 
+#include "adapter/scene_adapter.hpp"
 #include "commands/document_history.hpp"
 #include "commands/picking.hpp"
 
-#include "brep/brep.hpp"
+#include "brep/builder.hpp"
 #include "brep/log.hpp"
+#include "brep/material.hpp"
+#include "brep/mesh.hpp"
+#include "brep/part.hpp"
 
 #include <QMouseEvent>
 
@@ -254,7 +258,8 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height) {
   using namespace brep;
   clear_preview(ctx);
 
-  Part* part = ctx.world->document()->main_part();
+  adapter::SceneAdapter scene(ctx.world->document());
+  Part* part = scene.main_part();
   if (!part) {
     result_ = CommandResult::failed(QStringLiteral("当前没有 Part"));
     finished_ = true;
@@ -283,7 +288,7 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height) {
       .max = Point3d{maxx, maxy, maxz},
       .name = "box",
   };
-  Body* body = part->add_box(spec);
+  Body* body = scene.add_box(spec);
   if (!body) {
     result_ = CommandResult::failed(QStringLiteral("创建盒子失败（再生错误）"));
     finished_ = true;
@@ -291,22 +296,18 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height) {
   }
 
   Guid feature_guid{};
-  if (const auto* feature = part->features().find_by_body(body->guid)) {
-    feature_guid = feature->id().guid;
-    feat::FeatureTransaction tx;
-    tx.kind = feat::TxKind::AppendFeature;
-    tx.feature = feature->id();
-    tx.feature_type = "Box";
-    tx.box_spec = spec;
-    part->feature_history().record(std::move(tx));
+  if (auto obj = scene.object_for_body(body->guid)) {
+    feature_guid = obj->feature_guid;
+    scene.record_append_feature(feat::FeatureId{feature_guid}, spec);
   }
 
   Material material = ctx.wood_albedo_path.empty()
                           ? Material{}
                           : make_wood_material(ctx.wood_albedo_path);
+  auto mesh = scene.mesh_for_body(body->guid);
   ctx.world->create_body_renderable(body->name, body->guid,
-                                    tessellate_body(*body),
-                                    extract_edges(*body), material, Point3d{},
+                                    std::move(mesh.faces),
+                                    std::move(mesh.edges), material, Point3d{},
                                     feature_guid);
   if (ctx.request_redraw) ctx.request_redraw();
   if (ctx.session) ctx.session->mark_dirty();
@@ -323,7 +324,8 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height) {
             [world, part_ptr, wood, session = ctx.session,
              redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
               if (!world || !part_ptr) return;
-              part_ptr->feature_history().undo(*part_ptr);
+              adapter::SceneAdapter scene_u(world->document());
+              scene_u.undo_feature();
               Material material =
                   wood.empty() ? Material{} : make_wood_material(wood);
               world->sync_part_bodies(*part_ptr, std::move(material));
@@ -335,7 +337,8 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height) {
             [world, part_ptr, wood, session = ctx.session,
              redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
               if (!world || !part_ptr) return;
-              part_ptr->feature_history().redo(*part_ptr);
+              adapter::SceneAdapter scene_r(world->document());
+              scene_r.redo_feature();
               Material material =
                   wood.empty() ? Material{} : make_wood_material(wood);
               world->sync_part_bodies(*part_ptr, std::move(material));

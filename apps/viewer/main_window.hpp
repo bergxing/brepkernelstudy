@@ -1,5 +1,6 @@
 #pragma once
 
+#include "adapter/scene_adapter.hpp"
 #include "commands/command_manager.hpp"
 #include "commands/command_registry.hpp"
 #include "document.hpp"
@@ -106,6 +107,7 @@ class MainWindow final : public QMainWindow {
 
   DocumentSession document_;
   ecs::World world_;
+  adapter::SceneAdapter scene_adapter_;
   commands::CommandRegistry commands_;
   commands::CommandManager command_manager_;
   std::unique_ptr<QVulkanInstance> vulkan_instance_;

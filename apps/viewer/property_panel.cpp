@@ -1,8 +1,5 @@
 #include "property_panel.hpp"
 
-#include "brep/feat/box_feature.hpp"
-#include "brep/math.hpp"
-
 #include <QAbstractSpinBox>
 #include <QDoubleSpinBox>
 #include <QEvent>
@@ -11,8 +8,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QVBoxLayout>
-
-#include <cmath>
 
 namespace brep::viewer {
 namespace {
@@ -164,29 +159,22 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
   }
 
   current_feature_ = {};
-  const feat::BoxFeature* box = nullptr;
-  if (part_) {
+  std::optional<adapter::SceneObject> obj;
+  if (adapter_) {
     if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity)) {
       current_feature_ = feat::FeatureId{fref->feature_guid};
-      if (auto* f = part_->features().find(current_feature_)) {
-        if (f->type_name() == "Box") {
-          box = static_cast<const feat::BoxFeature*>(f);
-        }
-      }
+      obj = adapter_->object_for_feature(current_feature_);
     } else if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
-      if (auto* f = part_->features().find_by_body(body->guid)) {
-        current_feature_ = f->id();
-        if (f->type_name() == "Box") {
-          box = static_cast<const feat::BoxFeature*>(f);
-        }
-      }
+      obj = adapter_->object_for_body(body->guid);
+      if (obj) current_feature_ = feat::FeatureId{obj->feature_guid};
     }
   }
 
-  type_edit_->setText(box ? QStringLiteral("BoxFeature")
-                          : (registry.all_of<ecs::BodyRef>(entity)
-                                 ? QStringLiteral("Body")
-                                 : QStringLiteral("Renderable")));
+  const bool is_box = obj && obj->box.has_value();
+  type_edit_->setText(is_box ? QStringLiteral("BoxFeature")
+                             : (registry.all_of<ecs::BodyRef>(entity)
+                                    ? QStringLiteral("Body")
+                                    : QStringLiteral("Renderable")));
 
   if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
     guid_edit_->setText(QString::fromStdString(body->guid.to_string()));
@@ -195,11 +183,10 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
   }
 
   block_dim_signals(true);
-  if (box) {
-    const auto& params = part_->parameters();
-    length_spin_->setValue(params.get(box->length_id()).value_or(0.0));
-    width_spin_->setValue(params.get(box->width_id()).value_or(0.0));
-    height_spin_->setValue(params.get(box->height_id()).value_or(0.0));
+  if (is_box) {
+    length_spin_->setValue(obj->box->length);
+    width_spin_->setValue(obj->box->width);
+    height_spin_->setValue(obj->box->height);
     length_spin_->setEnabled(true);
     width_spin_->setEnabled(true);
     height_spin_->setEnabled(true);
@@ -218,15 +205,13 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
 }
 
 void PropertyPanel::on_dim_edited() {
-  if (updating_ui_ || !part_ || current_feature_.is_nil()) return;
-  auto* f = part_->features().find(current_feature_);
-  if (!f || f->type_name() != "Box") return;
+  if (updating_ui_ || !adapter_ || current_feature_.is_nil()) return;
 
   updating_ui_ = true;
-  part_->edit_feature_params(current_feature_,
-                             {{"Length", length_spin_->value()},
-                              {"Width", width_spin_->value()},
-                              {"Height", height_spin_->value()}});
+  adapter_->set_box_params(current_feature_,
+                           adapter::BoxParams{.length = length_spin_->value(),
+                                              .width = width_spin_->value(),
+                                              .height = height_spin_->value()});
   updating_ui_ = false;
 
   if (on_params_changed_) on_params_changed_(current_feature_);

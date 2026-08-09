@@ -5,8 +5,12 @@
 #include "commands/tools/create_box_tool.hpp"
 #include "ecs/systems.hpp"
 
-#include "brep/brep.hpp"
+#include "adapter/document_service.hpp"
+#include "adapter/scene_adapter.hpp"
+#include "brep/builder.hpp"
 #include "brep/log.hpp"
+#include "brep/material.hpp"
+#include "brep/part.hpp"
 #include "ecs/components.hpp"
 #include "io/dxf_export.hpp"
 
@@ -85,7 +89,8 @@ class SaveXlCommand final : public ICommand {
       }
     }
 
-    auto result = brep::io::save_xl(*ctx.world->document(), path.toStdString());
+    auto result =
+        adapter::DocumentService{}.save(*ctx.world->document(), path.toStdString());
     if (!result.ok) {
       const QString err = QString::fromStdString(result.error);
       if (ctx.parent_widget) {
@@ -252,34 +257,34 @@ class CreateBoxInstantCommand final : public ICommand {
 
   CommandResult execute(CommandContext& ctx) override {
     using namespace brep;
-    Part* part = ctx.world->document()->main_part();
+    adapter::SceneAdapter scene(ctx.world->document());
+    Part* part = scene.main_part();
+    if (!part) {
+      return CommandResult::failed(QStringLiteral("当前没有 Part"));
+    }
     BoxSpec spec{
         .min = Point3d{0, 0, 0},
         .max = Point3d{2, 1, 3},
         .name = "box",
     };
-    Body* body = part->add_box(spec);
+    Body* body = scene.add_box(spec);
     if (!body) {
       return CommandResult::failed(QStringLiteral("创建盒子失败"));
     }
 
     Guid feature_guid{};
-    if (const auto* feature = part->features().find_by_body(body->guid)) {
-      feature_guid = feature->id().guid;
-      feat::FeatureTransaction tx;
-      tx.kind = feat::TxKind::AppendFeature;
-      tx.feature = feature->id();
-      tx.feature_type = "Box";
-      tx.box_spec = spec;
-      part->feature_history().record(std::move(tx));
+    if (auto obj = scene.object_for_body(body->guid)) {
+      feature_guid = obj->feature_guid;
+      scene.record_append_feature(feat::FeatureId{feature_guid}, spec);
     }
 
     Material material = ctx.wood_albedo_path.empty()
                             ? Material{}
                             : make_wood_material(ctx.wood_albedo_path);
+    auto mesh = scene.mesh_for_body(body->guid);
     ctx.world->create_body_renderable(body->name, body->guid,
-                                      tessellate_body(*body),
-                                      extract_edges(*body), material,
+                                      std::move(mesh.faces),
+                                      std::move(mesh.edges), material,
                                       Point3d{}, feature_guid);
     if (ctx.session) ctx.session->mark_dirty();
     if (ctx.request_redraw) ctx.request_redraw();
@@ -294,7 +299,8 @@ class CreateBoxInstantCommand final : public ICommand {
               [world, part_ptr, wood, session = ctx.session,
                redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
                 if (!world || !part_ptr) return;
-                part_ptr->feature_history().undo(*part_ptr);
+                adapter::SceneAdapter scene_u(world->document());
+                scene_u.undo_feature();
                 Material mat =
                     wood.empty() ? Material{} : make_wood_material(wood);
                 world->sync_part_bodies(*part_ptr, std::move(mat));
@@ -306,7 +312,8 @@ class CreateBoxInstantCommand final : public ICommand {
               [world, part_ptr, wood, session = ctx.session,
                redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
                 if (!world || !part_ptr) return;
-                part_ptr->feature_history().redo(*part_ptr);
+                adapter::SceneAdapter scene_r(world->document());
+                scene_r.redo_feature();
                 Material mat =
                     wood.empty() ? Material{} : make_wood_material(wood);
                 world->sync_part_bodies(*part_ptr, std::move(mat));
@@ -405,8 +412,9 @@ CommandResult open_xl_file(CommandContext& ctx, const QString& path) {
     return CommandResult::failed(QStringLiteral("路径为空"));
   }
 
-  auto loaded = brep::io::load_xl(path.toStdString());
-  if (!loaded.ok()) {
+  adapter::DocumentService docs;
+  auto loaded = docs.load(path.toStdString());
+  if (!loaded.ok) {
     const QString err = QString::fromStdString(loaded.error);
     if (ctx.parent_widget) {
       QMessageBox::critical(ctx.parent_widget, QStringLiteral("打开失败"), err);
@@ -422,7 +430,7 @@ CommandResult open_xl_file(CommandContext& ctx, const QString& path) {
   brep::io::BodyMeshCache mesh_cache;
   const brep::io::BodyMeshCache* cache_ptr = nullptr;
   auto cache_loaded =
-      brep::io::load_bks_cache(path.toStdString(), loaded.document->guid);
+      docs.load_mesh_cache(path.toStdString(), loaded.document->guid);
   if (cache_loaded.ok) {
     mesh_cache = std::move(cache_loaded.cache);
     cache_ptr = &mesh_cache;

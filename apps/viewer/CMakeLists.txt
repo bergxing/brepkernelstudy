@@ -74,9 +74,17 @@ function(brep_viewer_configure_lib target)
 endfunction()
 
 # ---------------------------------------------------------------------------
-# Phase 2: viewer static libraries (dependency: commands/scene/render → ui → exe)
+# Phase 2/3: viewer static libraries
 # Mutual refs (scene↔commands, scene↔render) resolve at the final link.
 # ---------------------------------------------------------------------------
+
+add_library(viewer_adapter STATIC
+  adapter/scene_adapter.cpp
+  adapter/document_service.cpp
+)
+brep_viewer_configure_lib(viewer_adapter)
+set_target_properties(viewer_adapter PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+target_link_libraries(viewer_adapter PUBLIC brep)
 
 add_library(viewer_commands STATIC
   commands/command_registry.cpp
@@ -90,14 +98,14 @@ add_library(viewer_commands STATIC
   io/dxf_export.cpp
 )
 brep_viewer_configure_lib(viewer_commands)
-target_link_libraries(viewer_commands PUBLIC brep EnTT::EnTT Qt6::Widgets)
+target_link_libraries(viewer_commands PUBLIC viewer_adapter brep EnTT::EnTT Qt6::Widgets)
 
 add_library(viewer_scene STATIC
   ecs/world.cpp
   ecs/systems.cpp
 )
 brep_viewer_configure_lib(viewer_scene)
-target_link_libraries(viewer_scene PUBLIC brep EnTT::EnTT Qt6::Gui Vulkan::Headers)
+target_link_libraries(viewer_scene PUBLIC viewer_adapter brep EnTT::EnTT Qt6::Gui Vulkan::Headers)
 
 add_library(viewer_render STATIC
   vulkan_window.cpp
@@ -134,6 +142,7 @@ add_library(viewer_ui STATIC
 )
 brep_viewer_configure_lib(viewer_ui)
 target_link_libraries(viewer_ui PUBLIC
+  viewer_adapter
   viewer_commands
   viewer_scene
   viewer_render
@@ -142,6 +151,11 @@ target_link_libraries(viewer_ui PUBLIC
   Qt6::Widgets
   Qt6::Gui
 )
+
+# Phase 3 adapter unit tests (GoogleTest from root FetchContent).
+if(TARGET GTest::gtest_main)
+  add_subdirectory(tests)
+endif()
 
 # ---------------------------------------------------------------------------
 # Thin executable

@@ -1,6 +1,8 @@
 #include "main_window.hpp"
 
-#include "brep/brep.hpp"
+#include "adapter/scene_adapter.hpp"
+#include "brep/material.hpp"
+#include "brep/part.hpp"
 #include "commands/document_history.hpp"
 #include "ecs/components.hpp"
 #include "ecs/systems.hpp"
@@ -22,14 +24,12 @@ void MainWindow::setup_property_dock() {
   property_dock_->setMinimumWidth(240);
   addDockWidget(Qt::RightDockWidgetArea, property_dock_);
 
-  if (auto* part = world_.document() ? world_.document()->main_part()
-                                     : nullptr) {
-    property_panel_->set_part(part);
-  }
+  scene_adapter_.set_document(world_.document());
+  property_panel_->set_adapter(&scene_adapter_);
   property_panel_->set_params_changed_callback(
       [this](brep::feat::FeatureId /*id*/) {
-        brep::Part* part =
-            world_.document() ? world_.document()->main_part() : nullptr;
+        scene_adapter_.set_document(world_.document());
+        brep::Part* part = scene_adapter_.main_part();
         if (!part) return;
         const Material material = wood_albedo_path().isEmpty()
                                       ? Material{}
@@ -46,14 +46,13 @@ void MainWindow::setup_property_dock() {
             .label = QStringLiteral("编辑参数"),
             .undo =
                 [this, wood] {
-                  brep::Part* p = world_.document()
-                                      ? world_.document()->main_part()
-                                      : nullptr;
-                  if (!p) return;
-                  p->feature_history().undo(*p);
-                  Material mat =
-                      wood.empty() ? Material{} : make_wood_material(wood);
-                  world_.sync_part_bodies(*p, std::move(mat));
+                  scene_adapter_.set_document(world_.document());
+                  scene_adapter_.undo_feature();
+                  if (auto* p = scene_adapter_.main_part()) {
+                    Material mat =
+                        wood.empty() ? Material{} : make_wood_material(wood);
+                    world_.sync_part_bodies(*p, std::move(mat));
+                  }
                   request_all_views_update();
                   update_property_panel(
                       ecs::selected_entity(world_.registry()));
@@ -61,14 +60,13 @@ void MainWindow::setup_property_dock() {
                 },
             .redo =
                 [this, wood] {
-                  brep::Part* p = world_.document()
-                                      ? world_.document()->main_part()
-                                      : nullptr;
-                  if (!p) return;
-                  p->feature_history().redo(*p);
-                  Material mat =
-                      wood.empty() ? Material{} : make_wood_material(wood);
-                  world_.sync_part_bodies(*p, std::move(mat));
+                  scene_adapter_.set_document(world_.document());
+                  scene_adapter_.redo_feature();
+                  if (auto* p = scene_adapter_.main_part()) {
+                    Material mat =
+                        wood.empty() ? Material{} : make_wood_material(wood);
+                    world_.sync_part_bodies(*p, std::move(mat));
+                  }
                   request_all_views_update();
                   update_property_panel(
                       ecs::selected_entity(world_.registry()));
@@ -89,10 +87,8 @@ void MainWindow::setup_property_dock() {
 
 void MainWindow::update_property_panel(entt::entity entity) {
   if (!property_panel_) return;
-  if (auto* part = world_.document() ? world_.document()->main_part()
-                                     : nullptr) {
-    property_panel_->set_part(part);
-  }
+  scene_adapter_.set_document(world_.document());
+  property_panel_->set_adapter(&scene_adapter_);
   property_panel_->show_entity(world_.registry(), entity);
 }
 
