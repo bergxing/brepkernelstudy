@@ -321,7 +321,12 @@ bool CopyTool::on_mouse_press(CommandContext& ctx, float x, float y,
 }
 
 void CopyTool::on_mouse_move(CommandContext& ctx, float x, float y) {
-  if (step_ == 2) update_preview(ctx, x, y);
+  if (step_ == 1) {
+    Point3d hover;
+    (void)pick_ground(ctx, x, y, hover);
+  } else if (step_ == 2) {
+    update_preview(ctx, x, y);
+  }
 }
 
 bool CopyTool::on_key_press(CommandContext& ctx, int key) {

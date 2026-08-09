@@ -42,6 +42,14 @@ void push_polyline(EdgeMesh& mesh, const Point3d& point,
 EdgeMesh make_snap_marker(SnapKind kind, const Point3d& point) {
   EdgeMesh mesh;
   const double r = kMarkerRadius;
+  if (kind != SnapKind::None && kind != SnapKind::Workplane) {
+    push_segment(mesh, {point.x() - r, point.y(), point.z()},
+                 {point.x() + r, point.y(), point.z()});
+    push_segment(mesh, {point.x(), point.y() - r, point.z()},
+                 {point.x(), point.y() + r, point.z()});
+    push_segment(mesh, {point.x(), point.y(), point.z() - r},
+                 {point.x(), point.y(), point.z() + r});
+  }
   switch (kind) {
     case SnapKind::Endpoint:
       push_polyline(mesh, point, {{-r, -r}, {r, -r}, {r, r}, {-r, r}},

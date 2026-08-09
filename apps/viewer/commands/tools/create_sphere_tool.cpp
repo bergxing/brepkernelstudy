@@ -290,7 +290,12 @@ bool CreateSphereTool::on_mouse_press(CommandContext& ctx, float x, float y,
 }
 
 void CreateSphereTool::on_mouse_move(CommandContext& ctx, float x, float y) {
-  if (step_ == 1) update_preview(ctx, x, y);
+  if (step_ == 0) {
+    Point3d hover;
+    (void)pick_point(ctx, x, y, hover);
+  } else if (step_ == 1) {
+    update_preview(ctx, x, y);
+  }
 }
 
 void CreateSphereTool::on_cancel(CommandContext& ctx) {

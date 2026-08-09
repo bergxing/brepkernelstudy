@@ -33,6 +33,7 @@ class AccuSnap {
  public:
   [[nodiscard]] static PickResult resolve(CommandContext& ctx, float sx,
                                           float sy);
+  static void clear_feedback(CommandContext& ctx);
 };
 
 }  // namespace brep::viewer::commands

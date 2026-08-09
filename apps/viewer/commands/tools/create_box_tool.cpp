@@ -397,6 +397,7 @@ bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
     if (ctx.snap_session) ctx.snap_session->last_point = hit;
     corner_b_ = hit;
     step_ = 2;
+    AccuSnap::clear_feedback(ctx);
     update_preview(ctx, x, y);
     if (ctx.report_status) ctx.report_status(prompt());
     return true;
@@ -417,7 +418,10 @@ bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
 }
 
 void CreateBoxTool::on_mouse_move(CommandContext& ctx, float x, float y) {
-  if (step_ == 1 || step_ == 2) {
+  if (step_ == 0) {
+    Point3d hover;
+    (void)pick_ground(ctx, x, y, hover);
+  } else if (step_ == 1 || step_ == 2) {
     update_preview(ctx, x, y);
   }
 }

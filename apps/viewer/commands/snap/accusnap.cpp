@@ -23,6 +23,12 @@ constexpr std::uint32_t kKernelKinds =
     static_cast<std::uint32_t>(SnapKind::Perpendicular) |
     static_cast<std::uint32_t>(SnapKind::Nearest);
 
+void clear_snap_feedback(CommandContext& ctx) {
+  if (ctx.snap_session) ctx.snap_session->active_snap.reset();
+  if (ctx.clear_snap_overlay) ctx.clear_snap_overlay();
+  if (ctx.refresh_cursor_tip) ctx.refresh_cursor_tip();
+}
+
 std::uint32_t effective_kernel_kinds(
     const SnapSettings& settings,
     const std::optional<SnapKind>& override_kind) {
@@ -35,18 +41,14 @@ std::uint32_t effective_kernel_kinds(
 
 PickResult finish_resolve(CommandContext& ctx, PickResult result) {
   const bool show_snap = result.snapped && result.kind != SnapKind::Workplane;
-  if (ctx.snap_session) {
-    if (show_snap) {
-      ctx.snap_session->active_snap = result.kind;
-    } else {
-      ctx.snap_session->active_snap.reset();
-    }
+  if (!show_snap) {
+    clear_snap_feedback(ctx);
+    return result;
   }
 
-  if (show_snap && ctx.set_snap_overlay) {
+  if (ctx.snap_session) ctx.snap_session->active_snap = result.kind;
+  if (ctx.set_snap_overlay) {
     ctx.set_snap_overlay(make_snap_marker(result.kind, result.point));
-  } else if (ctx.clear_snap_overlay) {
-    ctx.clear_snap_overlay();
   }
   if (ctx.refresh_cursor_tip) ctx.refresh_cursor_tip();
   return result;
@@ -189,6 +191,10 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy) {
                                 .candidate = std::nullopt});
   }
   return finish_resolve(ctx, {});
+}
+
+void AccuSnap::clear_feedback(CommandContext& ctx) {
+  clear_snap_feedback(ctx);
 }
 
 }  // namespace brep::viewer::commands
