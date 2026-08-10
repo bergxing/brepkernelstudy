@@ -503,10 +503,11 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T2.0.1 布尔类型与求值器骨架
 
-- [ ] 定义 `BooleanOp`、`BooleanContext`、`BooleanResult`、`IBooleanEvaluator`
-- [ ] 目录骨架：`kernel/include/brep/bool/`、`kernel/src/bool/`
-- [ ] **测试：** 空壳可链接；不支持组合返回明确失败
+- [x] 定义 `BooleanOp`、`BooleanContext`、`BooleanResult`、`IBooleanEvaluator`
+- [x] 目录骨架：`kernel/include/brep/bool/`、`kernel/src/bool/`
+- [x] **测试：** 空壳可链接；不支持组合返回明确失败
 
+**主要文件：** `brep/bool/*`、`src/bool/evaluator_stub.cpp`、`brep_test_boolean_skeleton`
 #### T2.0.2 `BooleanFeature` + 抑制操作体
 
 - [ ] `BooleanFeature`：`op`、`target_feature_id`、`tool_feature_id`

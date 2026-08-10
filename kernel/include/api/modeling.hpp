@@ -17,3 +17,4 @@
 #include "brep/part.hpp"
 #include "brep/sketch/sketch.hpp"
 #include "brep/solve2d/solver.hpp"
+#include "brep/bool/boolean.hpp"

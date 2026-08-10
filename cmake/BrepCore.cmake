@@ -17,6 +17,7 @@ add_library(brep_core ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/guid.cpp
   ${BREP_KERNEL_DIR}/src/object_registry.cpp
   ${BREP_KERNEL_DIR}/src/snap/snap_query.cpp
+  ${BREP_KERNEL_DIR}/src/bool/evaluator_stub.cpp
 )
 brep_kernel_include_dirs(brep_core)
 target_link_libraries(brep_core PUBLIC brep_eigen brep_boost_uuid brep_spdlog)
