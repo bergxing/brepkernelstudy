@@ -467,10 +467,10 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T1.3 多曲面三角化 + 默认偏差
 
-- [ ] 引入 `TessellationOptions`（§A3 默认表）
-- [ ] `tessellate_body`：Plane 保持扇形；Sphere 按偏差 UV/细分，法向取自曲面
-- [ ] 遵守 min/max 经纬段数
-- [ ] **测试：** 默认偏差下网格规模合理；法向与解析法向方向一致（点抽样）
+- [x] 引入 `TessellationOptions`（§A3 默认表）
+- [x] `tessellate_body`：Plane 保持扇形；Sphere 按偏差 UV/细分，法向取自曲面
+- [x] 遵守 min/max 经纬段数
+- [x] **测试：** 默认偏差下网格规模合理；法向与解析法向方向一致（点抽样）
 
 **主要文件：** `kernel/include/brep/mesh.hpp`、`kernel/src/mesh.cpp`、`api/mesh.hpp`
 

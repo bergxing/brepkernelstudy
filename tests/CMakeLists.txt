@@ -29,3 +29,11 @@ gtest_discover_tests(brep_test_make_sphere
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_make_sphere."
 )
+
+add_executable(brep_test_tessellate_sphere kernel/test_tessellate_sphere.cpp)
+target_link_libraries(brep_test_tessellate_sphere PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_tessellate_sphere
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_tessellate_sphere>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_tessellate_sphere."
+)
