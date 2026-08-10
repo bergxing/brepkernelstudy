@@ -120,5 +120,76 @@ TEST(SceneAdapter, BoxSpecForFeature) {
   EXPECT_DOUBLE_EQ(spec->max.y(), 4.0);
 }
 
+TEST(SceneAdapter, AddSphereMeshAndObject) {
+  auto doc = SceneAdapter::create_blank();
+  SceneAdapter scene(doc.get());
+
+  Body* body = scene.add_sphere(SphereSpec{
+      .center = Point3d{1.0, 2.0, 3.0},
+      .radius = 2.5,
+      .name = "sphere",
+  });
+  ASSERT_NE(body, nullptr);
+
+  auto obj = scene.object_for_body(body->guid);
+  ASSERT_TRUE(obj.has_value());
+  EXPECT_EQ(obj->type_name, "Sphere");
+  EXPECT_EQ(obj->body_guid, body->guid);
+  ASSERT_TRUE(obj->sphere.has_value());
+  EXPECT_DOUBLE_EQ(obj->sphere->radius, 2.5);
+
+  auto mesh = scene.mesh_for_body(body->guid);
+  EXPECT_FALSE(mesh.faces.vertices.empty());
+  EXPECT_FALSE(mesh.faces.indices.empty());
+  // Analytic sphere seam is hidden by default (T1.4).
+  EXPECT_TRUE(mesh.edges.positions.empty());
+
+  // Sample a mesh normal: should be outward from center.
+  const MeshVertex& mv = mesh.faces.vertices.front();
+  EXPECT_NEAR((mv.position - Point3d{1.0, 2.0, 3.0}).norm(), 2.5, 1e-5);
+  EXPECT_GT(mv.normal.dot(mv.position - Point3d{1.0, 2.0, 3.0}), 0.0);
+}
+
+TEST(SceneAdapter, SetSphereParamsAndUndo) {
+  auto doc = SceneAdapter::create_blank();
+  SceneAdapter scene(doc.get());
+
+  Body* body = scene.add_sphere(SphereSpec{
+      .center = Point3d{0.0, 0.0, 0.0},
+      .radius = 1.0,
+      .name = "sphere",
+  });
+  ASSERT_NE(body, nullptr);
+  const Guid body_guid = body->guid;
+  auto obj = scene.object_for_body(body_guid);
+  ASSERT_TRUE(obj.has_value());
+  scene.record_append_sphere(feat::FeatureId{obj->feature_guid},
+                             SphereSpec{.center = {0, 0, 0},
+                                        .radius = 1.0,
+                                        .name = "sphere"});
+
+  ASSERT_TRUE(scene.set_sphere_params(feat::FeatureId{obj->feature_guid},
+                                      SphereParams{3.5}));
+  auto params = scene.sphere_params(feat::FeatureId{obj->feature_guid});
+  ASSERT_TRUE(params.has_value());
+  EXPECT_DOUBLE_EQ(params->radius, 3.5);
+
+  auto mesh = scene.mesh_for_body(body_guid);
+  ASSERT_FALSE(mesh.faces.vertices.empty());
+  EXPECT_NEAR((mesh.faces.vertices.front().position - Point3d{0, 0, 0}).norm(),
+              3.5, 1e-4);
+
+  scene.undo_feature();
+  params = scene.sphere_params(feat::FeatureId{obj->feature_guid});
+  ASSERT_TRUE(params.has_value());
+  EXPECT_DOUBLE_EQ(params->radius, 1.0);
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 1u);
+
+  scene.undo_feature();
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 0u);
+  scene.redo_feature();
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 1u);
+}
+
 }  // namespace
 }  // namespace brep::viewer::adapter

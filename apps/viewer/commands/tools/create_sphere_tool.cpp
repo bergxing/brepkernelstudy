@@ -64,55 +64,14 @@ EdgeMesh make_sphere_wire(const Point3d& c, double r, int seg = 32) {
   return mesh;
 }
 
-void push_tri(TriangleMesh& mesh, const Point3d& a, const Point3d& b,
-              const Point3d& c, const Vector3d& n) {
-  const std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
-  mesh.vertices.push_back(MeshVertex{a, n, {}});
-  mesh.vertices.push_back(MeshVertex{b, n, {}});
-  mesh.vertices.push_back(MeshVertex{c, n, {}});
-  mesh.indices.push_back(base);
-  mesh.indices.push_back(base + 1);
-  mesh.indices.push_back(base + 2);
-}
-
-TriangleMesh make_sphere_solid(const Point3d& center, double r, int slices = 16,
-                               int stacks = 12) {
-  TriangleMesh mesh;
-  auto pos = [&](int i, int j) {
-    const double v = static_cast<double>(i) / stacks;
-    const double u = static_cast<double>(j) / slices;
-    const double phi = v * std::numbers::pi;
-    const double theta = u * 2.0 * std::numbers::pi;
-    const double y = std::cos(phi);
-    const double rr = std::sin(phi);
-    return Point3d{center.x() + r * rr * std::cos(theta),
-                   center.y() + r * y,
-                   center.z() + r * rr * std::sin(theta)};
-  };
-  for (int i = 0; i < stacks; ++i) {
-    for (int j = 0; j < slices; ++j) {
-      const Point3d p00 = pos(i, j);
-      const Point3d p10 = pos(i + 1, j);
-      const Point3d p01 = pos(i, j + 1);
-      const Point3d p11 = pos(i + 1, j + 1);
-      auto add = [&](const Point3d& a, const Point3d& b, const Point3d& c) {
-        Vector3d n = (b - a).cross(c - a);
-        if (n.norm() < 1e-14) return;
-        n = n.normalized();
-        if (n.dot(a - center) < 0.0) n = -n;
-        push_tri(mesh, a, b, c, n);
-      };
-      if (i == 0) {
-        add(p00, p10, p11);
-      } else if (i + 1 == stacks) {
-        add(p00, p10, p01);
-      } else {
-        add(p00, p10, p11);
-        add(p00, p11, p01);
-      }
-    }
-  }
-  return mesh;
+/// Preview solid uses the same analytic body + deflection tessellation as commit.
+TriangleMesh make_sphere_solid(const Point3d& center, double r) {
+  if (!(r > 0.0)) return {};
+  Model model;
+  Body* body = make_sphere(model, SphereSpec{.center = center, .radius = r,
+                                             .name = "preview"});
+  if (!body) return {};
+  return tessellate_body(*body, TessellationOptions::for_radius(r));
 }
 
 }  // namespace

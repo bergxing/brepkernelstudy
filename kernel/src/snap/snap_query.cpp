@@ -138,6 +138,8 @@ void append_sphere_center(std::vector<SnapCandidate>& candidates,
                           const Body& body,
                           const std::unordered_set<Vertex*>& vertices,
                           std::size_t face_count, double tolerance) {
+  // Legacy fallback for pre-analytic UV triangulated spheres (many planar
+  // faces). Analytic spheres (face_count == 1) use SurfaceKind::Sphere above.
   if (face_count <= 6 || vertices.size() < 4) return;
 
   std::vector<Point3d> positions;

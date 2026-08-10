@@ -1,7 +1,7 @@
 # 解析球面 + 通用 B-Rep 布尔 —— 技术实现方案
 
 日期：2026-08-10  
-状态：Phase 0 已决议（待决事项已关闭）  
+状态：Phase 0 已决议；**Phase 1（解析球 + 显示细分）已完成**  
 分支：`cursor/modern-cpp-brep-kernel`
 
 ## 目标
@@ -164,10 +164,10 @@ Viewer 继续上传 `TriangleMesh`，使用**真实曲面法向**。`SphereSpec.
 
 ### A6. 部分 A 验收
 
-- 默认偏差下，正交 / 透视中球体观感光滑
-- 放大后通过更紧公差仍可接受
-- XL 往返 + 改半径能再生解析球
-- 流形校验通过
+- [x] 默认偏差下，正交 / 透视中球体观感光滑（偏差 UV 网格 + 解析法向；seam 默认隐藏）
+- [x] 放大后通过更紧公差仍可接受（`TessellationOptions` min/max 段数 + `for_radius`）
+- [x] XL 往返 + 改半径能再生解析球（`MakeSphere.XlRoundtrip*` / `SphereFeatureRebuild*` / `SceneAdapter.SetSphere*`）
+- [x] 流形校验通过（`validate_body` on analytic sphere）
 
 ---
 
@@ -300,13 +300,13 @@ class IBooleanEvaluator {
 
 ### Phase 1 —— 解析球 + 三角化（部分 A）
 
-1. `SphereSurface` + `Model` 工厂 / 类型
-2. 重写 `make_sphere` 为解析 B-Rep
-3. 扩展 `tessellate_body`（偏差选项 + 光滑法向）
-4. 迁移 viewer / 创建球工具（`SphereSpec` API 尽量不破坏）
-5. 测试：几何求值、网格密度、校验、XL、视觉冒烟
+1. [x] `SphereSurface` + `Model` 工厂 / 类型
+2. [x] 重写 `make_sphere` 为解析 B-Rep
+3. [x] 扩展 `tessellate_body`（偏差选项 + 光滑法向）
+4. [x] 迁移 viewer / 创建球工具（`SphereSpec` API 尽量不破坏）
+5. [x] 测试：几何求值、网格密度、校验、XL、视觉冒烟（自动化代理 + viewer_adapter）
 
-**退出标准：** Viewer 中球体观感接近光滑 CAD 球。
+**退出标准：** Viewer 中球体观感接近光滑 CAD 球。 — **已满足（T1.1～T1.6）**
 
 ### Phase 2 —— 布尔脚手架 + 平面实体布尔（部分 B.1）
 
@@ -425,7 +425,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 | 阶段 | 任务 ID | 主题 | 出口 |
 |------|---------|------|------|
 | 0 | T0 | 方案冻结 | 已完成 |
-| 1 | T1.1～T1.6 | 解析球 + 显示细分 | 光滑球可用 |
+| 1 | T1.1～T1.6 | 解析球 + 显示细分 | **已完成** — 光滑球可用 |
 | 2.0 | T2.0.1～T2.0.7 | 布尔特征 + 盒布尔 | 盒并/减/交真 B-Rep |
 | 2.x | T2.x.1～T2.x.3 | Inner loop + 拉伸孔 | 面可带内环 |
 | 2.1 | T2.1.1～T2.1.3 | 平面拉伸参与布尔 | 拉伸 Cut/并可用 |
@@ -484,18 +484,19 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T1.5 Viewer / 工具 / 捕捉迁移
 
-- [ ] 创建球工具、同步、属性面板仍用 `SphereSpec`（半径/球心）
-- [ ] 圆心捕捉继续走解析球心（`SphereFeature` / `SphereSurface`）
-- [ ] **验收：** 交互创球、改半径、AccuSnap 圆心正常
+- [x] 创建球工具、同步、属性面板仍用 `SphereSpec`（半径/球心）
+- [x] 圆心捕捉继续走解析球心（`SphereFeature` / `SphereSurface`）
+- [x] **验收：** 交互创球、改半径、AccuSnap 圆心正常
 
 **主要文件：** `create_sphere_tool.cpp`、`scene_adapter`、`property_panel`、snap 相关
 
 #### T1.6 Phase 1 验收门禁
 
-- [ ] Kernel：几何 / 构建 / 三角化 / validate / XL 自动化测试通过
-- [ ] Viewer：正交+透视下球观感光滑；放大可接受
-- [ ] 文档：Phase 1 退出标准勾选完成
+- [x] Kernel：几何 / 构建 / 三角化 / validate / XL 自动化测试通过
+- [x] Viewer：正交+透视下球观感光滑；放大可接受（解析法向网格、seam 隐藏、创球/改半径/圆心捕捉链路绿）
+- [x] 文档：Phase 1 退出标准勾选完成
 
+**门禁证据（2026-08-10）：** `brep_test_sphere_surface`、`brep_test_make_sphere`、`brep_test_tessellate_sphere`、`brep_test_extract_edges`、`brep_test_snap`（含 SphereCenter）、`viewer_adapter_tests`（含 AddSphere / SetSphere）、`xl_roundtrip` 冒烟均通过。
 ---
 
 ### Phase 2.0 —— 布尔特征 + 盒子真 B-Rep 布尔
