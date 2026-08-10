@@ -3,12 +3,13 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <numbers>
 
 namespace brep {
 namespace {
 
-constexpr double kPi = 3.14159265358979323846;
 constexpr double kEps = 1e-9;
+using std::numbers::pi;
 
 TEST(SphereSurface, KindAndAccessors) {
   Model model;
@@ -27,13 +28,13 @@ TEST(SphereSurface, EquatorAndPolesEval) {
   SphereSurface s(c, r);
 
   // North pole v = +π/2
-  const Point3d north = s.eval(0.0, kPi / 2.0);
+  const Point3d north = s.eval(0.0, pi / 2.0);
   EXPECT_NEAR(north.x(), 0.0, kEps);
   EXPECT_NEAR(north.y(), r, kEps);
   EXPECT_NEAR(north.z(), 0.0, kEps);
 
   // South pole v = -π/2 (u irrelevant)
-  const Point3d south = s.eval(1.234, -kPi / 2.0);
+  const Point3d south = s.eval(1.234, -pi / 2.0);
   EXPECT_NEAR(south.x(), 0.0, kEps);
   EXPECT_NEAR(south.y(), -r, kEps);
   EXPECT_NEAR(south.z(), 0.0, kEps);
@@ -45,7 +46,7 @@ TEST(SphereSurface, EquatorAndPolesEval) {
   EXPECT_NEAR(eq_x.z(), 0.0, kEps);
 
   // Equator u = π/2 → +Z
-  const Point3d eq_z = s.eval(kPi / 2.0, 0.0);
+  const Point3d eq_z = s.eval(pi / 2.0, 0.0);
   EXPECT_NEAR(eq_z.x(), 0.0, kEps);
   EXPECT_NEAR(eq_z.y(), 0.0, kEps);
   EXPECT_NEAR(eq_z.z(), r, kEps);
@@ -65,19 +66,19 @@ TEST(SphereSurface, NormalsUnitAndOutward) {
   };
 
   check(0.0, 0.0);
-  check(kPi / 4.0, kPi / 6.0);
-  check(0.0, kPi / 2.0);
-  check(2.0, -kPi / 2.0);
+  check(pi / 4.0, pi / 6.0);
+  check(0.0, pi / 2.0);
+  check(2.0, -pi / 2.0);
 }
 
 TEST(SphereSurface, ParamOfRoundTrip) {
   SphereSurface s(Point3d{10, -2, 5}, 7.5);
   const double samples[][2] = {
       {0.0, 0.0},
-      {kPi / 3.0, kPi / 5.0},
-      {5.0 * kPi / 3.0, -kPi / 4.0},
-      {0.1, kPi / 2.0 - 1e-6},  // near north (avoid exact pole u ambiguity)
-      {2.0, -kPi / 2.0 + 1e-6},
+      {pi / 3.0, pi / 5.0},
+      {5.0 * pi / 3.0, -pi / 4.0},
+      {0.1, pi / 2.0 - 1e-6},  // near north (avoid exact pole u ambiguity)
+      {2.0, -pi / 2.0 + 1e-6},
   };
 
   for (const auto& uv : samples) {
@@ -87,9 +88,9 @@ TEST(SphereSurface, ParamOfRoundTrip) {
     const Point3d p2 = s.eval(got.u(), got.v());
     EXPECT_NEAR((p2 - p).norm(), 0.0, 1e-8) << "u=" << uv[0] << " v=" << uv[1];
     EXPECT_GE(got.u(), 0.0);
-    EXPECT_LT(got.u(), 2.0 * kPi + 1e-12);
-    EXPECT_GE(got.v(), -kPi / 2.0 - 1e-12);
-    EXPECT_LE(got.v(), kPi / 2.0 + 1e-12);
+    EXPECT_LT(got.u(), 2.0 * pi + 1e-12);
+    EXPECT_GE(got.v(), -pi / 2.0 - 1e-12);
+    EXPECT_LE(got.v(), pi / 2.0 + 1e-12);
   }
 }
 

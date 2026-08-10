@@ -3,12 +3,12 @@
 #include <QCoreApplication>
 
 #include <cmath>
+#include <numbers>
 
 namespace brep::viewer::commands {
 namespace {
 
 constexpr double kMarkerRadius = 0.14;
-constexpr double kPi = 3.14159265358979323846;
 
 Point3d offset(const Point3d& point, double x, double z) {
   return {point.x() + x, point.y(), point.z() + z};
@@ -61,8 +61,8 @@ EdgeMesh make_snap_marker(SnapKind kind, const Point3d& point) {
     case SnapKind::Center: {
       constexpr int kSegments = 16;
       for (int i = 0; i < kSegments; ++i) {
-        const double a0 = 2.0 * kPi * i / kSegments;
-        const double a1 = 2.0 * kPi * (i + 1) / kSegments;
+        const double a0 = 2.0 * std::numbers::pi * i / kSegments;
+        const double a1 = 2.0 * std::numbers::pi * (i + 1) / kSegments;
         push_segment(mesh, offset(point, r * std::cos(a0), r * std::sin(a0)),
                      offset(point, r * std::cos(a1), r * std::sin(a1)));
       }

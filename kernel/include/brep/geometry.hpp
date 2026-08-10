@@ -4,6 +4,7 @@
 #include "brep/types.hpp"
 
 #include <cmath>
+#include <numbers>
 #include <utility>
 
 namespace brep {
@@ -74,7 +75,7 @@ class CircleCurve final : public Curve {
   [[nodiscard]] Point3d eval(double t) const override;
   [[nodiscard]] Vector3d tangent(double t) const override;
   [[nodiscard]] std::pair<double, double> domain() const noexcept override {
-    return {0.0, 2.0 * 3.14159265358979323846};
+    return {0.0, 2.0 * std::numbers::pi};
   }
 
   [[nodiscard]] const Point3d& center() const noexcept { return center_; }

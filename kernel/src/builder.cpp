@@ -5,6 +5,7 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -193,8 +194,6 @@ Body* make_sphere(Model& model, const SphereSpec& spec) {
   const int stacks = std::max(2, spec.stacks);
   const double r = spec.radius;
   const double tol = spec.tolerance;
-  constexpr double kPi = 3.14159265358979323846;
-
   BREP_INFO("make_sphere '{}' center={} r={:.6g} slices={} stacks={}",
             spec.name, spec.center, r, slices, stacks);
 
@@ -209,7 +208,7 @@ Body* make_sphere(Model& model, const SphereSpec& spec) {
 
   for (int i = 0; i <= stacks; ++i) {
     const double v = static_cast<double>(i) / static_cast<double>(stacks);
-    const double phi = v * kPi;  // 0..pi
+    const double phi = v * std::numbers::pi;  // 0..pi
     const double y = std::cos(phi);
     const double ring_r = std::sin(phi);
     for (int j = 0; j < slices; ++j) {
@@ -226,7 +225,7 @@ Body* make_sphere(Model& model, const SphereSpec& spec) {
         continue;
       }
       const double u = static_cast<double>(j) / static_cast<double>(slices);
-      const double theta = u * 2.0 * kPi;
+      const double theta = u * 2.0 * std::numbers::pi;
       const double x = ring_r * std::cos(theta);
       const double z = ring_r * std::sin(theta);
       verts.push_back(add_vertex(

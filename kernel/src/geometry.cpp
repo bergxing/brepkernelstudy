@@ -2,15 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <stdexcept>
 
 namespace brep {
-namespace {
-
-constexpr double kPi = 3.14159265358979323846;
-constexpr double kTwoPi = 2.0 * kPi;
-
-}  // namespace
 
 Point3d CircleCurve::eval(double t) const {
   return center_ + x_axis_ * (radius_ * std::cos(t)) +
@@ -60,6 +55,7 @@ Point2d SphereSurface::param_of(const Point3d& p) const {
   double u = 0.0;
   if (horiz > 1e-15) {
     u = std::atan2(d.z(), d.x());  // (-π, π]
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
     if (u < 0.0) u += kTwoPi;
     if (u >= kTwoPi) u = 0.0;
   }

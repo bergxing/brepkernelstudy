@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 
 #include <cmath>
+#include <numbers>
 
 namespace brep::viewer::commands {
 namespace {
@@ -38,11 +39,10 @@ EdgeMesh make_point_marker(const Point3d& p, double s = 0.12) {
 
 EdgeMesh make_sphere_wire(const Point3d& c, double r, int seg = 32) {
   EdgeMesh mesh;
-  constexpr double kPi = 3.14159265358979323846;
   auto ring = [&](char axis) {
     for (int i = 0; i < seg; ++i) {
-      const double t0 = 2.0 * kPi * static_cast<double>(i) / seg;
-      const double t1 = 2.0 * kPi * static_cast<double>(i + 1) / seg;
+      const double t0 = 2.0 * std::numbers::pi * static_cast<double>(i) / seg;
+      const double t1 = 2.0 * std::numbers::pi * static_cast<double>(i + 1) / seg;
       Point3d a = c;
       Point3d b = c;
       if (axis == 'y') {
@@ -78,12 +78,11 @@ void push_tri(TriangleMesh& mesh, const Point3d& a, const Point3d& b,
 TriangleMesh make_sphere_solid(const Point3d& center, double r, int slices = 16,
                                int stacks = 12) {
   TriangleMesh mesh;
-  constexpr double kPi = 3.14159265358979323846;
   auto pos = [&](int i, int j) {
     const double v = static_cast<double>(i) / stacks;
     const double u = static_cast<double>(j) / slices;
-    const double phi = v * kPi;
-    const double theta = u * 2.0 * kPi;
+    const double phi = v * std::numbers::pi;
+    const double theta = u * 2.0 * std::numbers::pi;
     const double y = std::cos(phi);
     const double rr = std::sin(phi);
     return Point3d{center.x() + r * rr * std::cos(theta),
