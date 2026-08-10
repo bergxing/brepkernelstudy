@@ -412,3 +412,254 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 | Phase 2 前 Inner loop | **2.0 盒布尔不强制**；**2.1 / 弯曲 Cut 前必须**完成 Inner loop + extrude holes 专项 |
 
 无未关闭的 Phase 0 待决项。
+
+---
+
+## 任务拆解（按需求落地）
+
+> 用法：实现时按编号顺序推进；`- [ ]` 表示未完成。每个任务应有可验证出口（测试或手工验收）。  
+> 依赖：Phase 1 → Phase 2.0 →（Inner 专项）→ Phase 2.1 → Phase 3；Phase 4/5 可选。
+
+### 总览
+
+| 阶段 | 任务 ID | 主题 | 出口 |
+|------|---------|------|------|
+| 0 | T0 | 方案冻结 | 已完成 |
+| 1 | T1.1～T1.6 | 解析球 + 显示细分 | 光滑球可用 |
+| 2.0 | T2.0.1～T2.0.7 | 布尔特征 + 盒布尔 | 盒并/减/交真 B-Rep |
+| 2.x | T2.x.1～T2.x.3 | Inner loop + 拉伸孔 | 面可带内环 |
+| 2.1 | T2.1.1～T2.1.3 | 平面拉伸参与布尔 | 拉伸 Cut/并可用 |
+| 3 | T3.1～T3.6 | 弯曲求交 + 球面布尔 | 至少一弯曲用例端到端 |
+| 4 | T4.* | 柱面等扩展 | 可选 |
+| 5 | T5.* | 自研 vs OCCT 决策 | 可选 |
+
+---
+
+### Phase 0 —— 方案冻结
+
+- [x] **T0.1** 锁定球面缝 / 极点拓扑（§A2）
+- [x] **T0.2** 锁定 Viewer 默认偏差（§A3）
+- [x] **T0.3** 锁定 Inner loop 与 Phase 2.0/2.1 分期
+- [x] **T0.4** 冻结布尔流水线接口（§B2～B3）
+
+---
+
+### Phase 1 —— 解析球面 + 显示细分（部分 A）
+
+#### T1.1 `SphereSurface` 几何类型
+
+- [ ] 扩展 `SurfaceKind`，增加 `Sphere`
+- [ ] 实现 `SphereSurface`：`center`、`radius`、`eval(u,v)`、`normal(u,v)`、`param_of`
+- [ ] UV 约定：`u∈[0,2π)`，`v∈[-π/2,π/2]`
+- [ ] `Model` 增加工厂（如 `make_sphere_surface`）
+- [ ] **测试：** 赤道/极点求值与法向；已知点 `param_of` 往返
+
+**主要文件：** `kernel/include/brep/types.hpp`、`geometry.hpp`、`model.hpp`、对应 `.cpp`
+
+#### T1.2 解析球 B-Rep 构建（替换三角壳）
+
+- [ ] 按 §A2 构建：`V_s`/`V_n` + `E_seam` + 单 `F_sphere` + Outer（±seam）
+- [ ] 重写 `make_sphere`；`SphereFeature::rebuild` / `Part::rebuild_sphere_body` 走新路径
+- [ ] `SphereSpec.slices/stacks` 降级为兼容/调试字段（可不驱动拓扑）
+- [ ] **测试：** `validate_body` 封闭实体；旧 XL Sphere 加载可再生
+
+**主要文件：** `kernel/src/builder.cpp`、`feat/sphere_feature.cpp`、`part.cpp`
+
+#### T1.3 多曲面三角化 + 默认偏差
+
+- [ ] 引入 `TessellationOptions`（§A3 默认表）
+- [ ] `tessellate_body`：Plane 保持扇形；Sphere 按偏差 UV/细分，法向取自曲面
+- [ ] 遵守 min/max 经纬段数
+- [ ] **测试：** 默认偏差下网格规模合理；法向与解析法向方向一致（点抽样）
+
+**主要文件：** `kernel/include/brep/mesh.hpp`、`kernel/src/mesh.cpp`、`api/mesh.hpp`
+
+#### T1.4 边线显示（隐藏 seam）
+
+- [ ] `extract_edges` / Viewer：默认不画或极淡 seam
+- [ ] 可选调试开关显示 seam（可后置）
+- [ ] **验收：** 视口中无明显经线疤
+
+**主要文件：** `mesh.cpp`、viewer 边线上传/渲染相关
+
+#### T1.5 Viewer / 工具 / 捕捉迁移
+
+- [ ] 创建球工具、同步、属性面板仍用 `SphereSpec`（半径/球心）
+- [ ] 圆心捕捉继续走解析球心（`SphereFeature` / `SphereSurface`）
+- [ ] **验收：** 交互创球、改半径、AccuSnap 圆心正常
+
+**主要文件：** `create_sphere_tool.cpp`、`scene_adapter`、`property_panel`、snap 相关
+
+#### T1.6 Phase 1 验收门禁
+
+- [ ] Kernel：几何 / 构建 / 三角化 / validate / XL 自动化测试通过
+- [ ] Viewer：正交+透视下球观感光滑；放大可接受
+- [ ] 文档：Phase 1 退出标准勾选完成
+
+---
+
+### Phase 2.0 —— 布尔特征 + 盒子真 B-Rep 布尔
+
+#### T2.0.1 布尔类型与求值器骨架
+
+- [ ] 定义 `BooleanOp`、`BooleanContext`、`BooleanResult`、`IBooleanEvaluator`
+- [ ] 目录骨架：`kernel/include/brep/bool/`、`kernel/src/bool/`
+- [ ] **测试：** 空壳可链接；不支持组合返回明确失败
+
+#### T2.0.2 `BooleanFeature` + 抑制操作体
+
+- [ ] `BooleanFeature`：`op`、`target_feature_id`、`tool_feature_id`
+- [ ] `rebuild` 调用求值器；成功后 suppress 两操作体
+- [ ] 接入 `FeatureTree` / `Regenerator` / `FeatureHistory`（撤销恢复抑制状态）
+- [ ] **测试：** 添加布尔特征后操作体不可见、结果可见；undo/redo
+
+**主要文件：** `boolean_feature.hpp/.cpp`、`feature_history.*`、`part.*`、`CMake BrepFeat`
+
+#### T2.0.3 XL 持久化
+
+- [ ] 序列化/反序列化 `BooleanFeature` + 抑制标志
+- [ ] **测试：** xl_roundtrip 含布尔节点
+
+**主要文件：** `xl_document.cpp`
+
+#### T2.0.4 平面–平面求交（最小 IntTools）
+
+- [ ] Plane–Plane → 交线（或平行/重合诊断）
+- [ ] **测试：** 正交平面交线；平行无交；重合 fuzzy 行为
+
+**主要文件：** `kernel/src/bool/intersect_plane_plane.cpp` 等
+
+#### T2.0.5 盒子布尔重建（并/减/交）
+
+- [ ] 实现盒–盒 Fuse/Cut/Common → 合法 B-Rep Shell（面均可 Outer）
+- [ ] 可含 AABB 快路径，但出口仍为 B-Rep
+- [ ] **测试：** 三种运算 + `validate_body`；空结果/无交失败有诊断
+
+#### T2.0.6 Viewer：双选 + 菜单/工具栏
+
+- [ ] 命令：`boolean.union` / `boolean.subtract` / `boolean.intersect`
+- [ ] 恰好 2 选；减：主选=目标，次选=工具
+- [ ] 菜单 + 工具栏 + `tr` / `xcad_zh_CN.ts`
+- [ ] SceneAdapter / 属性：识别 Boolean 类型（可只读显示 op）
+- [ ] **验收：** UI 完成盒并/减/交；操作体被抑制
+
+**主要文件：** `builtin_commands.cpp`、`main_window_menus.cpp`、`scene_adapter.*`、i18n
+
+#### T2.0.7 Phase 2.0 验收门禁
+
+- [ ] Kernel 盒布尔套件通过
+- [ ] Viewer 手工冒烟通过
+- [ ] 不依赖 Inner loop
+
+---
+
+### 穿插专项 —— Inner loop + 拉伸孔（2.0 后、2.1/3 前）
+
+#### T2.x.1 拓扑与校验支持 Inner
+
+- [ ] Face 可挂 Outer + 一个或多个 Inner
+- [ ] `validate` / `link_loop` 规则覆盖内环
+- [ ] **测试：** 构造带孔平面面并通过校验
+
+#### T2.x.2 拉伸带孔（extrude holes）
+
+- [ ] `Profile2d::holes` 真正参与 `extrude` 生成内环
+- [ ] **测试：** 带孔轮廓拉伸为有洞的实体（或有洞的面）
+
+#### T2.x.3 三角化支持内环
+
+- [ ] `tessellate_body` 正确剖分 Outer+Inner（耳切/约束三角等）
+- [ ] **测试：** 带孔面网格无盖洞、无自交明显错误
+
+---
+
+### Phase 2.1 —— 平面拉伸参与布尔
+
+#### T2.1.1 平面实体通用分割/选面（在 2.0 求交之上）
+
+- [ ] 边/面沿交线分割；结果可含 Inner
+- [ ] **测试：** 简单拉伸−盒 或 盒−拉伸 产生合法体
+
+#### T2.1.2 分类器（平面实体）
+
+- [ ] 面片相对另一实体 IN/OUT/ON（解析或射线）
+- [ ] **测试：** 已知构型分类正确
+
+#### T2.1.3 Phase 2.1 验收
+
+- [ ] 至少一种「拉伸参与」的并/减/交端到端通过 validate
+
+---
+
+### Phase 3 —— 弯曲求交 + 球面布尔（部分 B.2）
+
+> **前置：** Phase 1 完成；建议 Inner 专项已完成。
+
+#### T3.1 Plane–Sphere 求交
+
+- [ ] 交为圆 / 点 / 空；解析公式优先
+- [ ] **测试：** 单位球与平面的典型构型
+
+#### T3.2 Sphere–Sphere 求交
+
+- [ ] 交为圆 / 点 / 空 / 重合诊断
+- [ ] **测试：** 分离、相切、相交、包含
+
+#### T3.3 球面印记 + 环更新
+
+- [ ] 交线印到球面；更新 loops（必要时 Inner）
+- [ ] **测试：** 印记后球面拓扑可校验
+
+#### T3.4 解析分类（球/盒）
+
+- [ ] 利用球内外（到球心距离）与平面半空间
+- [ ] **测试：** 盒面相对球、球面相对盒的分类抽样
+
+#### T3.5 端到端弯曲布尔
+
+- [ ] 至少打通：`Sphere−Box` **或** `Sphere∪Sphere` **或** `Box∩Sphere` 之一
+- [ ] Viewer 可选演示路径
+- [ ] **验收：** 结果 `validate_body` 通过；失败有明确诊断
+
+#### T3.6 Phase 3 验收门禁
+
+- [ ] 弯曲单元测试 + 至少 1 个 Body 级弯曲用例通过
+- [ ] 文档勾选 Phase 3 退出标准
+
+---
+
+### Phase 4 —— 扩展（可选，不阻塞主线）
+
+- [ ] **T4.1** `CylinderSurface` + 工厂
+- [ ] **T4.2** Cylinder–Plane / Cylinder–Sphere 求交
+- [ ] **T4.3** 改进 pcurve / `TopologyRef` 命名
+- [ ] **T4.4** 求交加速结构（BVH）
+
+---
+
+### Phase 5 —— 决策门（可选）
+
+- [ ] **T5.1** 评估自研 NURBS 路径 vs 可选 OCCT 后端
+- [ ] **T5.2** 若选 OCCT：在 `IBooleanEvaluator` 后增加适配器，UI/特征不变
+- [ ] **T5.3** 形成书面决策（短 ADR）
+
+---
+
+### 跨切任务（全程约束）
+
+- [ ] **TX.1** 禁止引入 OCCT 链接（除非执行 T5.2）
+- [ ] **TX.2** 布尔失败必须软失败 + 可读诊断，禁止静默坏拓扑
+- [ ] **TX.3** 用户可见字符串 `tr()` + `xcad_zh_CN.ts`
+- [ ] **TX.4** 每个 Phase 退出前跑约定 ctest / 冒烟清单
+- [ ] **TX.5** 提交信息按阶段语义化（勿混杂无关文件）
+
+---
+
+### 建议实施顺序（第一条可执行路径）
+
+```text
+T1.1 → T1.2 → T1.3 → T1.4 → T1.5 → T1.6
+  → T2.0.1 → T2.0.2 → T2.0.3 → T2.0.4 → T2.0.5 → T2.0.6 → T2.0.7
+  → T2.x.1 → T2.x.2 → T2.x.3
+  → T2.1.* → T3.* → (T4/T5 按需)
+```
