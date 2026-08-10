@@ -1,7 +1,7 @@
 # 解析球面 + 通用 B-Rep 布尔 —— 技术实现方案
 
 日期：2026-08-10  
-状态：待评审草稿  
+状态：Phase 0 已决议（待决事项已关闭）  
 分支：`cursor/modern-cpp-brep-kernel`
 
 ## 目标
@@ -87,37 +87,62 @@ class SphereSurface : public Surface {
 
 需要时把 `CircleCurve` 作为球面缝线 / 纬线的一等公民。
 
-### A2. 解析球的拓扑（B-Rep，不是三角壳）
+### A2. 解析球的拓扑（B-Rep，不是三角壳）—— **已决议**
 
-推荐的规范实体球拓扑（接近 OCCT 实用做法）：
+采用 **「双极点 + 一条经向缝边 + 单球面 Face」**（OCCT 实用球的简化版）。
 
-- 在 `SphereSurface` 上 **1 个 Face**（若缝处理需要，也可 2 个半球面）
-- **缝边（seam）** + 极点顶点（极点退化边是已知难点）
+**参数域**（`SphereSurface`）
 
-**本仓库 Phase A 务实拓扑**（建议先采用）：
+- `u` ∈ `[0, 2π)`：经度（缝在 `u=0 ≡ u=2π`）
+- `v` ∈ `[-π/2, +π/2]`：纬度（`v=-π/2` 南极，`v=+π/2` 北极）
 
-- 南 / 北极点顶点
-- 一条经向 **seam** 边（参数域周期缝）
-- 一个球面 Face，外环覆盖整球（周期缝合）
+**拓扑实体**
 
-极点 / 缝的精确方案在实现时用短 ADR 定稿；成功标准是：
+| 元素 | 说明 |
+|------|------|
+| `V_s`, `V_n` | 南 / 北极点（各 1 个 Vertex） |
+| `E_seam` | 经向缝：南极→北极半大圆（3D 用半圆 `CircleCurve` 或等价参数曲线） |
+| `F_sphere` | 1 个 Face，曲面 = `SphereSurface` |
+| Outer loop | `CoEdge(+E_seam)` + `CoEdge(-E_seam)`，参数域上绕整张球面闭合 |
+
+参数矩形展开（左右边粘成同一条 seam）：
+
+```text
+        v = +π/2  ● V_n (北极)
+                  │
+                  │ E_seam  (u=0 与 u=2π 为同一条边)
+                  │
+        v = -π/2  ● V_s (南极)
+
+   u: 0 ───────────────────── 2π
+      │←—— 同一条 seam 粘合 ——→│
+```
+
+**Phase 1 刻意不做：** 极点零长度退化边；双半球两 Face（缝稳后再议）。
+
+**成功标准：**
 
 - `Body` **通过封闭实体校验**
-- 三角化得到光滑网格
-- 捕捉圆心使用解析球心
+- 三角化得到光滑网格；圆心捕捉使用解析球心
+- Viewer 默认**不画** seam（或极淡），避免经线疤
 
 将 `make_sphere` / `SphereFeature::rebuild` 从平面三角壳**迁移**到该解析体。
 
-### A3. 三角化（显示）
+### A3. 三角化（显示）—— **已决议默认偏差**
 
-去掉 `tessellate_body`「只认平面」的假设：
+去掉 `tessellate_body`「只认平面」的假设。相对半径 `R` 归一，并夹绝对下限：
+
+| 参数 | 默认值 | 含义 |
+|------|--------|------|
+| `linear_deflection` | `max(0.02 * R, 1e-4)` | 弦高 ≈ 半径 2% |
+| `angular_deflection` | `15°`（≈ 0.26 rad） | 相邻法向夹角上限 |
+| `min_u_segments` / `min_v_segments` | `24` / `12` | 经 / 纬最少段数 |
+| `max_u_segments` / `max_v_segments` | `128` / `64` | 防止过大网格 |
+
+可选档位（Phase 1 可先写死默认，设置项后加）：草稿 `0.05*R` + `20°`；精细 `0.01*R` + `10°`。
 
 ```text
-TessellationOptions {
-  linear_deflection;   // 最大弦高误差
-  angular_deflection;  // 最大法向夹角
-  min_segments_u/v;
-}
+TessellationOptions { linear_deflection; angular_deflection; min/max_segments_u/v; }
 
 tessellate_face(Face) →
   if Plane → 现有扇形剖分
@@ -125,11 +150,11 @@ tessellate_face(Face) →
              法向取自 SphereSurface::normal（光滑着色）
 ```
 
-Viewer 继续上传 `TriangleMesh`，但使用**真实曲面法向**（非平面片法向）。可选后续：按屏幕尺寸自适应加密。
+Viewer 继续上传 `TriangleMesh`，使用**真实曲面法向**。`SphereSpec.slices/stacks` 在解析球落地后仅作兼容/调试；正式显示走 `TessellationOptions`。
 
 ### A4. 边线显示
 
-球面的 `extract_edges`：可画 seam，或近似轮廓线；CAD 常隐藏内部缝。Phase A：淡化 seam 或用渲染开关隐藏。
+球面的 `extract_edges`：可画 seam，或近似轮廓线。**已决议：** Phase A 默认隐藏 / 极淡 seam。
 
 ### A5. 捕捉 / 属性
 
@@ -283,13 +308,26 @@ class IBooleanEvaluator {
 
 ### Phase 2 —— 布尔脚手架 + 平面实体布尔（部分 B.1）
 
+拆成两档（**Inner loop 决议**见下）：
+
+**Phase 2.0（可不依赖 Inner loop）**
+
 1. `BooleanFeature`、历史、抑制操作体、XL
 2. Viewer 命令 / 菜单（双对象选择）
-3. 平面–平面求交 + 盒子 / 拉伸布尔重建
+3. 平面–平面求交 + **盒子**布尔重建（结果面可全为 Outer）
 4. 可选 AABB 盒子快路径（同一 API）
 5. Kernel gtest + Viewer 冒烟
 
-**退出标准：** 盒子（及尽量覆盖平面拉伸）真 B-Rep 并/减/交可用。
+**退出标准：** 盒子真 B-Rep 并/减/交可用。
+
+**穿插专项（Phase 2.0 后、2.1 / 3 前必须完成）**
+
+- 支持 `LoopType::Inner` + 拉伸带孔（extrude holes）
+- 原因：复杂 Cut / 面印记后交线常形成内环；无 Inner 无法表达「面上有洞」
+
+**Phase 2.1（依赖 Inner loop）**
+
+- 平面拉伸体参与布尔、面上开孔类 Cut 结果
 
 ### Phase 3 —— 弯曲求交 + 球面布尔（部分 B.2）
 
@@ -363,8 +401,12 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 3. 平面实体布尔得到通过校验的 B-Rep；至少一个弯曲布尔用例端到端跑通。
 4. 流水线阶段可分离，并文档化与 OCCT 概念的映射（构建不强制依赖 OCCT）。
 
-## 待决事项（Phase 0 / 1 解决）
+## Phase 0 已决议（原待决事项，已关闭）
 
-- 球面缝 / 极点拓扑的精确示意图
-- Viewer 默认偏差（观感 vs 性能）
-- Phase 2 前是否必须支持拉伸孔 / 内环（建议：复杂 Cut 前面支持 Inner loop）
+| 事项 | 决议 |
+|------|------|
+| 球面缝 / 极点拓扑 | **双极点 + 单经向 seam + 单球面 Face**；参数域 `u∈[0,2π)`、`v∈[-π/2,π/2]`；详见 §A2 |
+| Viewer 默认偏差 | `linear = max(0.02R, 1e-4)`，`angular = 15°`，经/纬最少 24/12、最多 128/64；详见 §A3 |
+| Phase 2 前 Inner loop | **2.0 盒布尔不强制**；**2.1 / 弯曲 Cut 前必须**完成 Inner loop + extrude holes 专项 |
+
+无未关闭的 Phase 0 待决项。
