@@ -18,13 +18,13 @@ Body* make_box(Model& model, const BoxSpec& spec = {});
 struct SphereSpec {
   Point3d center{0, 0, 0};
   double radius{1.0};
-  int slices{16};  // longitude divisions (>= 3)
-  int stacks{12};  // latitude divisions (>= 2)
+  int slices{16};  // unused by analytic topology (compat / debug)
+  int stacks{12};  // unused by analytic topology (compat / debug)
   double tolerance{1e-7};
   std::string name{"sphere"};
 };
 
-/// UV-sphere approximated as a closed manifold of planar triangular faces.
+/// Analytic solid sphere: dual poles + meridional seam + one SphereSurface face.
 Body* make_sphere(Model& model, const SphereSpec& spec = {});
 
 }  // namespace brep

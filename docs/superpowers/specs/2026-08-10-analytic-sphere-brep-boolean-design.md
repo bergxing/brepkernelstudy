@@ -458,10 +458,10 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T1.2 解析球 B-Rep 构建（替换三角壳）
 
-- [ ] 按 §A2 构建：`V_s`/`V_n` + `E_seam` + 单 `F_sphere` + Outer（±seam）
-- [ ] 重写 `make_sphere`；`SphereFeature::rebuild` / `Part::rebuild_sphere_body` 走新路径
-- [ ] `SphereSpec.slices/stacks` 降级为兼容/调试字段（可不驱动拓扑）
-- [ ] **测试：** `validate_body` 封闭实体；旧 XL Sphere 加载可再生
+- [x] 按 §A2 构建：`V_s`/`V_n` + `E_seam` + 单 `F_sphere` + Outer（±seam）
+- [x] 重写 `make_sphere`；`SphereFeature::rebuild` / `Part::rebuild_sphere_body` 走新路径
+- [x] `SphereSpec.slices/stacks` 降级为兼容/调试字段（可不驱动拓扑）
+- [x] **测试：** `validate_body` 封闭实体；旧 XL Sphere 加载可再生
 
 **主要文件：** `kernel/src/builder.cpp`、`feat/sphere_feature.cpp`、`part.cpp`
 

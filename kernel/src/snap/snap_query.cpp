@@ -197,6 +197,14 @@ std::vector<SnapCandidate> query_snap_candidates(
         ++face_count;
 
         if (kind_enabled(query, SnapKind::Center) && face->surface &&
+            face->surface->kind() == SurfaceKind::Sphere) {
+          const auto* sphere =
+              static_cast<const SphereSurface*>(face->surface);
+          append_candidate(candidates, SnapKind::Center, sphere->center(),
+                           *body, query.tolerance);
+        }
+
+        if (kind_enabled(query, SnapKind::Center) && face->surface &&
             face->surface->kind() == SurfaceKind::Plane) {
           const std::vector<Point3d> positions =
               outer_loop_vertices(*face, query.tolerance);
