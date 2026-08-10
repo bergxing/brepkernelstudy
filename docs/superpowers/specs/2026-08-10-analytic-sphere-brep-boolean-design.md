@@ -1,54 +1,54 @@
-# Analytic Sphere + General B-Rep Boolean — Technical Implementation Plan
+# 解析球面 + 通用 B-Rep 布尔 —— 技术实现方案
 
-Date: 2026-08-10  
-Status: Draft for review  
-Branch: `cursor/modern-cpp-brep-kernel`
+日期：2026-08-10  
+状态：待评审草稿  
+分支：`cursor/modern-cpp-brep-kernel`
 
-## Goals
+## 目标
 
-1. **Smooth spheres** like typical CAD/MicroStation display: geometry is an **analytic sphere**, display uses **adaptive / tolerance-driven tessellation** (smooth shading normals).
-2. **General curved-surface B-Rep boolean** (union / subtract / intersect) with an in-house evaluator whose **pipeline is inspired by OpenCASCADE concepts** (no OCCT link/dependency in Phase 1–N unless later decided).
+1. **光滑球体**（接近常见 CAD / MicroStation 观感）：几何为**解析球面**，显示采用**公差驱动 / 自适应三角化**，并用真实曲面法向做光滑着色。
+2. **通用曲面 B-Rep 布尔**（并 / 减 / 交）：自研求值器，流水线**理念对齐 OpenCASCADE**（Phase 1～N 默认**不链接、不依赖** OCCT，除非后续另行决策）。
 
-## Non-goals (near term)
+## 近期非目标
 
-- Linking or vendoring OpenCASCADE binaries
-- NURBS general boolean (deferred until plane/sphere/cylinder path is solid)
-- Assembly-instance boolean
-- Full non-manifold healing suite
-- Mesh-only boolean as the primary result (mesh may remain a debug/fallback visualization only)
+- 链接或内嵌 OpenCASCADE 二进制
+- 通用 NURBS 布尔（等平面 / 球面 / 柱面路径稳定后再做）
+- 装配实例级布尔
+- 完整非流形修复工具集
+- 以**纯网格布尔**作为正式结果（网格仅可作调试 / 回退显示）
 
-## Decisions (locked from product discussion)
+## 已锁定决策（产品讨论结论）
 
-| Topic | Choice |
-|-------|--------|
-| Sphere look | Analytic `SphereSurface` + better display tessellation |
-| Boolean target | General curved B-Rep boolean (in-house) |
-| Mesh boolean | Not primary; optional debug only |
-| External kernel | Ideas from OCCT only; self-implemented |
-| UI (boolean) | Select two objects → menu Union / Subtract / Intersect |
-| Operands after boolean | Suppress operand features; keep result |
-
----
-
-## Current baseline (gaps)
-
-| Area | Today |
-|------|--------|
-| Sphere body | `make_sphere` builds a **UV faceted planar-triangle shell** |
-| Surfaces | `PlaneSurface` only in solids; `SurfaceKind` has Cylinder/Nurbs enums unused |
-| Curves | `LineCurve`, `CircleCurve` (eval); solids use lines almost exclusively |
-| Tessellation | `tessellate_body` fans **planar** outer loops only |
-| Boolean | None (no intersect / split / classify / sew) |
-| Features | Box, Sphere, Sketch, Extrude + history/XL |
+| 主题 | 选择 |
+|------|------|
+| 球体观感 | 解析 `SphereSurface` + 更好的显示细分 |
+| 布尔目标 | 通用曲面 B-Rep 布尔（自研） |
+| 网格布尔 | 非主路径；仅可选调试 |
+| 外部内核 | 只参考 OCCT 理念；自行实现 |
+| 布尔 UI | 选中两个对象 → 菜单 并 / 减 / 交 |
+| 布尔后操作体 | **抑制（suppress）** 操作体特征；保留结果 |
 
 ---
 
-## Architecture overview
+## 现状与缺口
+
+| 领域 | 当前状态 |
+|------|----------|
+| 球体 Body | `make_sphere` 用 **UV 平面三角壳**拼接 |
+| 曲面 | 实体中基本只有 `PlaneSurface`；`SurfaceKind` 中 Cylinder/Nurbs 枚举未落地 |
+| 曲线 | 有 `LineCurve`、`CircleCurve`（可求值）；实体边几乎全是直线 |
+| 三角化 | `tessellate_body` 仅对**平面**外环做扇形剖分 |
+| 布尔 | 无（无求交 / 分割 / 分类 / 缝合） |
+| 特征 | Box、Sphere、Sketch、Extrude + 历史 / XL |
+
+---
+
+## 总体架构
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ Viewer: select 2 → boolean.union|subtract|intersect         │
-│ BooleanFeature + suppress operands + regen + undo           │
+│ Viewer：选中 2 个 → boolean.union|subtract|intersect          │
+│ BooleanFeature + 抑制操作体 + 再生 + 撤销                      │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
@@ -59,105 +59,109 @@ Branch: `cursor/modern-cpp-brep-kernel`
         ┌───────────────────┴───────────────────┐
         ▼                                       ▼
 ┌───────────────────┐                 ┌─────────────────────┐
-│ Geometry kernel   │                 │ Boolean pipeline      │
-│ SphereSurface     │                 │ (OCCT-inspired stages)│
-│ CircleCurve       │                 │ Intersect→Split→      │
-│ Tessellator       │                 │ Classify→Build        │
+│ 几何内核           │                 │ 布尔流水线            │
+│ SphereSurface     │                 │ （对齐 OCCT 阶段）     │
+│ CircleCurve       │                 │ 求交→分割→            │
+│ Tessellator       │                 │ 分类→重建             │
 └───────────────────┘                 └─────────────────────┘
 ```
 
 ---
 
-## Part A — Analytic sphere + display tessellation
+## 部分 A —— 解析球面 + 显示细分
 
-### A1. Geometry types
+### A1. 几何类型
 
-Extend `SurfaceKind` / implement:
+扩展 `SurfaceKind` 并实现：
 
 ```text
-SurfaceKind += Sphere   // or reuse a dedicated kind; avoid overloading Nurbs
+SurfaceKind += Sphere   // 使用独立种类，避免滥用 Nurbs
 
 class SphereSurface : public Surface {
   Point3d center;
   double radius;
-  // Local frame for UV: u = longitude [0,2π), v = latitude [-π/2, π/2]
-  eval(u,v), normal(u,v), param_of(point)  // for projection / classification
+  // 局部 UV：u = 经度 [0,2π)，v = 纬度 [-π/2, π/2]
+  eval(u,v), normal(u,v), param_of(point)  // 投影 / 分类用
 };
 ```
 
-Ensure `CircleCurve` is first-class for sphere seams / parallels when needed.
+需要时把 `CircleCurve` 作为球面缝线 / 纬线的一等公民。
 
-### A2. Topology for analytic sphere (B-Rep, not triangle shell)
+### A2. 解析球的拓扑（B-Rep，不是三角壳）
 
-Recommended canonical solid sphere (OCCT-like practical topology):
+推荐的规范实体球拓扑（接近 OCCT 实用做法）：
 
-- **1 Face** on `SphereSurface` (or 2 hemispheres if seam handling prefers)
-- **Seam edge(s)** + poles as vertices (degenerate edges at poles are a known hard case)
+- 在 `SphereSurface` 上 **1 个 Face**（若缝处理需要，也可 2 个半球面）
+- **缝边（seam）** + 极点顶点（极点退化边是已知难点）
 
-**Pragmatic Phase A topology** (recommended for this codebase first):
+**本仓库 Phase A 务实拓扑**（建议先采用）：
 
-- South / north pole vertices
-- One meridional **seam** edge (circle meridian or line in param space)
-- One spherical face with outer loop covering the sphere (periodic seam)
+- 南 / 北极点顶点
+- 一条经向 **seam** 边（参数域周期缝）
+- 一个球面 Face，外环覆盖整球（周期缝合）
 
-Exact pole/seam scheme to be fixed in a short ADR note during implementation; success criterion is: **Body validates as closed solid**, tessellator produces smooth mesh, snap Center uses analytic center.
+极点 / 缝的精确方案在实现时用短 ADR 定稿；成功标准是：
 
-**Migrate** `make_sphere` / `SphereFeature::rebuild` off faceted planar triangles onto this analytic body.
+- `Body` **通过封闭实体校验**
+- 三角化得到光滑网格
+- 捕捉圆心使用解析球心
 
-### A3. Tessellation
+将 `make_sphere` / `SphereFeature::rebuild` 从平面三角壳**迁移**到该解析体。
 
-Replace planar-only assumption in `tessellate_body`:
+### A3. 三角化（显示）
+
+去掉 `tessellate_body`「只认平面」的假设：
 
 ```text
 TessellationOptions {
-  linear_deflection;   // max chord error
-  angular_deflection;  // max normal angle
+  linear_deflection;   // 最大弦高误差
+  angular_deflection;  // 最大法向夹角
   min_segments_u/v;
 }
 
 tessellate_face(Face) →
-  if Plane → existing fan
-  if Sphere → UV grid / recursive subdivision to meet deflection
-             normals from SphereSurface::normal (smooth shading)
+  if Plane → 现有扇形剖分
+  if Sphere → UV 网格 / 递归细分直到满足偏差
+             法向取自 SphereSurface::normal（光滑着色）
 ```
 
-Viewer: keep uploading `TriangleMesh` with **true surface normals** (not flat face normals). Optional later: screen-size adaptive refinement.
+Viewer 继续上传 `TriangleMesh`，但使用**真实曲面法向**（非平面片法向）。可选后续：按屏幕尺寸自适应加密。
 
-### A4. Edge display
+### A4. 边线显示
 
-`extract_edges` for sphere: draw seam + optional silhouette approximation, or suppress internal seam in viewer (CAD often hides seam). Phase A: draw seam lightly or hide via render flag.
+球面的 `extract_edges`：可画 seam，或近似轮廓线；CAD 常隐藏内部缝。Phase A：淡化 seam 或用渲染开关隐藏。
 
-### A5. Snap / properties
+### A5. 捕捉 / 属性
 
-- Center snap: `SphereFeature` / `SphereSurface` center (already preferred)
-- Radius param unchanged
-- Property panel unchanged functionally
+- 圆心捕捉：`SphereFeature` / `SphereSurface` 球心
+- 半径参数不变
+- 属性面板功能不变
 
-### A6. Acceptance (Part A)
+### A6. 部分 A 验收
 
-- Sphere looks smooth in ortho/perspective at default deflection
-- Zoom-in still acceptable with tighter options
-- XL roundtrip + parametric edit radius regenerates analytic sphere
-- Manifold validate passes
+- 默认偏差下，正交 / 透视中球体观感光滑
+- 放大后通过更紧公差仍可接受
+- XL 往返 + 改半径能再生解析球
+- 流形校验通过
 
 ---
 
-## Part B — General B-Rep boolean (OCCT-inspired, in-house)
+## 部分 B —— 通用 B-Rep 布尔（理念对齐 OCCT，自研）
 
-### B0. Conceptual mapping to OCCT
+### B0. 与 OCCT 概念映射
 
-| OCCT idea | Our module |
+| OCCT 概念 | 本项目模块 |
 |-----------|------------|
-| `BRepAlgoAPI_Fuse/Cut/Common` | `BooleanFeature` + `BooleanOp` enum |
-| Intersection | `IntTools` / `SurfaceIntersector` |
-| Split / imprint | `FaceSplitter`, `EdgeSplitter` |
-| Solid classifier | `SolidClassifier` (IN/OUT/ON) |
-| Builder | `BooleanBuilder` sew selected faces into result Shell/Body |
-| Tolerances | `BooleanContext { fuzzy, tol_3d, tol_2d }` |
+| `BRepAlgoAPI_Fuse/Cut/Common` | `BooleanFeature` + `BooleanOp` 枚举 |
+| Intersection（求交） | `IntTools` / `SurfaceIntersector` |
+| Split / imprint（分割 / 印记） | `FaceSplitter`、`EdgeSplitter` |
+| Solid classifier（实体分类） | `SolidClassifier`（IN / OUT / ON） |
+| Builder（重建） | `BooleanBuilder` 选面缝合成 Shell / Body |
+| Tolerances（容差） | `BooleanContext { fuzzy, tol_3d, tol_2d }` |
 
-**Do not copy OCCT source.** Reimplement stages behind clean interfaces; document references to public OCCT docs / textbook boolean pipelines.
+**禁止复制 OCCT 源码。** 用清晰接口重实现各阶段；文档中引用公开 OCCT 资料 / 教材中的布尔流水线即可。
 
-### B1. Feature & UI (same delivery track as evaluators)
+### B1. 特征与 UI（与求值器同期交付）
 
 ```text
 BooleanFeature {
@@ -166,17 +170,17 @@ BooleanFeature {
   tool_feature_id
 }
 
-UI: Modeling menu + toolbar — requires exactly 2 selected bodies/features
-Subtract: primary selection = target, secondary = tool
-On success: suppress both operands; result visible; undo restores
-XL: persist BooleanFeature + suppression flags
+UI：建模菜单 + 工具栏 —— 要求恰好选中 2 个 Body/特征
+减：主选择 = 目标，次选择 = 工具体
+成功后：抑制两个操作体；显示结果；撤销可恢复
+XL：持久化 BooleanFeature + 抑制标志
 ```
 
-### B2. Evaluator interface
+### B2. 求值器接口
 
 ```text
 struct BooleanResult {
-  Body* body;                 // owned by Model/Part
+  Body* body;               // 由 Model/Part 拥有
   BooleanEvalMode mode;     // AnalyticPair | General
   std::string diagnostics;
 };
@@ -187,180 +191,180 @@ class IBooleanEvaluator {
 };
 ```
 
-Dispatcher may fast-path **AABB box ∪/−/∩ AABB box** as a correctness/perf special case inside the same evaluator family (still B-Rep out).
+调度器可对 **AABB 盒子 ∪/−/∩ AABB 盒子** 做正确性 / 性能快路径（仍输出 B-Rep）。
 
-### B3. Pipeline stages (general)
+### B3. 通用流水线阶段
 
 ```text
-1. Preprocess
-   - copy/transform operands into common space (identity today)
-   - collect faces/edges; build bounding boxes
+1. 预处理 Preprocess
+   - 将操作体变换到同一坐标系（当前多为单位变换）
+   - 收集面/边；建立包围盒
 
-2. Intersection (geometry)
-   - Face–Face: Plane–Plane, Plane–Sphere, Sphere–Sphere (priority order)
-   - produce 3D intersection curves + pcurves on both faces
-   - Edge–Face for incomplete graphs
+2. 几何求交 Intersection
+   - 面–面：Plane–Plane、Plane–Sphere、Sphere–Sphere（按优先级）
+   - 产出三维交线 + 双方 pcurve
+   - 必要时边–面求交补全图
 
-3. Split / Imprint (topology)
-   - insert vertices on edges
-   - split edges/faces along intersection
-   - update loops (Outer/Inner)
+3. 拓扑分割 / 印记 Split / Imprint
+   - 边上插入顶点
+   - 沿交线分割边 / 面
+   - 更新环（Outer / Inner）
 
-4. Classification
-   - for each face (or face piece): IN / OUT / ON relative to other solid
-   - use ray cast / winding / signed distance to analytic surfaces where possible
+4. 分类 Classification
+   - 每个面（或面片）相对另一实体：IN / OUT / ON
+   - 优先用解析内外（有符号距离）/ 射线 / 绕数
 
-5. Selection by op
-   - Union: keep OUT∪ON appropriately (standard CSG face keep rules)
-   - Subtract (A−B): keep A faces outside B + B faces inside A (reversed)
-   - Intersect: keep faces inside the other
+5. 按运算选面 Selection
+   - 并：按标准 CSG 保留规则保留 OUT∪ON 等
+   - 减（A−B）：保留 A 在 B 外的面 + B 在 A 内的面（方向取反）
+   - 交：保留位于对方内部的面
 
-6. Build
-   - sew partners, orient shells, create Body
-   - validate_body manifold checks
+6. 重建 Build
+   - 配对 partner、定向 Shell、创建 Body
+   - validate_body 流形检查
 
-7. Fail soft
-   - empty result, non-manifold, or unsupported surface pair → CommandResult::failed with reason
+7. 软失败 Fail soft
+   - 空结果、非流形、不支持的曲面组合 → CommandResult::failed 并给出原因
 ```
 
-### B4. Geometry support matrix (phased inside Part B)
+### B4. 几何支持矩阵（部分 B 内再分期）
 
-| Pair | Phase |
-|------|--------|
-| Plane–Plane (box–box, extrude–box) | B.1 |
+| 曲面组合 | 阶段 |
+|----------|------|
+| Plane–Plane（盒–盒、拉伸–盒） | B.1 |
 | Plane–Sphere | B.2 |
 | Sphere–Sphere | B.2 |
-| Cylinder–* | B.3 (after `CylinderSurface`) |
-| NURBS–* | Later |
+| Cylinder–* | B.3（先落地 `CylinderSurface`） |
+| NURBS–* | 更后 |
 
-**Part A (analytic sphere) is a hard prerequisite for B.2.**
+**部分 A（解析球）是 B.2 的硬前置。**
 
-### B5. Tolerances
+### B5. 容差
 
-- Global `BooleanContext::fuzzy` for nearly coincident entities
-- Vertex merge distance; curve sampling for intersection approximation when analytic closed form is hard
-- Prefer analytic intersection formulas for plane/sphere before numerical marching
+- 全局 `BooleanContext::fuzzy` 处理近重合
+- 顶点合并距离；无解析闭式时对交线做曲线采样
+- 平面 / 球面优先用解析求交公式，再考虑数值推进
 
-### B6. Testing strategy
+### B6. 测试策略
 
-| Level | Cases |
-|-------|--------|
-| Unit | Plane–plane intersect line; plane–sphere circle; sphere–sphere circle/point/empty |
-| Body | Box∪Box, Box−Box, Box∩Box → validate + volume/AABB sanity |
-| Body | Sphere−Box (slot), Sphere∪Sphere, Box∩Sphere |
-| Feature | BooleanFeature regen after editing operand radius/size; undo/redo; XL |
-| Viewer | Manual: select two → ops; suppressed operands; smooth sphere display |
+| 层级 | 用例 |
+|------|------|
+| 单元 | 平面–平面交线；平面–球面圆；球–球圆 / 点 / 空 |
+| Body | 盒∪盒、盒−盒、盒∩盒 → 校验 + 体积 / AABB 合理性 |
+| Body | 球−盒、球∪球、盒∩球 |
+| 特征 | 改操作体半径/尺寸后 BooleanFeature 再生；撤销/重做；XL |
+| Viewer | 手工：选中两对象 → 运算；操作体被抑制；球显示光滑 |
 
-### B7. Acceptance (Part B general boolean)
+### B7. 部分 B 验收（通用布尔）
 
-- Fuse/Cut/Common for plane solids (boxes/extrudes) reliable
-- At least one curved case (sphere vs box or sphere vs sphere) produces validated solid
-- Failures are explicit (no silent corrupt bodies)
-- No OCCT dependency required to build
-
----
-
-## Delivery phases (execution order)
-
-### Phase 0 — Spec/ADR freeze (this document)
-
-- Approve topology choice for analytic sphere (seam/poles)
-- Approve boolean stage interfaces
-
-### Phase 1 — Analytic sphere + tessellation (Part A)
-
-1. `SphereSurface` + types/factory on `Model`
-2. Rewrite `make_sphere` to analytic B-Rep
-3. Extend `tessellate_body` with deflection options + smooth normals
-4. Migrate viewer/sphere tool (no API break for `SphereSpec`)
-5. Tests: geometry eval, tessellation density, validate, XL, visual smoke
-
-**Exit:** MicroStation-like smooth sphere in viewer.
-
-### Phase 2 — Boolean scaffolding + plane solid boolean (Part B.1)
-
-1. `BooleanFeature`, history, suppress operands, XL
-2. Viewer commands/menus (two-object selection)
-3. Plane–plane intersection + box/extrude boolean builder
-4. AABB box fast path optional inside same API
-5. Kernel gtests + viewer smoke
-
-**Exit:** Real B-Rep 并/减/交 on boxes (and preferably planar extrudes).
-
-### Phase 3 — Curved intersections + sphere boolean (Part B.2)
-
-1. Plane–sphere / sphere–sphere intersection curves
-2. Imprint on spherical faces; classifier using analytic insides
-3. Sphere−Box / Sphere∪Sphere demos
-4. Harden tolerances + failure diagnostics
-
-**Exit:** Curved boolean usable for study demos; still not full CAD kernel.
-
-### Phase 4 — Expand surfaces (optional)
-
-- `CylinderSurface`, more intersection pairs
-- Better pcurves, naming (`TopologyRef`), performance (BVH)
-
-### Phase 5 — Decision gate
-
-- Continue in-house toward NURBS, **or**
-- Introduce OCCT as optional backend behind `IBooleanEvaluator` (same feature UI)
+- 平面实体（盒子 / 拉伸）的并/减/交稳定
+- 至少一个弯曲用例（球 vs 盒 或 球 vs 球）产出通过校验的实体
+- 失败必须显式（禁止静默损坏拓扑）
+- 构建不依赖 OCCT
 
 ---
 
-## Module / file map (planned)
+## 交付分期（执行顺序）
+
+### Phase 0 —— 方案 / ADR 冻结（本文档）
+
+- 确认解析球缝 / 极点拓扑方案
+- 确认布尔各阶段接口
+
+### Phase 1 —— 解析球 + 三角化（部分 A）
+
+1. `SphereSurface` + `Model` 工厂 / 类型
+2. 重写 `make_sphere` 为解析 B-Rep
+3. 扩展 `tessellate_body`（偏差选项 + 光滑法向）
+4. 迁移 viewer / 创建球工具（`SphereSpec` API 尽量不破坏）
+5. 测试：几何求值、网格密度、校验、XL、视觉冒烟
+
+**退出标准：** Viewer 中球体观感接近光滑 CAD 球。
+
+### Phase 2 —— 布尔脚手架 + 平面实体布尔（部分 B.1）
+
+1. `BooleanFeature`、历史、抑制操作体、XL
+2. Viewer 命令 / 菜单（双对象选择）
+3. 平面–平面求交 + 盒子 / 拉伸布尔重建
+4. 可选 AABB 盒子快路径（同一 API）
+5. Kernel gtest + Viewer 冒烟
+
+**退出标准：** 盒子（及尽量覆盖平面拉伸）真 B-Rep 并/减/交可用。
+
+### Phase 3 —— 弯曲求交 + 球面布尔（部分 B.2）
+
+1. 平面–球 / 球–球交线
+2. 球面印记；基于解析内外的分类器
+3. 球−盒 / 球∪球 演示
+4. 加固容差与失败诊断
+
+**退出标准：** 弯曲布尔可用于学习演示；仍非完整商用 CAD 内核。
+
+### Phase 4 —— 扩展曲面（可选）
+
+- `CylinderSurface` 与更多求交对
+- 更好的 pcurve、命名（`TopologyRef`）、性能（BVH）
+
+### Phase 5 —— 决策门
+
+- 继续自研走向 NURBS，**或**
+- 在 `IBooleanEvaluator` 后增加可选 OCCT 后端（UI / 特征不变）
+
+---
+
+## 规划模块 / 文件映射
 
 ```text
 kernel/include/brep/geometry.hpp          # SphereSurface
 kernel/include/brep/types.hpp             # SurfaceKind::Sphere
-kernel/src/builder.cpp                    # analytic make_sphere
-kernel/src/mesh.cpp                       # multi-surface tessellation
-kernel/include/brep/bool/...              # context, op, result
+kernel/src/builder.cpp                    # 解析 make_sphere
+kernel/src/mesh.cpp                       # 多曲面三角化
+kernel/include/brep/bool/...              # context、op、result
 kernel/src/bool/intersect_*.cpp
 kernel/src/bool/split_*.cpp
 kernel/src/bool/classify.cpp
 kernel/src/bool/build.cpp
 kernel/include/brep/feat/boolean_feature.hpp
 kernel/src/feat/boolean_feature.cpp
-apps/viewer/commands/...                  # boolean commands
-apps/viewer/ui/main_window_menus.cpp      # menus/toolbar
-docs/superpowers/specs/...                # this doc + short ADRs
+apps/viewer/commands/...                  # 布尔命令
+apps/viewer/ui/main_window_menus.cpp      # 菜单 / 工具栏
+docs/superpowers/specs/...                # 本文档 + 短 ADR
 ```
 
 ---
 
-## Risks and mitigations
+## 风险与缓解
 
-| Risk | Mitigation |
-|------|------------|
-| Sphere poles/seam topology fragility | Start with documented canonical layout; heavy validate tests |
-| General boolean is multi-year | Strict phase exits; plane path before curved |
-| Numerical instability | Analytic formulas first; fuzzy tol; refuse unsupported pairs |
-| Scope creep (NURBS early) | Explicitly Phase 4+ |
-| Faceted legacy spheres in old XL files | Version bump or rebuild-on-load for Sphere features |
+| 风险 | 缓解 |
+|------|------|
+| 球极点 / 缝拓扑脆弱 | 先固定规范布局；加重 validate 测试 |
+| 通用布尔周期长 | 严格阶段退出；先平面后弯曲 |
+| 数值不稳定 | 优先解析公式；fuzzy 容差；拒绝不支持组合 |
+| 范围膨胀（过早 NURBS） | 明确放到 Phase 4+ |
+| 旧 XL 中的三角壳球 | 版本升级或加载时对 Sphere 特征重建 |
 
-## Effort sketch (indicative)
+## 工作量粗估（示意）
 
-| Phase | Rough effort |
-|-------|----------------|
-| Phase 1 analytic sphere + tessellation | 1–3 weeks |
-| Phase 2 boolean feature + plane boolean | 4–8 weeks |
-| Phase 3 curved boolean MVP | 6–12+ weeks |
-| Phase 4+ | ongoing |
+| 阶段 | 粗估 |
+|------|------|
+| Phase 1 解析球 + 细分 | 1～3 周 |
+| Phase 2 布尔特征 + 平面布尔 | 4～8 周 |
+| Phase 3 弯曲布尔 MVP | 6～12+ 周 |
+| Phase 4+ | 持续 |
 
-(Depends on robustness bar and test depth.)
+（取决于鲁棒性要求与测试深度。）
 
 ---
 
-## Success criteria (program level)
+## 项目级成功标准
 
-1. Spheres display smoothly with analytic normals and deflection-based meshes.
-2. User can boolean two solids (并/减/交) via selection + menu; operands suppress; undo works.
-3. Plane solids boolean to validated B-Rep; at least one curved boolean case works end-to-end.
-4. Pipeline stages are separable and documented with OCCT concept mapping (no OCCT link required).
+1. 球体以解析法向 + 偏差驱动网格光滑显示。
+2. 用户可通过「选中 + 菜单」对两实体做并/减/交；操作体被抑制；撤销可用。
+3. 平面实体布尔得到通过校验的 B-Rep；至少一个弯曲布尔用例端到端跑通。
+4. 流水线阶段可分离，并文档化与 OCCT 概念的映射（构建不强制依赖 OCCT）。
 
-## Open items (to resolve during Phase 0/1)
+## 待决事项（Phase 0 / 1 解决）
 
-- Exact sphere seam/pole topology diagram
-- Default deflection values for viewer quality vs perf
-- Whether extrude holes / inner loops are required before Phase 2 (recommended: support Inner loops before complex Cut faces)
+- 球面缝 / 极点拓扑的精确示意图
+- Viewer 默认偏差（观感 vs 性能）
+- Phase 2 前是否必须支持拉伸孔 / 内环（建议：复杂 Cut 前面支持 Inner loop）
