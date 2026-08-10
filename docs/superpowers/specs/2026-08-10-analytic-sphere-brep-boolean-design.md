@@ -526,8 +526,8 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T2.0.4 平面–平面求交（最小 IntTools）
 
-- [ ] Plane–Plane → 交线（或平行/重合诊断）
-- [ ] **测试：** 正交平面交线；平行无交；重合 fuzzy 行为
+- [x] Plane–Plane → 交线（或平行/重合诊断）
+- [x] **测试：** 正交平面交线；平行无交；重合 fuzzy 行为（`brep_test_intersect_plane_plane`）
 
 **主要文件：** `kernel/src/bool/intersect_plane_plane.cpp` 等
 

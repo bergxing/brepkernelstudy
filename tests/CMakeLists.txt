@@ -61,3 +61,11 @@ gtest_discover_tests(brep_test_boolean_feature
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_boolean_feature."
 )
+
+add_executable(brep_test_intersect_plane_plane kernel/test_intersect_plane_plane.cpp)
+target_link_libraries(brep_test_intersect_plane_plane PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_intersect_plane_plane
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_intersect_plane_plane>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_intersect_plane_plane."
+)
