@@ -30,6 +30,8 @@ class Model {
   PlaneSurface* make_plane(Point3d origin, Vector3d normal, std::string name = {});
   PlaneSurface* make_plane(Point3d origin, Vector3d u_axis, Vector3d v_axis,
                            std::string name = {});
+  SphereSurface* make_sphere_surface(Point3d center, double radius,
+                                     std::string name = {});
 
   // --- topology factories --------------------------------------------------
   Vertex* make_vertex(Point* p, double tol = 1e-7, std::string name = {});

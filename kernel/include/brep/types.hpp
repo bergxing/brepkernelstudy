@@ -23,7 +23,7 @@ enum class BodyType { Solid, Sheet, Wire };
 
 enum class LoopType { Outer, Inner };
 
-enum class SurfaceKind { Plane, Cylinder, Nurbs };
+enum class SurfaceKind { Plane, Sphere, Cylinder, Nurbs };
 enum class CurveKind { Line, Circle, Nurbs };
 
 using Id = std::uint64_t;

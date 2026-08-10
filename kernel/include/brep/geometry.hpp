@@ -165,4 +165,28 @@ class PlaneSurface final : public Surface {
   Vector3d normal_;
 };
 
+/// Analytic sphere. UV: u = longitude [0, 2π), v = latitude [-π/2, +π/2]
+/// (Y-up: north pole at center + (0, +R, 0)).
+class SphereSurface final : public Surface {
+ public:
+  SphereSurface(Point3d center, double radius);
+
+  [[nodiscard]] SurfaceKind kind() const noexcept override {
+    return SurfaceKind::Sphere;
+  }
+  [[nodiscard]] Point3d eval(double u, double v) const override;
+  [[nodiscard]] Vector3d normal(double u, double v) const override;
+
+  /// Project a 3D point to sphere UV via direction from center (not clamped to
+  /// surface radius). u ∈ [0, 2π); at exact poles u is defined as 0.
+  [[nodiscard]] Point2d param_of(const Point3d& p) const;
+
+  [[nodiscard]] const Point3d& center() const noexcept { return center_; }
+  [[nodiscard]] double radius() const noexcept { return radius_; }
+
+ private:
+  Point3d center_;
+  double radius_{1.0};
+};
+
 }  // namespace brep

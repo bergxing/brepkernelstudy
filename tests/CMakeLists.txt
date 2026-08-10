@@ -13,3 +13,11 @@ gtest_discover_tests(brep_test_snap
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_snap."
 )
+
+add_executable(brep_test_sphere_surface kernel/test_sphere_surface.cpp)
+target_link_libraries(brep_test_sphere_surface PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_sphere_surface
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_sphere_surface>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_sphere_surface."
+)

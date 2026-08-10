@@ -65,6 +65,17 @@ PlaneSurface* Model::make_plane(Point3d origin, Vector3d u_axis, Vector3d v_axis
   return raw;
 }
 
+SphereSurface* Model::make_sphere_surface(Point3d center, double radius,
+                                          std::string /*name*/) {
+  auto s = std::make_unique<SphereSurface>(center, radius);
+  s->id = next_id();
+  SphereSurface* raw = s.get();
+  surfaces_.push_back(std::move(s));
+  BREP_TRACE("make_sphere_surface id={} center={} r={:.6g}", raw->id, center,
+             radius);
+  return raw;
+}
+
 Vertex* Model::make_vertex(Point* p, double tol, std::string name) {
   Vertex* v = emplace(vertices_);
   v->point = p;

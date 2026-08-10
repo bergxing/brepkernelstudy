@@ -448,13 +448,13 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T1.1 `SphereSurface` 几何类型
 
-- [ ] 扩展 `SurfaceKind`，增加 `Sphere`
-- [ ] 实现 `SphereSurface`：`center`、`radius`、`eval(u,v)`、`normal(u,v)`、`param_of`
-- [ ] UV 约定：`u∈[0,2π)`，`v∈[-π/2,π/2]`
-- [ ] `Model` 增加工厂（如 `make_sphere_surface`）
-- [ ] **测试：** 赤道/极点求值与法向；已知点 `param_of` 往返
+- [x] 扩展 `SurfaceKind`，增加 `Sphere`
+- [x] 实现 `SphereSurface`：`center`、`radius`、`eval(u,v)`、`normal(u,v)`、`param_of`
+- [x] UV 约定：`u∈[0,2π)`，`v∈[-π/2,π/2]`
+- [x] `Model` 增加工厂（如 `make_sphere_surface`）
+- [x] **测试：** 赤道/极点求值与法向；已知点 `param_of` 往返（`brep_test_sphere_surface`）
 
-**主要文件：** `kernel/include/brep/types.hpp`、`geometry.hpp`、`model.hpp`、对应 `.cpp`
+**主要文件：** `kernel/include/brep/types.hpp`、`geometry.hpp`、`model.hpp`、对应 `.cpp`、`tests/kernel/test_sphere_surface.cpp`
 
 #### T1.2 解析球 B-Rep 构建（替换三角壳）
 
