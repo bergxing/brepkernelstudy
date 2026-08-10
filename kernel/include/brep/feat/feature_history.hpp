@@ -1,5 +1,6 @@
 #pragma once
 
+#include "brep/bool/types.hpp"
 #include "brep/builder.hpp"
 #include "brep/feat/feature.hpp"
 #include "brep/math.hpp"
@@ -26,13 +27,18 @@ enum class TxKind {
 struct FeatureTransaction {
   TxKind kind{TxKind::AppendFeature};
   FeatureId feature{};
-  std::string feature_type;  // "Box", "Sphere", "Sketch", "Extrude"
+  std::string feature_type;  // "Box", "Sphere", "Sketch", "Extrude", "Boolean"
   BoxSpec box_spec{};
   SphereSpec sphere_spec{};
   Point3d box_origin{};
   std::string sketch_name;
   FeatureId sketch_feature{};  // for Extrude upstream
   double extrude_distance{1.0};
+  boolean::BooleanOp boolean_op{boolean::BooleanOp::Union};
+  FeatureId target_feature_id{};
+  FeatureId tool_feature_id{};
+  bool target_was_suppressed{false};
+  bool tool_was_suppressed{false};
   std::vector<std::pair<param::ParameterId, double>> param_before;
   std::vector<std::pair<param::ParameterId, double>> param_after;
   bool was_suppressed{false};

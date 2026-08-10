@@ -36,7 +36,7 @@ TEST(BooleanSkeleton, StubRejectsUnsupportedCombinations) {
   const boolean::BooleanContext ctx;
   for (const auto op : {boolean::BooleanOp::Union, boolean::BooleanOp::Subtract,
                         boolean::BooleanOp::Intersect}) {
-    const boolean::BooleanResult result = eval->evaluate(op, *a, *b, ctx);
+    const boolean::BooleanResult result = eval->evaluate(op, model, *a, *b, ctx);
     EXPECT_FALSE(result.ok());
     EXPECT_EQ(result.body, nullptr);
     EXPECT_FALSE(result.diagnostics.empty()) << "op=" << static_cast<int>(op);
@@ -53,7 +53,7 @@ TEST(BooleanSkeleton, StubRejectsSphereBoxPair) {
 
   auto eval = boolean::make_stub_boolean_evaluator();
   const auto result =
-      eval->evaluate(boolean::BooleanOp::Subtract, *box, *sphere, {});
+      eval->evaluate(boolean::BooleanOp::Subtract, model, *box, *sphere, {});
   EXPECT_FALSE(result.ok());
   EXPECT_NE(result.diagnostics.find("unsupported"), std::string::npos);
 }

@@ -21,7 +21,8 @@ namespace {
 
 class StubBooleanEvaluator final : public IBooleanEvaluator {
  public:
-  BooleanResult evaluate(BooleanOp op, const Body& a, const Body& b,
+  BooleanResult evaluate(BooleanOp op, Model& /*model*/, const Body& a,
+                         const Body& b,
                          const BooleanContext& /*ctx*/) override {
     BooleanResult result;
     result.mode = BooleanEvalMode::General;

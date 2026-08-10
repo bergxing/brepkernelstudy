@@ -3,6 +3,7 @@
 #include "brep/bool/context.hpp"
 #include "brep/bool/result.hpp"
 #include "brep/bool/types.hpp"
+#include "brep/model.hpp"
 #include "brep/topology.hpp"
 
 #include <memory>
@@ -14,8 +15,8 @@ class IBooleanEvaluator {
  public:
   virtual ~IBooleanEvaluator() = default;
 
-  [[nodiscard]] virtual BooleanResult evaluate(BooleanOp op, const Body& a,
-                                               const Body& b,
+  [[nodiscard]] virtual BooleanResult evaluate(BooleanOp op, Model& model,
+                                               const Body& a, const Body& b,
                                                const BooleanContext& ctx) = 0;
 };
 

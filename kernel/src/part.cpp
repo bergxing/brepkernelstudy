@@ -1,6 +1,7 @@
 #include "brep/part.hpp"
 
 #include "brep/document.hpp"
+#include "brep/feat/boolean_feature.hpp"
 #include "brep/feat/box_feature.hpp"
 #include "brep/feat/extrude_feature.hpp"
 #include "brep/feat/sketch_feature.hpp"
@@ -77,6 +78,29 @@ Body* Part::rebuild_extrude_body(Guid keep_guid, const ops::ExtrudeSpec& spec) {
   return body;
 }
 
+Body* Part::rebuild_boolean_body(Guid keep_guid, Body* result_body) {
+  if (!result_body) return nullptr;
+  if (!keep_guid.is_nil() && result_body->guid != keep_guid) {
+    unregister_body(keep_guid);
+    model_.remove_body(keep_guid);
+    result_body->guid = keep_guid;
+  }
+  register_body(*result_body);
+  return result_body;
+}
+
+void Part::set_boolean_evaluator(
+    std::shared_ptr<boolean::IBooleanEvaluator> evaluator) {
+  boolean_evaluator_ = std::move(evaluator);
+}
+
+boolean::IBooleanEvaluator& Part::boolean_evaluator() {
+  if (!boolean_evaluator_) {
+    boolean_evaluator_ = boolean::make_stub_boolean_evaluator();
+  }
+  return *boolean_evaluator_;
+}
+
 feat::RegenResult Part::regenerate() {
   return feat::Regenerator::run(*this, features_, params_);
 }
@@ -128,16 +152,74 @@ Body* Part::add_extrude(feat::FeatureId sketch_feature, double distance,
   return find_body(f->body_guid());
 }
 
+Body* Part::add_boolean(boolean::BooleanOp op, feat::FeatureId target,
+                        feat::FeatureId tool, std::string name) {
+  auto* target_f = features_.find(target);
+  auto* tool_f = features_.find(tool);
+  if (!target_f || !tool_f) {
+    BREP_WARN("Part::add_boolean: missing target/tool feature");
+    return nullptr;
+  }
+
+  feat::FeatureTransaction tx;
+  tx.kind = feat::TxKind::AppendFeature;
+  tx.feature_type = "Boolean";
+  tx.boolean_op = op;
+  tx.target_feature_id = target;
+  tx.tool_feature_id = tool;
+  tx.target_was_suppressed = target_f->suppressed();
+  tx.tool_was_suppressed = tool_f->suppressed();
+  tx.sketch_name = name;
+
+  auto feature =
+      feat::BooleanFeature::create(op, target, tool, std::move(name));
+  const feat::FeatureId fid = features_.append(std::move(feature));
+  tx.feature = fid;
+
+  const auto result = regenerate();
+  if (!result.ok) {
+    BREP_WARN("Part::add_boolean regenerate failed: {}", result.message);
+    features_.remove(fid);
+    if (auto* t = features_.find(target)) {
+      t->set_suppressed(tx.target_was_suppressed);
+    }
+    if (auto* t = features_.find(tool)) {
+      t->set_suppressed(tx.tool_was_suppressed);
+    }
+    return nullptr;
+  }
+
+  history_.record(std::move(tx));
+  auto* f = features_.find(fid);
+  if (!f) return nullptr;
+  return find_body(f->body_guid());
+}
+
 bool Part::remove_feature(feat::FeatureId id) {
   feat::IFeature* f = features_.find(id);
   if (!f) return false;
+
+  if (f->type_name() == "Boolean") {
+    auto* boolean_f = static_cast<feat::BooleanFeature*>(f);
+    if (auto* target = features_.find(boolean_f->target_feature_id())) {
+      if (target->suppressed()) {
+        target->set_suppressed(false);
+        target->set_status(feat::FeatureStatus::Dirty);
+      }
+    }
+    if (auto* tool = features_.find(boolean_f->tool_feature_id())) {
+      if (tool->suppressed()) {
+        tool->set_suppressed(false);
+        tool->set_status(feat::FeatureStatus::Dirty);
+      }
+    }
+  }
+
   const Guid body = f->body_guid();
   if (!body.is_nil()) {
     unregister_body(body);
     model_.remove_body(body);
   }
-  // Drop parameters owned exclusively by Box/Extrude/Sketch — best-effort by
-  // name prefix is skipped; leave params in store for history redo.
   features_.remove(id);
   features_.mark_all_dirty();
   regenerate();
@@ -174,8 +256,8 @@ bool Part::edit_feature_params(
     auto* sph = static_cast<feat::SphereFeature*>(feature);
     for (const auto& [key, value] : named_vals) {
       if (key == "Radius") {
-        tx.param_before.emplace_back(sph->radius_id(),
-                                     params_.get(sph->radius_id()).value_or(0.0));
+        tx.param_before.emplace_back(
+            sph->radius_id(), params_.get(sph->radius_id()).value_or(0.0));
         tx.param_after.emplace_back(sph->radius_id(), value);
       }
     }

@@ -1,5 +1,6 @@
 #include "brep/feat/feature_history.hpp"
 
+#include "brep/feat/boolean_feature.hpp"
 #include "brep/feat/box_feature.hpp"
 #include "brep/feat/extrude_feature.hpp"
 #include "brep/feat/sketch_feature.hpp"
@@ -79,6 +80,14 @@ bool FeatureHistory::apply_forward(Part& part, FeatureTransaction& tx) {
             part.parameters(),
             tx.sketch_name.empty() ? "Extrude" : tx.sketch_name,
             tx.sketch_feature, tx.extrude_distance);
+        tx.feature = part.features().append(std::move(feature));
+        regen(part);
+        return true;
+      }
+      if (tx.feature_type == "Boolean") {
+        auto feature = BooleanFeature::create(
+            tx.boolean_op, tx.target_feature_id, tx.tool_feature_id,
+            tx.sketch_name.empty() ? "Boolean" : tx.sketch_name);
         tx.feature = part.features().append(std::move(feature));
         regen(part);
         return true;

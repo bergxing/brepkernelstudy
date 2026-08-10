@@ -12,6 +12,7 @@
 #include "brep/feat/regenerator.hpp"
 #include "brep/feat/sketch_feature.hpp"
 #include "brep/feat/sphere_feature.hpp"
+#include "brep/feat/boolean_feature.hpp"
 #include "brep/ops/profile.hpp"
 #include "brep/param/parameter.hpp"
 #include "brep/part.hpp"

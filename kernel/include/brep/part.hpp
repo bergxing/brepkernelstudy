@@ -1,5 +1,7 @@
 #pragma once
 
+#include "brep/bool/evaluator.hpp"
+#include "brep/bool/types.hpp"
 #include "brep/builder.hpp"
 #include "brep/feat/feature_history.hpp"
 #include "brep/feat/feature_tree.hpp"
@@ -8,6 +10,8 @@
 #include "brep/model.hpp"
 #include "brep/ops/profile.hpp"
 #include "brep/param/parameter.hpp"
+
+#include <memory>
 
 namespace brep {
 
@@ -59,6 +63,10 @@ class Part final : public IObject {
   Body* add_extrude(feat::FeatureId sketch_feature, double distance,
                     std::string name = "Extrude");
 
+  /// Append boolean of two body-producing features (suppresses operands on success).
+  Body* add_boolean(boolean::BooleanOp op, feat::FeatureId target,
+                    feat::FeatureId tool, std::string name = "Boolean");
+
   feat::RegenResult regenerate();
 
   bool remove_feature(feat::FeatureId id);
@@ -80,6 +88,13 @@ class Part final : public IObject {
   /// Replace or create an extruded body, preserving Guid when possible.
   Body* rebuild_extrude_body(Guid keep_guid, const ops::ExtrudeSpec& spec);
 
+  /// Adopt a boolean result body already created in this Part's model.
+  Body* rebuild_boolean_body(Guid keep_guid, Body* result_body);
+
+  void set_boolean_evaluator(
+      std::shared_ptr<boolean::IBooleanEvaluator> evaluator);
+  [[nodiscard]] boolean::IBooleanEvaluator& boolean_evaluator();
+
   Body* find_body(const Guid& guid);
   [[nodiscard]] const Body* find_body(const Guid& guid) const;
 
@@ -92,6 +107,7 @@ class Part final : public IObject {
   param::ParameterStore params_;
   feat::FeatureTree features_;
   feat::FeatureHistory history_;
+  std::shared_ptr<boolean::IBooleanEvaluator> boolean_evaluator_;
 };
 
 }  // namespace brep

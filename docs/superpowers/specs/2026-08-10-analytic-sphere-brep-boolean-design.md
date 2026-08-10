@@ -510,10 +510,10 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 **主要文件：** `brep/bool/*`、`src/bool/evaluator_stub.cpp`、`brep_test_boolean_skeleton`
 #### T2.0.2 `BooleanFeature` + 抑制操作体
 
-- [ ] `BooleanFeature`：`op`、`target_feature_id`、`tool_feature_id`
-- [ ] `rebuild` 调用求值器；成功后 suppress 两操作体
-- [ ] 接入 `FeatureTree` / `Regenerator` / `FeatureHistory`（撤销恢复抑制状态）
-- [ ] **测试：** 添加布尔特征后操作体不可见、结果可见；undo/redo
+- [x] `BooleanFeature`：`op`、`target_feature_id`、`tool_feature_id`
+- [x] `rebuild` 调用求值器；成功后 suppress 两操作体
+- [x] 接入 `FeatureTree` / `Regenerator` / `FeatureHistory`（撤销恢复抑制状态）
+- [x] **测试：** 添加布尔特征后操作体不可见、结果可见；undo/redo
 
 **主要文件：** `boolean_feature.hpp/.cpp`、`feature_history.*`、`part.*`、`CMake BrepFeat`
 

@@ -53,3 +53,11 @@ gtest_discover_tests(brep_test_boolean_skeleton
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_boolean_skeleton."
 )
+
+add_executable(brep_test_boolean_feature kernel/test_boolean_feature.cpp)
+target_link_libraries(brep_test_boolean_feature PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_boolean_feature
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_boolean_feature>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_boolean_feature."
+)
