@@ -48,7 +48,14 @@ void tessellate_face(const Face& face, TriangleMesh& out,
 [[nodiscard]] TriangleMesh tessellate_body(
     const Body& body, const TessellationOptions& opts = {});
 
+/// Edge display extraction (see design §A4).
+struct EdgeExtractionOptions {
+  /// Periodic seams (both coedges on the same face) are hidden by default.
+  bool include_seam_edges{false};
+};
+
 /// Extract unique topological edges as line segments.
-[[nodiscard]] EdgeMesh extract_edges(const Body& body);
+[[nodiscard]] EdgeMesh extract_edges(const Body& body,
+                                     const EdgeExtractionOptions& opts = {});
 
 }  // namespace brep

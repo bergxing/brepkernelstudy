@@ -37,3 +37,11 @@ gtest_discover_tests(brep_test_tessellate_sphere
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_tessellate_sphere."
 )
+
+add_executable(brep_test_extract_edges kernel/test_extract_edges.cpp)
+target_link_libraries(brep_test_extract_edges PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_extract_edges
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_extract_edges>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_extract_edges."
+)

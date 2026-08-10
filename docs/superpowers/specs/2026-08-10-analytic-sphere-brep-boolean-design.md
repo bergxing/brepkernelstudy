@@ -476,9 +476,9 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T1.4 边线显示（隐藏 seam）
 
-- [ ] `extract_edges` / Viewer：默认不画或极淡 seam
-- [ ] 可选调试开关显示 seam（可后置）
-- [ ] **验收：** 视口中无明显经线疤
+- [x] `extract_edges` / Viewer：默认不画或极淡 seam
+- [x] 可选调试开关显示 seam（可后置）— `EdgeExtractionOptions::include_seam_edges`
+- [x] **验收：** 视口中无明显经线疤
 
 **主要文件：** `mesh.cpp`、viewer 边线上传/渲染相关
 

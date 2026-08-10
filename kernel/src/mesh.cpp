@@ -32,6 +32,16 @@ EdgeKey make_edge_key(const Edge& e) {
   return i0 < i1 ? EdgeKey{i0, i1} : EdgeKey{i1, i0};
 }
 
+/// Periodic seam: both radial coedges belong to the same face (e.g. sphere
+/// meridian). Ordinary manifold edges have coedges on two different faces.
+bool is_periodic_seam_edge(const Edge& e) {
+  if (e.radial.size() != 2) return false;
+  const CoEdge* a = e.radial[0];
+  const CoEdge* b = e.radial[1];
+  if (!a || !b || !a->loop || !b->loop) return false;
+  return a->loop->face != nullptr && a->loop->face == b->loop->face;
+}
+
 int clamp_segments(int value, int lo, int hi) {
   return std::clamp(value, std::min(lo, hi), std::max(lo, hi));
 }
@@ -244,7 +254,7 @@ TriangleMesh tessellate_body(const Body& body, const TessellationOptions& opts) 
   return mesh;
 }
 
-EdgeMesh extract_edges(const Body& body) {
+EdgeMesh extract_edges(const Body& body, const EdgeExtractionOptions& opts) {
   EdgeMesh mesh;
   std::unordered_set<EdgeKey, EdgeKeyHash> seen;
 
@@ -256,6 +266,9 @@ EdgeMesh extract_edges(const Body& body) {
         if (!loop) continue;
         loop->for_each_coedge([&](const CoEdge& ce) {
           if (!ce.edge || !ce.edge->v0 || !ce.edge->v1) return;
+          if (!opts.include_seam_edges && is_periodic_seam_edge(*ce.edge)) {
+            return;
+          }
           const EdgeKey key = make_edge_key(*ce.edge);
           if (!seen.insert(key).second) return;
           mesh.positions.push_back(ce.edge->v0->position());
