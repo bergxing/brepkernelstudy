@@ -519,8 +519,8 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T2.0.3 XL 持久化
 
-- [ ] 序列化/反序列化 `BooleanFeature` + 抑制标志
-- [ ] **测试：** xl_roundtrip 含布尔节点
+- [x] 序列化/反序列化 `BooleanFeature` + 抑制标志
+- [x] **测试：** xl_roundtrip 含布尔节点（`BooleanFeature.XlRoundtripPersistsBooleanAndSuppress`）
 
 **主要文件：** `xl_document.cpp`
 

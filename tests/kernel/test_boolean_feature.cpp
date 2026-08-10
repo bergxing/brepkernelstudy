@@ -1,11 +1,14 @@
 #include "api/core.hpp"
 #include "api/modeling.hpp"
+#include "api/persistence.hpp"
 
 #include "brep/bool/boolean.hpp"
 #include "brep/feat/boolean_feature.hpp"
+#include "brep/io/bks_cache.hpp"
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <memory>
 
 namespace brep {
@@ -117,6 +120,69 @@ TEST(BooleanFeature, StubEvaluatorFailsWithoutSuppress) {
   EXPECT_EQ(part.model().bodies().size(), 2u);
   EXPECT_FALSE(part.features().find(target)->suppressed());
   EXPECT_FALSE(part.features().find(tool)->suppressed());
+}
+
+TEST(BooleanFeature, XlRoundtripPersistsBooleanAndSuppress) {
+  namespace fs = std::filesystem;
+
+  struct FactoryGuard {
+    FactoryGuard() {
+      boolean::set_boolean_evaluator_factory(
+          [] { return std::make_shared<FakeUnionEvaluator>(); });
+    }
+    ~FactoryGuard() { boolean::set_boolean_evaluator_factory({}); }
+  } factory_guard;
+
+  auto doc = Document::create("bool_xl");
+  Part& part = doc->add_part("Main");
+
+  Body* a = part.add_box(BoxSpec{.min = {0, 0, 0}, .max = {1, 1, 1}, .name = "A"});
+  Body* b =
+      part.add_box(BoxSpec{.min = {0.5, 0, 0}, .max = {1.5, 1, 1}, .name = "B"});
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+  const auto target_id = part.features().find_by_body(a->guid)->id();
+  const auto tool_id = part.features().find_by_body(b->guid)->id();
+
+  Body* result =
+      part.add_boolean(boolean::BooleanOp::Subtract, target_id, tool_id, "Cut");
+  ASSERT_NE(result, nullptr);
+  const Guid result_guid = result->guid;
+  const auto bool_id = part.features().find_by_body(result_guid)->id();
+
+  const fs::path path =
+      fs::temp_directory_path() / "brep_test_boolean_feature_roundtrip.xl";
+  auto saved = io::save_xl(*doc, path);
+  ASSERT_TRUE(saved.ok) << saved.error;
+
+  auto loaded = io::load_xl(path);
+  ASSERT_TRUE(loaded.ok()) << loaded.error;
+
+  Part* p2 = loaded.document->main_part();
+  ASSERT_NE(p2, nullptr);
+  EXPECT_EQ(p2->model().bodies().size(), 1u);
+  EXPECT_NE(p2->find_body(result_guid), nullptr);
+
+  auto* target2 = p2->features().find(target_id);
+  auto* tool2 = p2->features().find(tool_id);
+  auto* bool2 = p2->features().find(bool_id);
+  ASSERT_NE(target2, nullptr);
+  ASSERT_NE(tool2, nullptr);
+  ASSERT_NE(bool2, nullptr);
+  EXPECT_TRUE(target2->suppressed());
+  EXPECT_TRUE(tool2->suppressed());
+  EXPECT_FALSE(bool2->suppressed());
+  EXPECT_EQ(bool2->type_name(), "Boolean");
+  EXPECT_EQ(bool2->body_guid(), result_guid);
+
+  const auto& bf = static_cast<const feat::BooleanFeature&>(*bool2);
+  EXPECT_EQ(bf.op(), boolean::BooleanOp::Subtract);
+  EXPECT_EQ(bf.target_feature_id(), target_id);
+  EXPECT_EQ(bf.tool_feature_id(), tool_id);
+
+  std::error_code ec;
+  fs::remove(path, ec);
+  fs::remove(io::bks_cache_path_for(path), ec);
 }
 
 }  // namespace

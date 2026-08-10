@@ -10,7 +10,7 @@ namespace brep::io {
 /// Binary document format (.xl):
 ///   magic "XL01" | u32 schema | u32 flags | u64 payload_size | payload | u32 crc32
 /// Payload (LE): Document/Parts/parameters/features; schema>=2 also Assembly.
-///   Feature types: Box, Sketch (points/lines/circles/constraints), Extrude.
+///   Feature types: Box, Sphere, Sketch, Extrude, Boolean.
 /// Sidecar mesh cache: "<stem>.bks.cache" (optional, written on save).
 /// CRC detects corruption / casual edits; this is integrity, not encryption.
 

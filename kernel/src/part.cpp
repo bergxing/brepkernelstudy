@@ -96,7 +96,7 @@ void Part::set_boolean_evaluator(
 
 boolean::IBooleanEvaluator& Part::boolean_evaluator() {
   if (!boolean_evaluator_) {
-    boolean_evaluator_ = boolean::make_stub_boolean_evaluator();
+    boolean_evaluator_ = boolean::make_default_boolean_evaluator();
   }
   return *boolean_evaluator_;
 }

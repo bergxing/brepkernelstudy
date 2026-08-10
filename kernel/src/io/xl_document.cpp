@@ -1,5 +1,6 @@
 #include "brep/io/xl_document.hpp"
 
+#include "brep/feat/boolean_feature.hpp"
 #include "brep/feat/box_feature.hpp"
 #include "brep/feat/extrude_feature.hpp"
 #include "brep/feat/sketch_feature.hpp"
@@ -148,7 +149,13 @@ class BinReader {
   std::string error_;
 };
 
-enum class FeatType : std::uint8_t { Box = 1, Sketch = 2, Extrude = 3, Sphere = 4 };
+enum class FeatType : std::uint8_t {
+  Box = 1,
+  Sketch = 2,
+  Extrude = 3,
+  Sphere = 4,
+  Boolean = 5
+};
 
 void write_plane(BinWriter& w, const Plane& p) {
   w.f64(p.origin.x());
@@ -249,6 +256,18 @@ void write_feature(BinWriter& w, const feat::IFeature& f) {
     w.guid(ex.sketch_feature_id().guid);
     w.guid(ex.distance_id().guid);
     w.guid(ex.body_guid());
+    return;
+  }
+  if (f.type_name() == "Boolean") {
+    const auto& b = static_cast<const feat::BooleanFeature&>(f);
+    w.u8(static_cast<std::uint8_t>(FeatType::Boolean));
+    w.guid(b.id().guid);
+    w.str(b.display_name());
+    w.u8(b.suppressed() ? 1 : 0);
+    w.u8(static_cast<std::uint8_t>(b.op()));
+    w.guid(b.target_feature_id().guid);
+    w.guid(b.tool_feature_id().guid);
+    w.guid(b.body_guid());
     return;
   }
   BREP_WARN("xl save: skipping unknown feature type '{}'", f.type_name());
@@ -359,6 +378,24 @@ bool read_feature(BinReader& r, Part& part) {
     if (!r.ok()) return false;
     auto feature = std::make_unique<feat::ExtrudeFeature>(
         feat::FeatureId{fid}, name, sketch_id, dist);
+    feature->set_body_guid(body);
+    feature->set_suppressed(suppressed);
+    feature->set_status(feat::FeatureStatus::Dirty);
+    part.features().append(std::move(feature));
+    return true;
+  }
+
+  if (type == FeatType::Boolean) {
+    const Guid fid = r.guid();
+    const std::string name = r.str();
+    const bool suppressed = r.u8() != 0;
+    const auto op = static_cast<boolean::BooleanOp>(r.u8());
+    const feat::FeatureId target{r.guid()};
+    const feat::FeatureId tool{r.guid()};
+    const Guid body = r.guid();
+    if (!r.ok()) return false;
+    auto feature = std::make_unique<feat::BooleanFeature>(
+        feat::FeatureId{fid}, name, op, target, tool);
     feature->set_body_guid(body);
     feature->set_suppressed(suppressed);
     feature->set_status(feat::FeatureStatus::Dirty);
