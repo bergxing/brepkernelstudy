@@ -145,5 +145,65 @@ TEST(FaceBvh, SphereFaceAabbIsCenterPlusMinusRadius) {
   EXPECT_FALSE(bvh.query_overlaps(box).empty());
 }
 
+TEST(FaceBvh, SahSeparatedBoxesHaveNoCandidatePairs) {
+  Model model;
+  Body* left =
+      make_box(model, BoxSpec{.min = {0, 0, 0}, .max = {1, 1, 1}, .name = "L"});
+  Body* right =
+      make_box(model, BoxSpec{.min = {5, 0, 0}, .max = {6, 1, 1}, .name = "R"});
+  ASSERT_NE(left, nullptr);
+  ASSERT_NE(right, nullptr);
+
+  spatial::FaceBvh a =
+      spatial::FaceBvh::build(*left, spatial::BuildQuality::Sah);
+  spatial::FaceBvh b =
+      spatial::FaceBvh::build(*right, spatial::BuildQuality::Sah);
+  EXPECT_TRUE(spatial::FaceBvh::candidate_pairs(a, b).empty());
+}
+
+TEST(FaceBvh, SahOverlappingBoxesCandidatesMatchNaive) {
+  Model model;
+  Body* a_body =
+      make_box(model, BoxSpec{.min = {0, 0, 0}, .max = {2, 2, 2}, .name = "A"});
+  Body* b_body =
+      make_box(model, BoxSpec{.min = {1, 1, 1}, .max = {3, 3, 3}, .name = "B"});
+  ASSERT_NE(a_body, nullptr);
+  ASSERT_NE(b_body, nullptr);
+
+  spatial::FaceBvh a =
+      spatial::FaceBvh::build(*a_body, spatial::BuildQuality::Sah);
+  spatial::FaceBvh b =
+      spatial::FaceBvh::build(*b_body, spatial::BuildQuality::Sah);
+  const auto pairs = spatial::FaceBvh::candidate_pairs(a, b);
+  EXPECT_FALSE(pairs.empty());
+  EXPECT_EQ(to_set(pairs), naive_overlapping_pairs(*a_body, *b_body));
+}
+
+TEST(FaceBvh, SahQueryAgreesWithMedianAndTracksVisits) {
+  Model model;
+  Body* box =
+      make_box(model, BoxSpec{.min = {0, 0, 0}, .max = {2, 1, 1}, .name = "B"});
+  ASSERT_NE(box, nullptr);
+
+  spatial::FaceBvh median =
+      spatial::FaceBvh::build(*box, spatial::BuildQuality::Median);
+  spatial::FaceBvh sah =
+      spatial::FaceBvh::build(*box, spatial::BuildQuality::Sah);
+
+  const spatial::Aabb query{{1.9, 0.4, 0.4}, {2.1, 0.6, 0.6}};
+  spatial::QueryStats med_stats;
+  spatial::QueryStats sah_stats;
+  auto med_hits = median.query_overlaps(query, &med_stats);
+  auto sah_hits = sah.query_overlaps(query, &sah_stats);
+
+  std::set<const Face*> med_set(med_hits.begin(), med_hits.end());
+  std::set<const Face*> sah_set(sah_hits.begin(), sah_hits.end());
+  EXPECT_EQ(med_set, sah_set);
+  EXPECT_GT(med_stats.nodes_visited, 0u);
+  EXPECT_GT(sah_stats.nodes_visited, 0u);
+  // Weak quality check: SAH should not visit wildly more nodes than Median.
+  EXPECT_LE(sah_stats.nodes_visited, med_stats.nodes_visited + 8u);
+}
+
 }  // namespace
 }  // namespace brep

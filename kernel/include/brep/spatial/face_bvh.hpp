@@ -3,6 +3,7 @@
 #include "brep/spatial/aabb.hpp"
 #include "brep/topology.hpp"
 
+#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -10,7 +11,7 @@ namespace brep::spatial {
 
 enum class BuildQuality {
   Median,
-  Sah,  // T4.4.b — declared now; Median-only until SAH lands
+  Sah,
 };
 
 struct FaceBvhNode {
@@ -23,16 +24,22 @@ struct FaceBvhNode {
   [[nodiscard]] bool is_leaf() const noexcept { return left < 0 && right < 0; }
 };
 
+struct QueryStats {
+  std::size_t nodes_visited{0};
+};
+
 /// Axis-aligned face BVH for broad-phase candidate generation.
 class FaceBvh {
  public:
   static constexpr int k_default_leaf_max = 4;
+  static constexpr int k_sah_bins = 16;
 
   [[nodiscard]] static FaceBvh build(const Body& body,
                                      BuildQuality quality = BuildQuality::Median,
                                      int leaf_max = k_default_leaf_max);
 
-  [[nodiscard]] std::vector<Face*> query_overlaps(const Aabb& query) const;
+  [[nodiscard]] std::vector<Face*> query_overlaps(
+      const Aabb& query, QueryStats* stats = nullptr) const;
 
   [[nodiscard]] static std::vector<std::pair<Face*, Face*>> candidate_pairs(
       const FaceBvh& a, const FaceBvh& b);
@@ -51,7 +58,10 @@ class FaceBvh {
   int root_{-1};
 
   [[nodiscard]] int build_median(int begin, int end, int leaf_max);
-  void query_node(int node, const Aabb& query, std::vector<Face*>& out) const;
+  [[nodiscard]] int build_sah(int begin, int end, int leaf_max);
+  void apply_order(int begin, int end, const std::vector<int>& order);
+  void query_node(int node, const Aabb& query, std::vector<Face*>& out,
+                  QueryStats* stats) const;
   static void visit_pairs(const FaceBvh& a, int na, const FaceBvh& b, int nb,
                           std::vector<std::pair<Face*, Face*>>& out);
 };

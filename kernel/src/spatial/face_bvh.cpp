@@ -3,11 +3,16 @@
 #include "brep/geometry.hpp"
 
 #include <algorithm>
-#include <stdexcept>
+#include <array>
+#include <cmath>
+#include <limits>
 #include <utility>
 
 namespace brep::spatial {
 namespace {
+
+constexpr double k_c_trav = 1.0;
+constexpr double k_c_isect = 1.0;
 
 [[nodiscard]] double centroid_component(const Aabb& box, int axis) {
   const Point3d c = box.center();
@@ -64,11 +69,6 @@ Aabb estimate_face_aabb(const Face& face) {
 }
 
 FaceBvh FaceBvh::build(const Body& body, BuildQuality quality, int leaf_max) {
-  if (quality == BuildQuality::Sah) {
-    // T4.4.b will replace this; keep Median-only for T4.4.a.
-    throw std::invalid_argument(
-        "FaceBvh::build: BuildQuality::Sah not implemented yet (T4.4.b)");
-  }
   if (leaf_max < 1) leaf_max = 1;
 
   FaceBvh bvh;
@@ -87,8 +87,32 @@ FaceBvh FaceBvh::build(const Body& body, BuildQuality quality, int leaf_max) {
 
   bvh.root_bounds_ =
       bounds_of_range(bvh.face_bounds_, 0, static_cast<int>(bvh.faces_.size()));
-  bvh.root_ = bvh.build_median(0, static_cast<int>(bvh.faces_.size()), leaf_max);
+  const int n = static_cast<int>(bvh.faces_.size());
+  if (quality == BuildQuality::Sah) {
+    bvh.root_ = bvh.build_sah(0, n, leaf_max);
+  } else {
+    bvh.root_ = bvh.build_median(0, n, leaf_max);
+  }
   return bvh;
+}
+
+void FaceBvh::apply_order(int begin, int end, const std::vector<int>& order) {
+  const int count = end - begin;
+  std::vector<Face*> faces_tmp(static_cast<std::size_t>(count));
+  std::vector<Aabb> bounds_tmp(static_cast<std::size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    const int src = order[static_cast<std::size_t>(i)];
+    faces_tmp[static_cast<std::size_t>(i)] =
+        faces_[static_cast<std::size_t>(src)];
+    bounds_tmp[static_cast<std::size_t>(i)] =
+        face_bounds_[static_cast<std::size_t>(src)];
+  }
+  for (int i = 0; i < count; ++i) {
+    faces_[static_cast<std::size_t>(begin + i)] =
+        faces_tmp[static_cast<std::size_t>(i)];
+    face_bounds_[static_cast<std::size_t>(begin + i)] =
+        bounds_tmp[static_cast<std::size_t>(i)];
+  }
 }
 
 int FaceBvh::build_median(int begin, int end, int leaf_max) {
@@ -107,7 +131,6 @@ int FaceBvh::build_median(int begin, int end, int leaf_max) {
   const int axis = node.bounds.longest_axis();
   const int mid = begin + count / 2;
 
-  // Keep faces_ and face_bounds_ aligned via index nth_element.
   std::vector<int> order(static_cast<std::size_t>(count));
   for (int i = 0; i < count; ++i) {
     order[static_cast<std::size_t>(i)] = begin + i;
@@ -121,25 +144,10 @@ int FaceBvh::build_median(int begin, int end, int leaf_max) {
                                 face_bounds_[static_cast<std::size_t>(ib)],
                                 axis);
                    });
-
-  std::vector<Face*> faces_tmp(static_cast<std::size_t>(count));
-  std::vector<Aabb> bounds_tmp(static_cast<std::size_t>(count));
-  for (int i = 0; i < count; ++i) {
-    const int src = order[static_cast<std::size_t>(i)];
-    faces_tmp[static_cast<std::size_t>(i)] =
-        faces_[static_cast<std::size_t>(src)];
-    bounds_tmp[static_cast<std::size_t>(i)] =
-        face_bounds_[static_cast<std::size_t>(src)];
-  }
-  for (int i = 0; i < count; ++i) {
-    faces_[static_cast<std::size_t>(begin + i)] =
-        faces_tmp[static_cast<std::size_t>(i)];
-    face_bounds_[static_cast<std::size_t>(begin + i)] =
-        bounds_tmp[static_cast<std::size_t>(i)];
-  }
+  apply_order(begin, end, order);
 
   const int idx = static_cast<int>(nodes_.size());
-  nodes_.push_back(node);  // placeholder; fill children after recursion
+  nodes_.push_back(node);
   const int left = build_median(begin, mid, leaf_max);
   const int right = build_median(mid, end, leaf_max);
   nodes_[static_cast<std::size_t>(idx)].left = left;
@@ -149,9 +157,146 @@ int FaceBvh::build_median(int begin, int end, int leaf_max) {
   return idx;
 }
 
+int FaceBvh::build_sah(int begin, int end, int leaf_max) {
+  const int count = end - begin;
+  FaceBvhNode node;
+  node.bounds = bounds_of_range(face_bounds_, begin, end);
+  node.face_begin = begin;
+  node.face_count = count;
+
+  const double leaf_cost = k_c_isect * static_cast<double>(count);
+  if (count <= leaf_max) {
+    const int idx = static_cast<int>(nodes_.size());
+    nodes_.push_back(node);
+    return idx;
+  }
+
+  const double parent_sa = node.bounds.surface_area();
+  if (!(parent_sa > 0.0)) {
+    // Degenerate bounds: fall back to median split by index.
+    return build_median(begin, end, leaf_max);
+  }
+
+  int best_axis = -1;
+  int best_split = -1;  // last left bin index in [0, bins-2]
+  double best_cost = std::numeric_limits<double>::infinity();
+
+  for (int axis = 0; axis < 3; ++axis) {
+    double cmin = std::numeric_limits<double>::infinity();
+    double cmax = -std::numeric_limits<double>::infinity();
+    for (int i = begin; i < end; ++i) {
+      const double c =
+          centroid_component(face_bounds_[static_cast<std::size_t>(i)], axis);
+      cmin = std::min(cmin, c);
+      cmax = std::max(cmax, c);
+    }
+    const double extent = cmax - cmin;
+    if (!(extent > 1e-30)) continue;
+
+    std::array<int, k_sah_bins> counts{};
+    std::array<Aabb, k_sah_bins> bins{};
+    counts.fill(0);
+
+    const double inv = static_cast<double>(k_sah_bins) * (1.0 / extent);
+    for (int i = begin; i < end; ++i) {
+      const Aabb& fb = face_bounds_[static_cast<std::size_t>(i)];
+      const double c = centroid_component(fb, axis);
+      int bin = static_cast<int>((c - cmin) * inv);
+      if (bin < 0) bin = 0;
+      if (bin >= k_sah_bins) bin = k_sah_bins - 1;
+      ++counts[static_cast<std::size_t>(bin)];
+      bins[static_cast<std::size_t>(bin)].expand(fb);
+    }
+
+    std::array<int, k_sah_bins> left_count{};
+    std::array<Aabb, k_sah_bins> left_bounds{};
+    int running = 0;
+    Aabb run_bounds;
+    for (int b = 0; b < k_sah_bins; ++b) {
+      running += counts[static_cast<std::size_t>(b)];
+      run_bounds.expand(bins[static_cast<std::size_t>(b)]);
+      left_count[static_cast<std::size_t>(b)] = running;
+      left_bounds[static_cast<std::size_t>(b)] = run_bounds;
+    }
+
+    running = 0;
+    run_bounds = Aabb{};
+    for (int b = k_sah_bins - 1; b >= 1; --b) {
+      running += counts[static_cast<std::size_t>(b)];
+      run_bounds.expand(bins[static_cast<std::size_t>(b)]);
+      const int n_left = left_count[static_cast<std::size_t>(b - 1)];
+      const int n_right = running;
+      if (n_left == 0 || n_right == 0) continue;
+      const double sa_l =
+          left_bounds[static_cast<std::size_t>(b - 1)].surface_area();
+      const double sa_r = run_bounds.surface_area();
+      const double cost =
+          k_c_trav +
+          (sa_l / parent_sa) * static_cast<double>(n_left) * k_c_isect +
+          (sa_r / parent_sa) * static_cast<double>(n_right) * k_c_isect;
+      if (cost < best_cost) {
+        best_cost = cost;
+        best_axis = axis;
+        best_split = b - 1;
+      }
+    }
+  }
+
+  if (best_axis < 0 || !(best_cost < leaf_cost)) {
+    // No useful SAH split — keep as leaf (may exceed leaf_max).
+    const int idx = static_cast<int>(nodes_.size());
+    nodes_.push_back(node);
+    return idx;
+  }
+
+  double cmin = std::numeric_limits<double>::infinity();
+  double cmax = -std::numeric_limits<double>::infinity();
+  for (int i = begin; i < end; ++i) {
+    const double c = centroid_component(
+        face_bounds_[static_cast<std::size_t>(i)], best_axis);
+    cmin = std::min(cmin, c);
+    cmax = std::max(cmax, c);
+  }
+  const double extent = cmax - cmin;
+  const double inv = static_cast<double>(k_sah_bins) * (1.0 / extent);
+
+  auto bin_of = [&](int index) {
+    const double c = centroid_component(
+        face_bounds_[static_cast<std::size_t>(index)], best_axis);
+    int bin = static_cast<int>((c - cmin) * inv);
+    if (bin < 0) bin = 0;
+    if (bin >= k_sah_bins) bin = k_sah_bins - 1;
+    return bin;
+  };
+
+  std::vector<int> order(static_cast<std::size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    order[static_cast<std::size_t>(i)] = begin + i;
+  }
+  const auto mid_it = std::partition(
+      order.begin(), order.end(),
+      [&](int index) { return bin_of(index) <= best_split; });
+  const int mid = begin + static_cast<int>(mid_it - order.begin());
+  if (mid <= begin || mid >= end) {
+    return build_median(begin, end, leaf_max);
+  }
+  apply_order(begin, end, order);
+
+  const int idx = static_cast<int>(nodes_.size());
+  nodes_.push_back(node);
+  const int left = build_sah(begin, mid, leaf_max);
+  const int right = build_sah(mid, end, leaf_max);
+  nodes_[static_cast<std::size_t>(idx)].left = left;
+  nodes_[static_cast<std::size_t>(idx)].right = right;
+  nodes_[static_cast<std::size_t>(idx)].face_begin = 0;
+  nodes_[static_cast<std::size_t>(idx)].face_count = 0;
+  return idx;
+}
+
 void FaceBvh::query_node(int node_idx, const Aabb& query,
-                         std::vector<Face*>& out) const {
+                         std::vector<Face*>& out, QueryStats* stats) const {
   if (node_idx < 0) return;
+  if (stats) ++stats->nodes_visited;
   const FaceBvhNode& node = nodes_[static_cast<std::size_t>(node_idx)];
   if (!node.bounds.overlaps(query)) return;
   if (node.is_leaf()) {
@@ -163,14 +308,15 @@ void FaceBvh::query_node(int node_idx, const Aabb& query,
     }
     return;
   }
-  query_node(node.left, query, out);
-  query_node(node.right, query, out);
+  query_node(node.left, query, out, stats);
+  query_node(node.right, query, out, stats);
 }
 
-std::vector<Face*> FaceBvh::query_overlaps(const Aabb& query) const {
+std::vector<Face*> FaceBvh::query_overlaps(const Aabb& query,
+                                           QueryStats* stats) const {
   std::vector<Face*> out;
   if (root_ < 0) return out;
-  query_node(root_, query, out);
+  query_node(root_, query, out, stats);
   return out;
 }
 
