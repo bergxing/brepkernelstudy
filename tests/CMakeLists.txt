@@ -128,6 +128,16 @@ gtest_discover_tests(brep_test_tessellate_trimmed_sphere
   TEST_PREFIX "brep_test_tessellate_trimmed_sphere."
 )
 
+add_executable(brep_test_tessellate_untitled_union
+  kernel/test_tessellate_untitled_union.cpp)
+target_link_libraries(brep_test_tessellate_untitled_union PRIVATE brep
+                      GTest::gtest_main)
+gtest_discover_tests(brep_test_tessellate_untitled_union
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_tessellate_untitled_union>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_tessellate_untitled_union."
+)
+
 add_executable(brep_test_planar_boolean kernel/test_planar_boolean.cpp)
 target_link_libraries(brep_test_planar_boolean PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_planar_boolean
