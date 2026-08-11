@@ -37,6 +37,14 @@ Loop* Face::outer_loop() const noexcept {
   return loops.empty() ? nullptr : loops.front();
 }
 
+std::vector<Loop*> Face::outer_loops() const {
+  std::vector<Loop*> outers;
+  for (Loop* l : loops) {
+    if (l && l->type == LoopType::Outer) outers.push_back(l);
+  }
+  return outers;
+}
+
 std::vector<Loop*> Face::inner_loops() const {
   std::vector<Loop*> inners;
   for (Loop* l : loops) {

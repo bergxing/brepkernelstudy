@@ -90,21 +90,23 @@ TEST(InnerLoop, PlanarFaceWithHoleValidates) {
   }
 }
 
-TEST(InnerLoop, ExactlyOneOuterRequired) {
+TEST(InnerLoop, MultipleOutersAllowed) {
   Model model;
   Body* body = make_planar_face_with_hole(model);
   Face* face = body->shells[0]->faces[0];
-  face->loops[1]->type = LoopType::Outer;
+  face->loops[1]->type = LoopType::Outer;  // two Outers, zero Inner
 
   const auto report = validate_body(*body);
-  EXPECT_FALSE(report.ok());
-  bool found = false;
-  for (const auto& issue : report.issues) {
-    if (issue.message.find("exactly one outer") != std::string::npos) {
-      found = true;
-    }
-  }
-  EXPECT_TRUE(found) << "expected error about exactly one outer loop";
+  EXPECT_TRUE(report.ok()) << "multi-outer must validate";
+  ASSERT_EQ(face->outer_loops().size(), 2u);
+}
+
+TEST(InnerLoop, MissingOuterStillErrors) {
+  Model model;
+  Body* body = make_planar_face_with_hole(model);
+  Face* face = body->shells[0]->faces[0];
+  for (Loop* l : face->loops) l->type = LoopType::Inner;
+  EXPECT_FALSE(validate_body(*body).ok());
 }
 
 TEST(InnerLoop, BoxStillValidatesWithSingleOuter) {

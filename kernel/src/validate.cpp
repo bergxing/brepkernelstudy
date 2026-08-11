@@ -50,11 +50,7 @@ ValidationReport validate_body(const Body& body) {
         report.error(fn, "missing outer loop");
         continue;
       }
-      if (outer_count != 1) {
-        report.error(fn, "exactly one outer loop required (got " +
-                             std::to_string(outer_count) + ")");
-        continue;
-      }
+      // outer_count >= 1 is OK (multi-outer allowed)
       if (!face->outer_loop()) {
         report.error(fn, "missing outer loop");
         continue;
