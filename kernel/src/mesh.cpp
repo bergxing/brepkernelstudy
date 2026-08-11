@@ -10,6 +10,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -74,149 +75,15 @@ void ensure_cw(std::vector<Point2d>& uv, std::vector<Point3d>& xyz) {
   }
 }
 
-[[nodiscard]] double dist2_uv(const Point2d& a, const Point2d& b) {
-  const double du = a.u() - b.u();
-  const double dv = a.v() - b.v();
-  return du * du + dv * dv;
-}
-
-[[nodiscard]] bool point_in_triangle2d(const Point2d& p, const Point2d& a,
-                                       const Point2d& b, const Point2d& c) {
-  const double area = (b.u() - a.u()) * (c.v() - a.v()) -
-                      (b.v() - a.v()) * (c.u() - a.u());
-  if (std::abs(area) < 1e-18) return false;
-  const double s = ((a.u() - c.u()) * (p.v() - c.v()) -
-                    (a.v() - c.v()) * (p.u() - c.u())) /
-                   area;
-  const double t = ((b.u() - a.u()) * (p.v() - a.v()) -
-                    (b.v() - a.v()) * (p.u() - a.u())) /
-                   area;
-  return s >= -1e-12 && t >= -1e-12 && (s + t) <= 1.0 + 1e-12;
-}
-
-void collect_loop_ring(const Loop& loop, const PlaneSurface* plane,
-                       std::vector<Point3d>& xyz, std::vector<Point2d>& uv) {
-  xyz.clear();
-  uv.clear();
-  loop.for_each_coedge([&](const CoEdge& ce) {
-    if (Vertex* v = ce.from()) {
-      xyz.push_back(v->position());
-      if (plane) {
-        uv.push_back(plane->param_of(v->position()));
-      } else {
-        uv.push_back(Point2d{0.0, 0.0});
-      }
-    }
-  });
-}
-
-/// Insert a CW hole into a CCW outer via a bridge (duplicated endpoints).
-void bridge_hole(std::vector<Point2d>& outer_uv, std::vector<Point3d>& outer_xyz,
-                 const std::vector<Point2d>& hole_uv,
-                 const std::vector<Point3d>& hole_xyz) {
-  if (hole_uv.size() < 3 || hole_uv.size() != hole_xyz.size()) return;
-
-  std::size_t hr = 0;
-  for (std::size_t i = 1; i < hole_uv.size(); ++i) {
-    if (hole_uv[i].u() > hole_uv[hr].u() ||
-        (hole_uv[i].u() == hole_uv[hr].u() &&
-         hole_uv[i].v() > hole_uv[hr].v())) {
-      hr = i;
-    }
-  }
-
-  std::size_t br = 0;
-  double best = dist2_uv(outer_uv[0], hole_uv[hr]);
-  for (std::size_t i = 1; i < outer_uv.size(); ++i) {
-    const double d = dist2_uv(outer_uv[i], hole_uv[hr]);
-    if (d < best) {
-      best = d;
-      br = i;
-    }
-  }
-
-  std::vector<Point2d> nu;
-  std::vector<Point3d> nx;
-  nu.reserve(outer_uv.size() + hole_uv.size() + 2);
-  nx.reserve(outer_xyz.size() + hole_xyz.size() + 2);
-  for (std::size_t i = 0; i <= br; ++i) {
-    nu.push_back(outer_uv[i]);
-    nx.push_back(outer_xyz[i]);
-  }
-  for (std::size_t k = 0; k < hole_uv.size(); ++k) {
-    const std::size_t idx = (hr + k) % hole_uv.size();
-    nu.push_back(hole_uv[idx]);
-    nx.push_back(hole_xyz[idx]);
-  }
-  nu.push_back(hole_uv[hr]);
-  nx.push_back(hole_xyz[hr]);
-  nu.push_back(outer_uv[br]);
-  nx.push_back(outer_xyz[br]);
-  for (std::size_t i = br + 1; i < outer_uv.size(); ++i) {
-    nu.push_back(outer_uv[i]);
-    nx.push_back(outer_xyz[i]);
-  }
-  outer_uv.swap(nu);
-  outer_xyz.swap(nx);
-}
-
-[[nodiscard]] bool is_convex_ear(const std::vector<Point2d>& poly, std::size_t i) {
-  const std::size_t n = poly.size();
-  const std::size_t i0 = (i + n - 1) % n;
-  const std::size_t i1 = i;
-  const std::size_t i2 = (i + 1) % n;
-  const Point2d& a = poly[i0];
-  const Point2d& b = poly[i1];
-  const Point2d& c = poly[i2];
-  // Interior angle convex for CCW polygon: cross(b-a, c-b) > 0
-  const double cross =
-      (b.u() - a.u()) * (c.v() - b.v()) - (b.v() - a.v()) * (c.u() - b.u());
-  if (cross <= 1e-14) return false;
-  for (std::size_t j = 0; j < n; ++j) {
-    if (j == i0 || j == i1 || j == i2) continue;
-    // Bridge insertion duplicates endpoints; ignore coincident verts.
-    if (dist2_uv(poly[j], a) < 1e-20 || dist2_uv(poly[j], b) < 1e-20 ||
-        dist2_uv(poly[j], c) < 1e-20) {
-      continue;
-    }
-    if (point_in_triangle2d(poly[j], a, b, c)) return false;
-  }
-  return true;
-}
-
-void ear_clip_triangulate(const std::vector<Point2d>& uv,
-                          std::vector<std::array<std::uint32_t, 3>>& tris) {
-  const std::size_t n0 = uv.size();
-  if (n0 < 3) return;
-  std::vector<std::uint32_t> idx(n0);
-  for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(n0); ++i) {
-    idx[i] = i;
-  }
-  std::vector<Point2d> poly = uv;
-
-  auto refresh_poly = [&]() {
-    poly.resize(idx.size());
-    for (std::size_t i = 0; i < idx.size(); ++i) poly[i] = uv[idx[i]];
-  };
-
-  int guard = static_cast<int>(n0) * static_cast<int>(n0) + 8;
-  while (idx.size() > 3 && guard-- > 0) {
-    bool clipped = false;
-    for (std::size_t i = 0; i < idx.size(); ++i) {
-      if (!is_convex_ear(poly, i)) continue;
-      const std::size_t i0 = (i + idx.size() - 1) % idx.size();
-      const std::size_t i2 = (i + 1) % idx.size();
-      tris.push_back({idx[i0], idx[i], idx[i2]});
-      idx.erase(idx.begin() + static_cast<std::ptrdiff_t>(i));
-      refresh_poly();
-      clipped = true;
-      break;
-    }
-    if (!clipped) break;
-  }
-  if (idx.size() == 3) {
-    tris.push_back({idx[0], idx[1], idx[2]});
-  }
+[[nodiscard]] bool point_in_triangle3d(const Point3d& p, const Point3d& a,
+                                       const Point3d& b, const Point3d& c,
+                                       double eps = 1e-9) {
+  const Vector3d n = (b - a).cross(c - a);
+  if (n.squaredNorm() < 1e-24) return false;
+  const Vector3d na = (b - a).cross(p - a);
+  const Vector3d nb = (c - b).cross(p - b);
+  const Vector3d nc = (a - c).cross(p - c);
+  return na.dot(n) >= -eps && nb.dot(n) >= -eps && nc.dot(n) >= -eps;
 }
 
 void tessellate_plane_face(const Face& face, TriangleMesh& mesh,
@@ -374,16 +241,79 @@ std::pair<int, int> sphere_segment_counts(double radius,
   return c0 && c1 && c0->edge != nullptr && c0->edge == c1->edge;
 }
 
+/// Three quarter-circle arcs: exterior ⅞-sphere patch (small loop bounds hole).
+[[nodiscard]] bool is_trimmed_sphere_octant_outer(const Face& face) {
+  const Loop* loop = face.outer_loop();
+  if (!loop || loop->size() != 3) {
+    return false;
+  }
+  bool all_circle = true;
+  loop->for_each_coedge([&](const CoEdge& ce) {
+    if (!ce.edge || !ce.edge->curve ||
+        ce.edge->curve->kind() != CurveKind::Circle) {
+      all_circle = false;
+    }
+  });
+  return all_circle;
+}
+
+[[nodiscard]] std::vector<Point3d> spherical_loop_corners(
+    const Point3d& center, const std::vector<Point3d>& boundary) {
+  if (boundary.size() < 6) {
+    return boundary;
+  }
+  std::array<std::size_t, 3> corners{};
+  std::array<double, 3> turns{-1.0, -1.0, -1.0};
+  for (std::size_t i = 0; i < boundary.size(); ++i) {
+    const std::size_t im = (i + boundary.size() - 1) % boundary.size();
+    const std::size_t ip = (i + 1) % boundary.size();
+    const Vector3d dm = (boundary[im] - center).normalized();
+    const Vector3d dp = (boundary[ip] - center).normalized();
+    const double turn = dm.cross(dp).norm();
+    for (int slot = 0; slot < 3; ++slot) {
+      if (turn > turns[static_cast<std::size_t>(slot)]) {
+        for (int j = 2; j > slot; --j) {
+          turns[static_cast<std::size_t>(j)] =
+              turns[static_cast<std::size_t>(j - 1)];
+          corners[static_cast<std::size_t>(j)] =
+              corners[static_cast<std::size_t>(j - 1)];
+        }
+        turns[static_cast<std::size_t>(slot)] = turn;
+        corners[static_cast<std::size_t>(slot)] = i;
+        break;
+      }
+    }
+  }
+  return {boundary[corners[0]], boundary[corners[1]], boundary[corners[2]]};
+}
+
 [[nodiscard]] Point3d spherical_polygon_interior_hint(
     const SphereSurface& sphere, const std::vector<Point3d>& boundary) {
+  const Point3d& center = sphere.center();
+  const double radius = sphere.radius();
+  if (boundary.size() < 3) {
+    return boundary.empty() ? center : boundary.front();
+  }
+
+  const std::vector<Point3d> corners = spherical_loop_corners(center, boundary);
+  if (corners.size() == 3) {
+    Vector3d sum{0, 0, 0};
+    for (const Point3d& p : corners) {
+      sum += p - center;
+    }
+    if (sum.squaredNorm() > 1e-24) {
+      return center + sum.normalized() * radius;
+    }
+  }
+
   Vector3d sum{0, 0, 0};
   for (const Point3d& p : boundary) {
-    sum += p - sphere.center();
+    sum += p - center;
   }
   if (sum.squaredNorm() < 1e-24) {
-    return boundary.empty() ? sphere.center() : boundary.front();
+    return boundary.front();
   }
-  return sphere.center() + sum.normalized() * sphere.radius();
+  return center + sum.normalized() * radius;
 }
 
 /// Great-circle polygon test on the sphere. `interior_hint` must lie inside the
@@ -416,15 +346,34 @@ std::pair<int, int> sphere_segment_counts(double radius,
   return true;
 }
 
+[[nodiscard]] bool point_in_inward_spherical_octant(
+    const Point3d& p, const Point3d& center, const Point3d& ax,
+    const Point3d& ay, const Point3d& az, double eps = 1e-9) {
+  const Vector3d vx = ax - center;
+  const Vector3d vy = ay - center;
+  const Vector3d vz = az - center;
+  const Vector3d d = p - center;
+  return d.dot(vx) >= -eps && d.dot(vy) >= -eps && d.dot(vz) >= -eps;
+}
+
 [[nodiscard]] bool point_on_spherical_face(
     const Point3d& p, const SphereSurface& sphere,
     const std::vector<Point3d>& boundary_xyz, bool uv_complement) {
   if (boundary_xyz.size() < 3) {
     return true;
   }
+  if (uv_complement) {
+    const std::vector<Point3d> corners =
+        spherical_loop_corners(sphere.center(), boundary_xyz);
+    if (corners.size() == 3) {
+      const bool in_octant = point_in_inward_spherical_octant(
+          p, sphere.center(), corners[0], corners[1], corners[2]);
+      return !in_octant;
+    }
+  }
   const Point3d hint = spherical_polygon_interior_hint(sphere, boundary_xyz);
-  const bool in_poly =
-      point_in_spherical_polygon(p, sphere.center(), boundary_xyz, hint);
+  const bool in_poly = point_in_spherical_polygon(
+      p, sphere.center(), boundary_xyz, hint);
   return uv_complement ? !in_poly : in_poly;
 }
 
@@ -609,7 +558,8 @@ void tessellate_sphere_face(const Face& face, TriangleMesh& mesh,
     }
 
     if (!is_analytic_sphere_seam_outer(face) &&
-        sphere_face_needs_uv_complement(*sphere, face, outer_uv, outer_xyz)) {
+        (sphere_face_needs_uv_complement(*sphere, face, outer_uv, outer_xyz) ||
+         is_trimmed_sphere_octant_outer(face))) {
       uv_complement = true;
       std::vector<Point2d> cut = outer_uv;
       std::vector<Point3d> cut_xyz = outer_xyz;
@@ -680,6 +630,20 @@ void tessellate_sphere_face(const Face& face, TriangleMesh& mesh,
     const std::uint32_t base =
         static_cast<std::uint32_t>(mesh.vertices.size());
 
+    std::optional<Point3d> inward_octant_probe;
+    if (uv_complement && boundary_xyz.size() >= 3) {
+      const std::vector<Point3d> corners =
+          spherical_loop_corners(sphere->center(), boundary_xyz);
+      if (corners.size() == 3) {
+        const Point3d& sc = sphere->center();
+        const Vector3d sum = (corners[0] - sc) + (corners[1] - sc) +
+                             (corners[2] - sc);
+        if (sum.squaredNorm() > 1e-24) {
+          inward_octant_probe = sc + sum.normalized() * sphere->radius();
+        }
+      }
+    }
+
     for (const brep::mesh::CdtVertex& vertex : cdt.vertices) {
       const double u_eval = normalize_sphere_u(vertex.uv.u());
       const double v_eval = vertex.uv.v();
@@ -692,21 +656,26 @@ void tessellate_sphere_face(const Face& face, TriangleMesh& mesh,
     }
 
     auto push_tri = [&](std::uint32_t a, std::uint32_t b, std::uint32_t c) {
-      const Point3d centroid{
-          (mesh.vertices[a].position.x() + mesh.vertices[b].position.x() +
-           mesh.vertices[c].position.x()) /
-              3.0,
-          (mesh.vertices[a].position.y() + mesh.vertices[b].position.y() +
-           mesh.vertices[c].position.y()) /
-              3.0,
-          (mesh.vertices[a].position.z() + mesh.vertices[b].position.z() +
-           mesh.vertices[c].position.z()) /
-              3.0,
-      };
-      if (!is_analytic_sphere_seam_outer(face) && boundary_xyz.size() >= 3 &&
-          !point_on_spherical_face(centroid, *sphere, boundary_xyz,
-                                   uv_complement)) {
-        return;
+      if (!is_analytic_sphere_seam_outer(face) && boundary_xyz.size() >= 3) {
+        const Point3d& pa = mesh.vertices[a].position;
+        const Point3d& pb = mesh.vertices[b].position;
+        const Point3d& pc = mesh.vertices[c].position;
+        const Point3d centroid{
+            (pa.x() + pb.x() + pc.x()) / 3.0,
+            (pa.y() + pb.y() + pc.y()) / 3.0,
+            (pa.z() + pb.z() + pc.z()) / 3.0,
+        };
+        if (!point_on_spherical_face(centroid, *sphere, boundary_xyz,
+                                     uv_complement) ||
+            !point_on_spherical_face(pa, *sphere, boundary_xyz, uv_complement) ||
+            !point_on_spherical_face(pb, *sphere, boundary_xyz, uv_complement) ||
+            !point_on_spherical_face(pc, *sphere, boundary_xyz, uv_complement)) {
+          return;
+        }
+        if (inward_octant_probe.has_value() &&
+            point_in_triangle3d(*inward_octant_probe, pa, pb, pc, 1e-6)) {
+          return;
+        }
       }
       const Vector3d area =
           (mesh.vertices[b].position - mesh.vertices[a].position)
