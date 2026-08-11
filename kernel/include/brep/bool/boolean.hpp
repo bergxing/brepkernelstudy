@@ -15,5 +15,6 @@
 #include "brep/bool/sphere_box_boolean.hpp"
 #include "brep/bool/sphere_recognize.hpp"
 #include "brep/bool/classify.hpp"
+#include "brep/bool/broadphase.hpp"
 #include "brep/bool/result.hpp"
 #include "brep/bool/types.hpp"

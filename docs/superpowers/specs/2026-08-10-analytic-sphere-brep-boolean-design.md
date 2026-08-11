@@ -346,7 +346,7 @@ class IBooleanEvaluator {
 
 - `CylinderSurface` 与更多求交对 — **T4.1/T4.2 已完成（偏轴球–柱曲线待扩展）**
 - 更好的 pcurve、命名（`TopologyRef`）— **T4.3 约定已文档化**
-- 性能（BVH）— **T4.4.a/b 完成（面 AABB Median + binning SAH）**；T4.4.c 布尔挂钩可选
+- 性能（BVH）— **T4.4 完成**（Median + binning SAH + 布尔宽相诊断挂钩）
 
 ### Phase 5 —— 决策门
 
@@ -434,7 +434,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 | 2.1 | T2.1.1～T2.1.3 | 平面拉伸参与布尔 | 拉伸 Cut/并可用 |
 | 3 | T3.1～T3.6 | 弯曲求交 + 球面布尔 MVP | **已完成** — `Box∩Sphere` ⅛-ball |
 | 3+ | T3.7～T3.8 | 弯曲布尔扩展（待办） | `Sphere−Box`、`Sphere∪Sphere` |
-| 4 | T4.* | 柱面等扩展 | **T4.1～T4.3 完成**；T4.4.a/b BVH（Median+SAH）完成；T4.4.c 可选 |
+| 4 | T4.* | 柱面等扩展 | **T4.1～T4.4 完成**（含 BVH Median/SAH + 布尔宽相挂钩） |
 | 5 | T5.* | 自研 vs OCCT 决策 | 可选 |
 
 ---
@@ -705,7 +705,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
   - Plane：圆 / 椭圆 / 平行母线 / 空  
   - Sphere：共轴圆（偏轴一般曲线标 `Unsupported`，后续扩展）
 - [x] **T4.3** 改进 pcurve / `TopologyRef` 命名（约定写入 `topology_ref.hpp`）
-- [x] **T4.4** 求交加速结构（BVH）— **T4.4.a/b 完成**（面 AABB Median + binning SAH；T4.4.c 可选挂钩）
+- [x] **T4.4** 求交加速结构（BVH）— **完成**（Median + SAH + 宽相诊断挂钩；印记/分类仍后续）
 
 **退出：** T4.1～T4.3 已满足；T4.4 按下方勾选推进。
 
@@ -795,7 +795,7 @@ candidate_pairs(A,B) → 按 SurfaceKind 调已有 intersect_* → 再印记/分
 
 - [x] **T4.4.a** `Aabb` + `FaceBvh` Median + `query_overlaps` / `candidate_pairs` + 测试  
 - [x] **T4.4.b** `BuildQuality::Sah`（binning SAH）+ 正确性测试  
-- [ ] **T4.4.c**（可选）布尔宽相挂钩一次冒烟；注释说明 Median vs SAH
+- [x] **T4.4.c**（可选）布尔宽相挂钩一次冒烟；注释说明 Median vs SAH
 
 ##### 排期
 
