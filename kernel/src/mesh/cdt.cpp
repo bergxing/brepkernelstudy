@@ -271,6 +271,15 @@ using Edge = std::pair<int, int>;
     if (c < 0 || d < 0 || owners.contains(edge_key(c, d))) {
       continue;
     }
+    // Replacing an intersecting diagonal with another intersecting diagonal can
+    // flip the same quadrilateral back on the next iteration.  Only accept a
+    // flip that strictly decreases the number of mesh edges properly
+    // intersecting the constraint; otherwise use the Steiner fallback.
+    if (segments_properly_intersect(
+            vertices[constraint.first], vertices[constraint.second],
+            vertices[c], vertices[d], eps)) {
+      continue;
+    }
     const double side_c =
         orient2d(vertices[c], vertices[d], vertices[edge.first]);
     const double side_d =
