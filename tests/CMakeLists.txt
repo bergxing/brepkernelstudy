@@ -14,6 +14,14 @@ gtest_discover_tests(brep_test_cdt
   TEST_PREFIX "brep_test_cdt."
 )
 
+add_executable(brep_test_loop_sample kernel/test_loop_sample.cpp)
+target_link_libraries(brep_test_loop_sample PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_loop_sample
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_loop_sample>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_loop_sample."
+)
+
 add_executable(brep_test_snap kernel/test_snap_query.cpp)
 target_link_libraries(brep_test_snap PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_snap
