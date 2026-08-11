@@ -79,6 +79,34 @@
         <translation>快速立方体（默认尺寸）</translation>
     </message>
     <message>
+        <source>Boolean &amp;Union (Fuse)</source>
+        <translation>布尔并集 (Fuse)(&amp;U)</translation>
+    </message>
+    <message>
+        <source>Boolean &amp;Subtract (Cut)</source>
+        <translation>布尔差集 (Cut)(&amp;S)</translation>
+    </message>
+    <message>
+        <source>Boolean &amp;Intersect (Common)</source>
+        <translation>布尔交集 (Common)(&amp;I)</translation>
+    </message>
+    <message>
+        <source>Requires exactly 2 selected bodies. Subtract: primary selection = target, secondary = tool.</source>
+        <translation>需要恰好选中 2 个对象。差集：主选=目标，次选=工具体。</translation>
+    </message>
+    <message>
+        <source>Fuse</source>
+        <translation>并集</translation>
+    </message>
+    <message>
+        <source>Cut</source>
+        <translation>差集</translation>
+    </message>
+    <message>
+        <source>Common</source>
+        <translation>交集</translation>
+    </message>
+    <message>
         <source>&amp;Tools</source>
         <translation>工具(&amp;T)</translation>
     </message>
@@ -450,6 +478,18 @@
     <message>
         <source>No editable parameters</source>
         <translation>无可编辑参数</translation>
+    </message>
+    <message>
+        <source>Operation: Union (Fuse)</source>
+        <translation>运算：并集 (Fuse)</translation>
+    </message>
+    <message>
+        <source>Operation: Subtract (Cut)</source>
+        <translation>运算：差集 (Cut)</translation>
+    </message>
+    <message>
+        <source>Operation: Intersect (Common)</source>
+        <translation>运算：交集 (Common)</translation>
     </message>
     <message>
         <source>(unnamed)</source>

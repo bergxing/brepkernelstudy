@@ -541,11 +541,11 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T2.0.6 Viewer：双选 + 菜单/工具栏
 
-- [ ] 命令：`boolean.union` / `boolean.subtract` / `boolean.intersect`
-- [ ] 恰好 2 选；减：主选=目标，次选=工具
-- [ ] 菜单 + 工具栏 + `tr` / `xcad_zh_CN.ts`
-- [ ] SceneAdapter / 属性：识别 Boolean 类型（可只读显示 op）
-- [ ] **验收：** UI 完成盒并/减/交；操作体被抑制
+- [x] 命令：`boolean.union` / `boolean.subtract` / `boolean.intersect`
+- [x] 恰好 2 选；减：主选=目标，次选=工具
+- [x] 菜单 + 工具栏 + `tr` / `xcad_zh_CN.ts`
+- [x] SceneAdapter / 属性：识别 Boolean 类型（可只读显示 op）
+- [x] **验收：** UI 完成盒并/减/交；操作体被抑制（`SceneAdapter.AddBoolean*`）
 
 **主要文件：** `builtin_commands.cpp`、`main_window_menus.cpp`、`scene_adapter.*`、i18n
 

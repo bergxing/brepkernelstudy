@@ -10,6 +10,7 @@
 #include <entt/entt.hpp>
 
 #include <functional>
+#include <optional>
 
 class QGroupBox;
 class QLabel;
@@ -72,6 +73,7 @@ class PropertyPanel final : public QWidget {
   QLabel* radius_row_label_{nullptr};
   bool box_params_visible_{false};
   bool sphere_params_visible_{false};
+  std::optional<brep::boolean::BooleanOp> boolean_op_{};
 };
 
 }  // namespace brep::viewer

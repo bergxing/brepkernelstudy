@@ -21,6 +21,10 @@ struct SphereParams {
   double radius{0.0};
 };
 
+struct BooleanParams {
+  brep::boolean::BooleanOp op{brep::boolean::BooleanOp::Union};
+};
+
 struct MeshBundle {
   TriangleMesh faces;
   EdgeMesh edges;
@@ -30,9 +34,10 @@ struct SceneObject {
   Guid body_guid;
   Guid feature_guid;
   std::string name;
-  std::string type_name;  // "Box", "Sphere", "Extrude", …
+  std::string type_name;  // "Box", "Sphere", "Boolean", "Extrude", ...
   std::optional<BoxParams> box;
   std::optional<SphereParams> sphere;
+  std::optional<BooleanParams> boolean_info;
 };
 
 /// Viewer-facing facade over Document / Part / mesh (no concrete Feature*).
@@ -67,9 +72,16 @@ class SceneAdapter {
   [[nodiscard]] Body* add_sphere(const SphereSpec& spec);
   void record_append_sphere(feat::FeatureId id, SphereSpec undo_spec);
 
+  [[nodiscard]] Body* add_boolean(brep::boolean::BooleanOp op,
+                                  feat::FeatureId target, feat::FeatureId tool,
+                                  std::string name = "Boolean");
+
   [[nodiscard]] std::optional<SphereParams> sphere_params(
       feat::FeatureId id) const;
   bool set_sphere_params(feat::FeatureId id, const SphereParams& params);
+
+  [[nodiscard]] std::optional<BooleanParams> boolean_params(
+      feat::FeatureId id) const;
 
   /// Remove a feature via FeatureHistory (supports undo/redo).
   bool remove_feature(feat::FeatureId id);

@@ -191,5 +191,69 @@ TEST(SceneAdapter, SetSphereParamsAndUndo) {
   EXPECT_EQ(scene.main_part()->model().bodies().size(), 1u);
 }
 
+TEST(SceneAdapter, AddBooleanUnionSuppressesOperands) {
+  auto doc = SceneAdapter::create_blank();
+  SceneAdapter scene(doc.get());
+
+  Body* a = scene.add_box(BoxSpec{.min = {0, 0, 0}, .max = {2, 1, 1}, .name = "A"});
+  Body* b = scene.add_box(BoxSpec{.min = {1, 0, 0}, .max = {3, 1, 1}, .name = "B"});
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+  const Guid a_guid = a->guid;
+  const Guid b_guid = b->guid;
+  const auto target = scene.object_for_body(a_guid)->feature_guid;
+  const auto tool = scene.object_for_body(b_guid)->feature_guid;
+
+  Body* result = scene.add_boolean(boolean::BooleanOp::Union,
+                                   feat::FeatureId{target},
+                                   feat::FeatureId{tool}, "Fuse");
+  ASSERT_NE(result, nullptr);
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 1u);
+  EXPECT_EQ(scene.main_part()->find_body(a_guid), nullptr);
+  EXPECT_EQ(scene.main_part()->find_body(b_guid), nullptr);
+
+  auto obj = scene.object_for_body(result->guid);
+  ASSERT_TRUE(obj.has_value());
+  EXPECT_EQ(obj->type_name, "Boolean");
+  ASSERT_TRUE(obj->boolean_info.has_value());
+  EXPECT_EQ(obj->boolean_info->op, boolean::BooleanOp::Union);
+
+  auto params = scene.boolean_params(feat::FeatureId{obj->feature_guid});
+  ASSERT_TRUE(params.has_value());
+  EXPECT_EQ(params->op, boolean::BooleanOp::Union);
+
+  scene.undo_feature();
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 2u);
+  EXPECT_NE(scene.main_part()->find_body(a_guid), nullptr);
+  EXPECT_NE(scene.main_part()->find_body(b_guid), nullptr);
+
+  scene.redo_feature();
+  EXPECT_EQ(scene.main_part()->model().bodies().size(), 1u);
+}
+
+TEST(SceneAdapter, AddBooleanSubtractPrimaryIsTarget) {
+  auto doc = SceneAdapter::create_blank();
+  SceneAdapter scene(doc.get());
+
+  Body* a = scene.add_box(BoxSpec{.min = {0, 0, 0}, .max = {2, 2, 1}, .name = "A"});
+  Body* b = scene.add_box(BoxSpec{.min = {1, 1, 0}, .max = {2, 2, 1}, .name = "B"});
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+  const auto target = scene.object_for_body(a->guid)->feature_guid;
+  const auto tool = scene.object_for_body(b->guid)->feature_guid;
+
+  Body* result = scene.add_boolean(boolean::BooleanOp::Subtract,
+                                   feat::FeatureId{target},
+                                   feat::FeatureId{tool}, "Cut");
+  ASSERT_NE(result, nullptr);
+  auto obj = scene.object_for_body(result->guid);
+  ASSERT_TRUE(obj.has_value());
+  EXPECT_EQ(obj->type_name, "Boolean");
+  ASSERT_TRUE(obj->boolean_info.has_value());
+  EXPECT_EQ(obj->boolean_info->op, boolean::BooleanOp::Subtract);
+  ASSERT_FALSE(result->shells.empty());
+  EXPECT_GT(result->shells[0]->faces.size(), 6u);
+}
+
 }  // namespace
 }  // namespace brep::viewer::adapter

@@ -109,6 +109,18 @@ void PropertyPanel::refresh_dim_hint() {
   if (box_params_visible_ || sphere_params_visible_) {
     dims_hint_->setText(
         tr("Parameter-driven · edits regenerate the model"));
+  } else if (boolean_op_.has_value()) {
+    switch (*boolean_op_) {
+      case boolean::BooleanOp::Union:
+        dims_hint_->setText(tr("Operation: Union (Fuse)"));
+        break;
+      case boolean::BooleanOp::Subtract:
+        dims_hint_->setText(tr("Operation: Subtract (Cut)"));
+        break;
+      case boolean::BooleanOp::Intersect:
+        dims_hint_->setText(tr("Operation: Intersect (Common)"));
+        break;
+    }
   } else if (form_host_->isVisible()) {
     dims_hint_->setText(tr("No editable parameters"));
   } else {
@@ -158,6 +170,7 @@ void PropertyPanel::clear() {
   current_feature_ = {};
   box_params_visible_ = false;
   sphere_params_visible_ = false;
+  boolean_op_.reset();
   name_edit_->clear();
   type_edit_->clear();
   guid_edit_->clear();
@@ -200,10 +213,13 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
 
   const bool is_box = obj && obj->box.has_value();
   const bool is_sphere = obj && obj->sphere.has_value();
+  const bool is_boolean = obj && obj->boolean_info.has_value();
   if (is_box) {
     type_edit_->setText(QStringLiteral("BoxFeature"));
   } else if (is_sphere) {
     type_edit_->setText(QStringLiteral("SphereFeature"));
+  } else if (is_boolean) {
+    type_edit_->setText(QStringLiteral("BooleanFeature"));
   } else {
     type_edit_->setText(registry.all_of<ecs::BodyRef>(entity)
                             ? QStringLiteral("Body")
@@ -221,12 +237,15 @@ void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity) {
   set_sphere_mode(is_sphere);
   box_params_visible_ = is_box;
   sphere_params_visible_ = is_sphere;
+  boolean_op_.reset();
   if (is_box) {
     length_spin_->setValue(obj->box->length);
     width_spin_->setValue(obj->box->width);
     height_spin_->setValue(obj->box->height);
   } else if (is_sphere) {
     radius_spin_->setValue(obj->sphere->radius);
+  } else if (is_boolean) {
+    boolean_op_ = obj->boolean_info->op;
   }
   block_dim_signals(false);
   refresh_dim_hint();

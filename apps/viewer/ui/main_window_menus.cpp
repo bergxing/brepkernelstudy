@@ -179,6 +179,25 @@ void MainWindow::setup_menus() {
   act_box_fast->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+B")));
   bind_action(act_box_fast, "part.create_box_instant");
 
+  model_menu->addSeparator();
+  const QString bool_tip = tr(
+      "Requires exactly 2 selected bodies. Subtract: primary selection = "
+      "target, secondary = tool.");
+  auto* act_bool_union = model_menu->addAction(tr("Boolean &Union (Fuse)"));
+  act_bool_union->setObjectName(QStringLiteral("act_model_boolean_union"));
+  act_bool_union->setToolTip(bool_tip);
+  bind_action(act_bool_union, "boolean.union");
+
+  auto* act_bool_sub = model_menu->addAction(tr("Boolean &Subtract (Cut)"));
+  act_bool_sub->setObjectName(QStringLiteral("act_model_boolean_subtract"));
+  act_bool_sub->setToolTip(bool_tip);
+  bind_action(act_bool_sub, "boolean.subtract");
+
+  auto* act_bool_int = model_menu->addAction(tr("Boolean &Intersect (Common)"));
+  act_bool_int->setObjectName(QStringLiteral("act_model_boolean_intersect"));
+  act_bool_int->setToolTip(bool_tip);
+  bind_action(act_bool_int, "boolean.intersect");
+
   auto* tools_menu = menuBar()->addMenu(tr("&Tools"));
   tools_menu->setObjectName(QStringLiteral("menu_tools"));
   auto* act_palette = tools_menu->addAction(tr("Command &Palette…"));
@@ -228,6 +247,25 @@ void MainWindow::setup_toolbar() {
   act_sphere->setObjectName(QStringLiteral("tb_sphere"));
   act_sphere->setToolTip(tr("Two-point sphere (Ctrl+Shift+S)"));
   bind_action(act_sphere, "part.create_sphere");
+
+  toolbar_->addSeparator();
+  const QString bool_tip = tr(
+      "Requires exactly 2 selected bodies. Subtract: primary selection = "
+      "target, secondary = tool.");
+  auto* act_fuse = toolbar_->addAction(tr("Fuse"));
+  act_fuse->setObjectName(QStringLiteral("tb_boolean_union"));
+  act_fuse->setToolTip(bool_tip);
+  bind_action(act_fuse, "boolean.union");
+
+  auto* act_cut = toolbar_->addAction(tr("Cut"));
+  act_cut->setObjectName(QStringLiteral("tb_boolean_subtract"));
+  act_cut->setToolTip(bool_tip);
+  bind_action(act_cut, "boolean.subtract");
+
+  auto* act_common = toolbar_->addAction(tr("Common"));
+  act_common->setObjectName(QStringLiteral("tb_boolean_intersect"));
+  act_common->setToolTip(bool_tip);
+  bind_action(act_common, "boolean.intersect");
 
   auto* act_copy = toolbar_->addAction(tr("Copy"));
   act_copy->setObjectName(QStringLiteral("tb_copy"));
@@ -359,6 +397,15 @@ void MainWindow::retranslate_ui() {
   set_tip("act_model_sphere",
           tr("Two-point sphere: center on surface/ground + radius"));
   set_act("act_model_box_fast", tr("Quick Box (default size)"));
+  set_act("act_model_boolean_union", tr("Boolean &Union (Fuse)"));
+  set_act("act_model_boolean_subtract", tr("Boolean &Subtract (Cut)"));
+  set_act("act_model_boolean_intersect", tr("Boolean &Intersect (Common)"));
+  const QString bool_tip = tr(
+      "Requires exactly 2 selected bodies. Subtract: primary selection = "
+      "target, secondary = tool.");
+  set_tip("act_model_boolean_union", bool_tip);
+  set_tip("act_model_boolean_subtract", bool_tip);
+  set_tip("act_model_boolean_intersect", bool_tip);
 
   set_menu("menu_tools", tr("&Tools"));
   set_act("act_tools_palette", tr("Command &Palette…"));
@@ -385,6 +432,15 @@ void MainWindow::retranslate_ui() {
   set_tip("tb_box", tr("Three-point box (Ctrl+B)"));
   set_act("tb_sphere", tr("Sphere"));
   set_tip("tb_sphere", tr("Two-point sphere (Ctrl+Shift+S)"));
+  set_act("tb_boolean_union", tr("Fuse"));
+  set_act("tb_boolean_subtract", tr("Cut"));
+  set_act("tb_boolean_intersect", tr("Common"));
+  const QString tb_bool_tip = tr(
+      "Requires exactly 2 selected bodies. Subtract: primary selection = "
+      "target, secondary = tool.");
+  set_tip("tb_boolean_union", tb_bool_tip);
+  set_tip("tb_boolean_subtract", tb_bool_tip);
+  set_tip("tb_boolean_intersect", tb_bool_tip);
   set_act("tb_copy", tr("Copy"));
   set_tip("tb_copy", tr("Copy selected objects (Ctrl+Shift+C)"));
   set_act("tb_export", tr("Export DXF"));

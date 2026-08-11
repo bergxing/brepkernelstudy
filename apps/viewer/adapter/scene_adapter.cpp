@@ -75,6 +75,9 @@ std::optional<SceneObject> SceneAdapter::object_for_feature(
     obj.sphere = SphereParams{
         .radius = part->parameters().get(sph.radius_id()).value_or(0.0),
     };
+  } else if (f->type_name() == "Boolean") {
+    const auto& bf = static_cast<const feat::BooleanFeature&>(*f);
+    obj.boolean_info = BooleanParams{.op = bf.op()};
   }
   return obj;
 }
@@ -145,6 +148,14 @@ void SceneAdapter::record_append_sphere(feat::FeatureId id,
   part->feature_history().record(std::move(tx));
 }
 
+Body* SceneAdapter::add_boolean(brep::boolean::BooleanOp op,
+                                feat::FeatureId target, feat::FeatureId tool,
+                                std::string name) {
+  Part* part = main_part();
+  if (!part) return nullptr;
+  return part->add_boolean(op, target, tool, std::move(name));
+}
+
 std::optional<SphereParams> SceneAdapter::sphere_params(
     feat::FeatureId id) const {
   const Part* part = main_part_const();
@@ -164,6 +175,16 @@ bool SceneAdapter::set_sphere_params(feat::FeatureId id,
   const auto* f = part->features().find(id);
   if (!f || f->type_name() != "Sphere") return false;
   return part->edit_feature_params(id, {{"Radius", params.radius}});
+}
+
+std::optional<BooleanParams> SceneAdapter::boolean_params(
+    feat::FeatureId id) const {
+  const Part* part = main_part_const();
+  if (!part || id.is_nil()) return std::nullopt;
+  const auto* f = part->features().find(id);
+  if (!f || f->type_name() != "Boolean") return std::nullopt;
+  const auto& bf = static_cast<const feat::BooleanFeature&>(*f);
+  return BooleanParams{.op = bf.op()};
 }
 
 std::optional<feat::FeatureId> SceneAdapter::feature_id_for(
@@ -205,6 +226,11 @@ bool SceneAdapter::remove_feature(feat::FeatureId id) {
     tx.sketch_feature = ext.sketch_feature_id();
     tx.extrude_distance =
         part->parameters().get(ext.distance_id()).value_or(1.0);
+  } else if (tx.feature_type == "Boolean") {
+    const auto& bf = static_cast<const feat::BooleanFeature&>(*f);
+    tx.boolean_op = bf.op();
+    tx.target_feature_id = bf.target_feature_id();
+    tx.tool_feature_id = bf.tool_feature_id();
   }
 
   part->feature_history().apply_and_record(*part, std::move(tx));

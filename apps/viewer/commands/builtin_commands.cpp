@@ -18,7 +18,8 @@
 #include <QFileInfo>
 #include <QMessageBox>
 
-#include <algorithm>
+#include <array>
+#include <optional>
 #include <vector>
 
 namespace brep::viewer::commands {
@@ -515,6 +516,173 @@ class RedoCommand final : public ICommand {
   }
 };
 
+struct BooleanOperands {
+  feat::FeatureId target{};
+  feat::FeatureId tool{};
+};
+
+[[nodiscard]] std::optional<BooleanOperands> resolve_boolean_operands(
+    entt::registry& registry, adapter::SceneAdapter& scene) {
+  if (ecs::selected_count(registry) != 2) return std::nullopt;
+
+  const entt::entity primary_ent = ecs::selected_entity(registry);
+  std::array<std::optional<feat::FeatureId>, 2> ids{};
+  int n = 0;
+  for (auto entity : registry.view<ecs::SelectedTag>()) {
+    Guid feature_guid{};
+    Guid body_guid{};
+    if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity)) {
+      feature_guid = fref->feature_guid;
+    }
+    if (const auto* body = registry.try_get<ecs::BodyRef>(entity)) {
+      body_guid = body->guid;
+    }
+    auto fid = scene.feature_id_for(feature_guid, body_guid);
+    if (!fid || n >= 2) return std::nullopt;
+    ids[static_cast<std::size_t>(n++)] = *fid;
+  }
+  if (n != 2 || !ids[0] || !ids[1] || *ids[0] == *ids[1]) return std::nullopt;
+
+  Guid primary_fg{};
+  Guid primary_bg{};
+  if (primary_ent != entt::null) {
+    if (const auto* fref = registry.try_get<ecs::FeatureRef>(primary_ent)) {
+      primary_fg = fref->feature_guid;
+    }
+    if (const auto* body = registry.try_get<ecs::BodyRef>(primary_ent)) {
+      primary_bg = body->guid;
+    }
+  }
+  auto target = scene.feature_id_for(primary_fg, primary_bg);
+  if (!target) {
+    // Fallback: first selected as target.
+    target = ids[0];
+  }
+  const feat::FeatureId tool =
+      (*ids[0] == *target) ? *ids[1] : *ids[0];
+  if (tool == *target) return std::nullopt;
+  return BooleanOperands{*target, tool};
+}
+
+[[nodiscard]] const char* boolean_result_name(boolean::BooleanOp op) noexcept {
+  switch (op) {
+    case boolean::BooleanOp::Union:
+      return "Fuse";
+    case boolean::BooleanOp::Subtract:
+      return "Cut";
+    case boolean::BooleanOp::Intersect:
+      return "Common";
+  }
+  return "Boolean";
+}
+
+template <boolean::BooleanOp Op>
+class BooleanOpCommand final : public ICommand {
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override {
+    if constexpr (Op == boolean::BooleanOp::Union) {
+      return "boolean.union";
+    } else if constexpr (Op == boolean::BooleanOp::Subtract) {
+      return "boolean.subtract";
+    } else {
+      return "boolean.intersect";
+    }
+  }
+
+  [[nodiscard]] std::string_view title() const noexcept override {
+    if constexpr (Op == boolean::BooleanOp::Union) {
+      return "Boolean Union";
+    } else if constexpr (Op == boolean::BooleanOp::Subtract) {
+      return "Boolean Subtract";
+    } else {
+      return "Boolean Intersect";
+    }
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override {
+    return ctx.world != nullptr && ctx.world->document() != nullptr &&
+           ctx.world->document()->main_part() != nullptr &&
+           ecs::selected_count(ctx.world->registry()) == 2;
+  }
+
+  CommandResult execute(CommandContext& ctx) override {
+    adapter::SceneAdapter scene(ctx.world->document());
+    Part* part = scene.main_part();
+    if (!part) {
+      return CommandResult::failed(QStringLiteral("当前没有 Part"));
+    }
+
+    auto& registry = ctx.world->registry();
+    if (ecs::selected_count(registry) != 2) {
+      return CommandResult::failed(
+          QStringLiteral("请恰好选中 2 个对象再执行布尔运算"));
+    }
+
+    auto operands = resolve_boolean_operands(registry, scene);
+    if (!operands) {
+      return CommandResult::failed(
+          QStringLiteral("无法解析布尔操作体（需要两个不同特征）"));
+    }
+
+    Body* result = scene.add_boolean(Op, operands->target, operands->tool,
+                                     boolean_result_name(Op));
+    if (!result) {
+      return CommandResult::failed(QStringLiteral("布尔运算失败"));
+    }
+
+    Material material = ctx.wood_albedo_path.empty()
+                            ? Material{}
+                            : make_wood_material(ctx.wood_albedo_path);
+    ctx.world->sync_part_bodies(*part, std::move(material));
+    ecs::clear_selection(registry);
+    if (ctx.session) ctx.session->mark_dirty();
+    if (ctx.request_redraw) ctx.request_redraw();
+
+    const std::string wood = ctx.wood_albedo_path;
+    ecs::World* world = ctx.world;
+    Part* part_ptr = part;
+    const QString hist_label = QString::fromUtf8(title().data(),
+                                                 static_cast<int>(title().size()));
+    if (ctx.history) {
+      ctx.history->push({
+          .label = hist_label,
+          .undo =
+              [world, part_ptr, wood, session = ctx.session,
+               redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
+                if (!world || !part_ptr) return;
+                adapter::SceneAdapter scene_u(world->document());
+                scene_u.undo_feature();
+                Material mat =
+                    wood.empty() ? Material{} : make_wood_material(wood);
+                world->sync_part_bodies(*part_ptr, std::move(mat));
+                if (session) session->mark_dirty();
+                if (redraw) redraw();
+                if (refresh) refresh();
+              },
+          .redo =
+              [world, part_ptr, wood, session = ctx.session,
+               redraw = ctx.request_redraw, refresh = ctx.refresh_ui] {
+                if (!world || !part_ptr) return;
+                adapter::SceneAdapter scene_r(world->document());
+                scene_r.redo_feature();
+                Material mat =
+                    wood.empty() ? Material{} : make_wood_material(wood);
+                world->sync_part_bodies(*part_ptr, std::move(mat));
+                if (session) session->mark_dirty();
+                if (redraw) redraw();
+                if (refresh) refresh();
+              },
+      });
+    }
+
+    if (ctx.refresh_ui) ctx.refresh_ui();
+    const QString msg =
+        QStringLiteral("布尔完成: %1").arg(QString::fromStdString(result->name));
+    if (ctx.report_status) ctx.report_status(msg);
+    return CommandResult::ok(msg);
+  }
+};
+
 template <class Cmd>
 void add(CommandRegistry& registry) {
   registry.register_command(std::string(Cmd{}.id()),
@@ -533,6 +701,9 @@ void register_builtin_commands(CommandRegistry& registry) {
   add<CreateBoxInstantCommand>(registry);
   add<CopyCommand>(registry);
   add<DeleteSelectionCommand>(registry);
+  add<BooleanOpCommand<boolean::BooleanOp::Union>>(registry);
+  add<BooleanOpCommand<boolean::BooleanOp::Subtract>>(registry);
+  add<BooleanOpCommand<boolean::BooleanOp::Intersect>>(registry);
   add<UndoCommand>(registry);
   add<RedoCommand>(registry);
   BREP_INFO("registered builtin commands: {}", registry.ids().size());
