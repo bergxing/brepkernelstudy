@@ -157,3 +157,11 @@ gtest_discover_tests(brep_test_cylinder_intersect
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_cylinder_intersect."
 )
+
+add_executable(brep_test_face_bvh kernel/test_face_bvh.cpp)
+target_link_libraries(brep_test_face_bvh PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_face_bvh
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_face_bvh>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_face_bvh."
+)

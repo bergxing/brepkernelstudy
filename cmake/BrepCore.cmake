@@ -30,6 +30,7 @@ add_library(brep_core ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/bool/sphere_recognize.cpp
   ${BREP_KERNEL_DIR}/src/bool/sphere_box_boolean.cpp
   ${BREP_KERNEL_DIR}/src/bool/classify.cpp
+  ${BREP_KERNEL_DIR}/src/spatial/face_bvh.cpp
 )
 brep_kernel_include_dirs(brep_core)
 target_link_libraries(brep_core PUBLIC brep_eigen brep_boost_uuid brep_spdlog)

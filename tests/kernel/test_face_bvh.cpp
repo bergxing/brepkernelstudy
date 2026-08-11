@@ -1,0 +1,149 @@
+#include "api/core.hpp"
+#include "api/modeling.hpp"
+
+#include "brep/spatial/aabb.hpp"
+#include "brep/spatial/face_bvh.hpp"
+
+#include <gtest/gtest.h>
+
+#include <set>
+#include <utility>
+#include <vector>
+
+namespace brep {
+namespace {
+
+using FacePair = std::pair<const Face*, const Face*>;
+
+[[nodiscard]] std::set<FacePair> naive_overlapping_pairs(const Body& a,
+                                                         const Body& b) {
+  std::set<FacePair> out;
+  for (const Shell* sa : a.shells) {
+    if (!sa) continue;
+    for (Face* fa : sa->faces) {
+      if (!fa) continue;
+      const spatial::Aabb ba = spatial::estimate_face_aabb(*fa);
+      for (const Shell* sb : b.shells) {
+        if (!sb) continue;
+        for (Face* fb : sb->faces) {
+          if (!fb) continue;
+          const spatial::Aabb bb = spatial::estimate_face_aabb(*fb);
+          if (ba.overlaps(bb)) {
+            out.insert(FacePair{fa, fb});
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+[[nodiscard]] std::set<FacePair> to_set(
+    const std::vector<std::pair<Face*, Face*>>& pairs) {
+  std::set<FacePair> out;
+  for (const auto& p : pairs) {
+    out.insert(FacePair{p.first, p.second});
+  }
+  return out;
+}
+
+TEST(Aabb, OverlapsAndSurfaceArea) {
+  const spatial::Aabb a{{0, 0, 0}, {1, 1, 1}};
+  const spatial::Aabb b{{0.5, 0.5, 0.5}, {2, 2, 2}};
+  const spatial::Aabb c{{2, 0, 0}, {3, 1, 1}};
+  EXPECT_TRUE(a.overlaps(b));
+  EXPECT_FALSE(a.overlaps(c));
+  EXPECT_NEAR(a.surface_area(), 6.0, 1e-12);
+  const spatial::Aabb m = spatial::Aabb::merge(a, c);
+  EXPECT_NEAR(m.min.x(), 0.0, 1e-12);
+  EXPECT_NEAR(m.max.x(), 3.0, 1e-12);
+}
+
+TEST(FaceBvh, SeparatedBoxesHaveNoCandidatePairs) {
+  Model model;
+  Body* left =
+      make_box(model, BoxSpec{.min = {0, 0, 0}, .max = {1, 1, 1}, .name = "L"});
+  Body* right =
+      make_box(model, BoxSpec{.min = {3, 0, 0}, .max = {4, 1, 1}, .name = "R"});
+  ASSERT_NE(left, nullptr);
+  ASSERT_NE(right, nullptr);
+
+  spatial::FaceBvh a =
+      spatial::FaceBvh::build(*left, spatial::BuildQuality::Median);
+  spatial::FaceBvh b =
+      spatial::FaceBvh::build(*right, spatial::BuildQuality::Median);
+  const auto pairs = spatial::FaceBvh::candidate_pairs(a, b);
+  EXPECT_TRUE(pairs.empty());
+  EXPECT_TRUE(naive_overlapping_pairs(*left, *right).empty());
+}
+
+TEST(FaceBvh, OverlappingBoxesCandidatesSubsetOfNaive) {
+  Model model;
+  Body* a_body =
+      make_box(model, BoxSpec{.min = {0, 0, 0}, .max = {2, 2, 2}, .name = "A"});
+  Body* b_body =
+      make_box(model, BoxSpec{.min = {1, 1, 1}, .max = {3, 3, 3}, .name = "B"});
+  ASSERT_NE(a_body, nullptr);
+  ASSERT_NE(b_body, nullptr);
+
+  spatial::FaceBvh a =
+      spatial::FaceBvh::build(*a_body, spatial::BuildQuality::Median);
+  spatial::FaceBvh b =
+      spatial::FaceBvh::build(*b_body, spatial::BuildQuality::Median);
+  const auto pairs = spatial::FaceBvh::candidate_pairs(a, b);
+  EXPECT_FALSE(pairs.empty());
+
+  const auto naive = naive_overlapping_pairs(*a_body, *b_body);
+  const auto got = to_set(pairs);
+  for (const FacePair& p : got) {
+    EXPECT_TRUE(naive.count(p) > 0)
+        << "BVH pair not in naive AABB overlap set";
+  }
+  EXPECT_EQ(got.size(), naive.size());
+}
+
+TEST(FaceBvh, QueryOverlapsHitsNearbyFaces) {
+  Model model;
+  Body* box =
+      make_box(model, BoxSpec{.min = {0, 0, 0}, .max = {1, 1, 1}, .name = "B"});
+  ASSERT_NE(box, nullptr);
+  spatial::FaceBvh bvh =
+      spatial::FaceBvh::build(*box, spatial::BuildQuality::Median);
+
+  const spatial::Aabb query{{0.9, 0.4, 0.4}, {1.1, 0.6, 0.6}};
+  const auto hits = bvh.query_overlaps(query);
+  EXPECT_FALSE(hits.empty());
+  for (const Face* f : hits) {
+    ASSERT_NE(f, nullptr);
+    EXPECT_TRUE(spatial::estimate_face_aabb(*f).overlaps(query));
+  }
+
+  const spatial::Aabb far_q{{10, 10, 10}, {11, 11, 11}};
+  EXPECT_TRUE(bvh.query_overlaps(far_q).empty());
+}
+
+TEST(FaceBvh, SphereFaceAabbIsCenterPlusMinusRadius) {
+  Model model;
+  Body* sph = make_sphere(
+      model, SphereSpec{.center = {1, 2, 3}, .radius = 4.0, .name = "S"});
+  ASSERT_NE(sph, nullptr);
+  ASSERT_NE(sph->outer_shell(), nullptr);
+  ASSERT_FALSE(sph->outer_shell()->faces.empty());
+  Face* face = sph->outer_shell()->faces.front();
+  ASSERT_NE(face, nullptr);
+
+  const spatial::Aabb box = spatial::estimate_face_aabb(*face);
+  EXPECT_NEAR(box.min.x(), -3.0, 1e-9);
+  EXPECT_NEAR(box.min.y(), -2.0, 1e-9);
+  EXPECT_NEAR(box.min.z(), -1.0, 1e-9);
+  EXPECT_NEAR(box.max.x(), 5.0, 1e-9);
+  EXPECT_NEAR(box.max.y(), 6.0, 1e-9);
+  EXPECT_NEAR(box.max.z(), 7.0, 1e-9);
+
+  spatial::FaceBvh bvh =
+      spatial::FaceBvh::build(*sph, spatial::BuildQuality::Median);
+  EXPECT_FALSE(bvh.query_overlaps(box).empty());
+}
+
+}  // namespace
+}  // namespace brep
