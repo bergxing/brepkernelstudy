@@ -4,6 +4,8 @@
 #include "brep/bool/box_recognize.hpp"
 #include "brep/bool/planar_boolean.hpp"
 #include "brep/bool/planar_recognize.hpp"
+#include "brep/bool/sphere_box_boolean.hpp"
+#include "brep/bool/sphere_recognize.hpp"
 #include "brep/log.hpp"
 
 #include <memory>
@@ -58,6 +60,8 @@ class DefaultBooleanEvaluator final : public IBooleanEvaluator {
     const auto prism_b = recognize_extrusion_prism(b, ctx);
     const auto box_a = recognize_axis_aligned_box(a, ctx);
     const auto box_b = recognize_axis_aligned_box(b, ctx);
+    const auto sphere_a = recognize_analytic_sphere(a, ctx);
+    const auto sphere_b = recognize_analytic_sphere(b, ctx);
 
     if (prism_a && box_b) {
       return evaluate_prism_box_boolean(op, model, *prism_a, *box_b,
@@ -67,13 +71,21 @@ class DefaultBooleanEvaluator final : public IBooleanEvaluator {
       return evaluate_prism_box_boolean(op, model, *prism_b, *box_a,
                                         /*prism_is_a=*/false, ctx);
     }
+    if (sphere_a && box_b) {
+      return evaluate_sphere_box_boolean(op, model, *sphere_a, *box_b,
+                                         /*sphere_is_a=*/true, ctx);
+    }
+    if (box_a && sphere_b) {
+      return evaluate_sphere_box_boolean(op, model, *sphere_b, *box_a,
+                                         /*sphere_is_a=*/false, ctx);
+    }
 
     BooleanResult result;
     result.mode = BooleanEvalMode::General;
     result.diagnostics =
         std::string("boolean: unsupported combination for ") + op_name(op) +
         " ('" + a.name + "' vs '" + b.name +
-        "'); only box–box and prism–box are implemented";
+        "'); supported: box–box, prism–box, sphere–box (Intersect ⅛-ball)";
     BREP_WARN("{}", result.diagnostics);
     return result;
   }

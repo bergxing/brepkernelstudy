@@ -100,4 +100,12 @@ SolidClass classify_point_in_prism(const PlanarPrismSpec& prism, const Point3d& 
   return SolidClass::In;
 }
 
+SolidClass classify_point_in_sphere(const SphereSpec& sphere, const Point3d& p,
+                                    double eps) {
+  const double dist = (p - sphere.center).norm();
+  if (dist > sphere.radius + eps) return SolidClass::Out;
+  if (std::abs(dist - sphere.radius) <= eps) return SolidClass::On;
+  return SolidClass::In;
+}
+
 }  // namespace brep::boolean

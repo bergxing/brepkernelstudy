@@ -117,3 +117,27 @@ gtest_discover_tests(brep_test_planar_classify
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_planar_classify."
 )
+
+add_executable(brep_test_intersect_plane_sphere kernel/test_intersect_plane_sphere.cpp)
+target_link_libraries(brep_test_intersect_plane_sphere PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_intersect_plane_sphere
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_intersect_plane_sphere>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_intersect_plane_sphere."
+)
+
+add_executable(brep_test_intersect_sphere_sphere kernel/test_intersect_sphere_sphere.cpp)
+target_link_libraries(brep_test_intersect_sphere_sphere PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_intersect_sphere_sphere
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_intersect_sphere_sphere>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_intersect_sphere_sphere."
+)
+
+add_executable(brep_test_sphere_box_boolean kernel/test_sphere_box_boolean.cpp)
+target_link_libraries(brep_test_sphere_box_boolean PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_sphere_box_boolean
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_sphere_box_boolean>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_sphere_box_boolean."
+)
