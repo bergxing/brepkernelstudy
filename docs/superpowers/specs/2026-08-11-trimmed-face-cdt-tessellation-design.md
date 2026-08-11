@@ -1,7 +1,7 @@
 # 裁剪面细分：自研参数域 CDT
 
 **日期**：2026-08-11  
-**状态**：**已实现**（2026-08-11；自研参数域 CDT 替换平面 ear-clip / 整球 UV 网格）  
+**状态**：已实现 (2026-08-11)（自研参数域 CDT 替换平面 ear-clip / 整球 UV 网格）  
 **触发**：`untitled.xl` 中球∪盒（`33e92047-…` ∪ `cba4ae3a-…`）布尔拓扑通过，但显示异常——整球网格 + 带贴角内环的平面填充失败。  
 **关联**：
 - 布尔设计 [2026-08-10-analytic-sphere-brep-boolean-design.md](./2026-08-10-analytic-sphere-brep-boolean-design.md)（Phase 1 细分；T2.x Inner；T3.7 Sphere∪Box）
@@ -141,7 +141,7 @@ tessellate_face(face, opts)
 - `Face::outer_loops() const → std::vector<Loop*>`
 - `Face::outer_loop()`：第一个 Outer（可空）
 - `Face::inner_loops()`：保持现有
-- `validate_body`：Outer 个数 `>= 1`；删除「exactly one」错误
+- `validate_body`：Outer 个数 `>= 1`；删除「恰好一个」错误
 
 ### 6.2 文件（建议）
 
@@ -157,7 +157,7 @@ tessellate_face(face, opts)
 | `tests/kernel/test_cdt.cpp` | CDT 单元 |
 | `tests/kernel/test_tessellate_trimmed_sphere.cpp` | 球面裁剪 |
 | `tests/kernel/test_tessellate_inner.cpp` | 扩展贴角 / 多孔 |
-| `tests/kernel/test_inner_loop.cpp` | 多 Outer validate |
+| `tests/kernel/test_inner_loop.cpp` | 多 Outer 校验 |
 
 圆柱第二批：`CylinderSurface::param_of` 已存在，采样器加 `SurfaceKind::Cylinder` 即可接入同一 CDT。
 
@@ -167,14 +167,14 @@ tessellate_face(face, opts)
 
 ### 7.1 门禁
 
-1. **多 Outer**：构造双 Outer 面 → `validate` 通过；旧单 Outer 回归仍绿。
+1. **多 Outer**：构造双 Outer 面 → `validate` 通过；旧单 Outer 回归仍通过。
 2. **矩形 + 内孔**：孔心无三角形；顶面面积近似（保留现有 `TessellateInner.HoleCenterNotCovered`）。
 3. **贴角孔**：模拟 Sphere∪Box 平面环（含圆弧采样）→ 孔区无覆盖、面有填充。
 4. **球面裁剪**：Outer 为三圆弧的 ⅞ 片 → 三角形重心在环内；顶点数明显小于整球默认细分。
 5. **`untitled.xl` 构型回归**（kernel 测试，不依赖 viewer）：
    - 盒 `min≈(-2.38421,0,4.59474)` `max≈(-1.57147,0.826297,5.26894)`
    - 球 `center≈(-1.57147,0.826297,4.59474)` `r≈0.413149`
-   - Union 后细分：平面三角合理；球面非整球；可选检查「盒角点外侧八分之一球方向有三角 / 内侧八分被裁掉」。
+   - 并集后细分：平面三角合理；球面非整球；可选检查「盒角点外侧八分之一球方向有三角 / 内侧八分被裁掉」。
 
 ### 7.2 非回归
 
@@ -183,7 +183,7 @@ tessellate_face(face, opts)
 
 ### 7.3 成功标准（产品）
 
-重启 viewer，打开 `C:/Users/xingbl/Desktop/untitled.xl`，对上述两 GUID Fuse：结果看起来是完整盒体 + 角点外凸球面，而非「完整球 + 碎盒面」。
+重启 viewer，打开 `C:/Users/xingbl/Desktop/untitled.xl`，对上述两 GUID 做并集（Fuse）：结果看起来是完整盒体 + 角点外凸球面，而非「完整球 + 碎盒面」。
 
 ---
 
@@ -212,5 +212,5 @@ tessellate_face(face, opts)
 
 ## 10. 后续
 
-1. 本规格审阅通过后，用 writing-plans 拆实现计划（CDT 核心 → 平面 → 球面 → 多 Outer → 回归）。
-2. 实现完成后可在布尔设计文档 Phase 1 / T2.x 细分条目处交叉引用本规格。
+1. 实现计划见 [2026-08-11-trimmed-face-cdt-tessellation.md](../plans/2026-08-11-trimmed-face-cdt-tessellation.md)（2026-08-11 已完成）。
+2. 布尔设计文档 Phase 1 / T2.x 细分条目已交叉引用本规格。

@@ -1,67 +1,67 @@
-# Trimmed-Face CDT Tessellation Implementation Plan
+# 裁剪面 CDT 细分实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向 Agent 执行者：** 必须子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，按任务逐步实施本计划。步骤使用复选框（`- [ ]`）语法以便跟踪。
 
-**Goal:** Replace plane ear-clip / full-sphere UV grids with a self-hosted parametric-domain CDT so multi-outer, multi-inner, edge-touching holes, and trimmed sphere faces tessellate correctly — fixing `untitled.xl` Sphere∪Box display.
+**目标：** 用自研参数域 CDT 替换平面耳切 / 整球 UV 网格，使多 Outer、多 Inner、贴边孔及裁剪球面能正确细分——修复 `untitled.xl` 中 Sphere∪Box 的显示问题。
 
-**Architecture:** Sample face loops into UV, group each Outer with its Inners, run incremental Bowyer–Watson Delaunay then recover constraint edges, delete exterior/hole triangles, map remaining UV triangles back through `Surface::eval`. Topology allows ≥1 Outer; `Face::outer_loops()` exposes them.
+**架构：** 将面环采样到 UV，将每个 Outer 与其 Inner 分组，运行增量 Bowyer–Watson Delaunay 并恢复约束边，删除外部/孔内三角形，将剩余 UV 三角形通过 `Surface::eval` 映射回 3D。拓扑允许 ≥1 个 Outer；`Face::outer_loops()` 暴露它们。
 
-**Tech Stack:** C++20, CMake/Ninja (MinGW), GoogleTest, Eigen via existing `brep` math types; no third-party triangulators (ADR 0005).
+**技术栈：** C++20、CMake/Ninja（MinGW）、GoogleTest、通过现有 `brep` 数学类型使用 Eigen；不引入第三方三角剖分库（ADR 0005）。
 
-## Global Constraints
+## 全局约束
 
-- Spec authority: `docs/superpowers/specs/2026-08-11-trimmed-face-cdt-tessellation-design.md`.
-- No third-party mesh libraries (earcut / poly2tri / Triangle / OCCT).
-- Public APIs `tessellate_face` / `tessellate_body` / `TessellationOptions` keep existing signatures.
-- Do not change boolean builders except if a test needs them; display path only.
-- Cylinder trimmed tessellation is **out of this plan** (interface may accept `Surface*` but only Plane + Sphere wired).
-- Build: `cmake-build-mingw-debug`; put `C:\Qt6\Tools\mingw1310_64\bin` on `PATH` when linking Qt-adjacent targets.
-- Do not commit `gpp_err*.txt`, `tmp_empty.cpp`, or build-tree junk.
-- TDD: failing test → implement → green → commit per task.
+- 规格权威来源：`docs/superpowers/specs/2026-08-11-trimmed-face-cdt-tessellation-design.md`。
+- 不引入第三方网格库（earcut / poly2tri / Triangle / OCCT）。
+- 公开 API `tessellate_face` / `tessellate_body` / `TessellationOptions` 保持现有签名。
+- 除测试需要外，不修改布尔构建器；仅改显示路径。
+- 圆柱裁剪细分**不在本计划内**（接口可接受 `Surface*`，但仅接入 Plane + Sphere）。
+- 构建目录：`cmake-build-mingw-debug`；链接 Qt 相关目标时，将 `C:\Qt6\Tools\mingw1310_64\bin` 加入 `PATH`。
+- 不要提交 `gpp_err*.txt`、`tmp_empty.cpp` 或构建树垃圾文件。
+- TDD：失败测试 → 实现 → 通过 → 每任务一次提交。
 
-## Algorithm lock (this plan)
+## 算法锁定（本计划）
 
-**Incremental Bowyer–Watson** for point insertion into a Delaunay triangulation of the UV plane, then **constraint recovery**: for each required segment, walk intersecting triangle edges and either Lawson-flip or insert a Steiner midpoint on the constraint until the segment is a union of mesh edges. Finally delete triangles whose centroid is outside the Outer or inside any Inner (even-odd / winding via `point_in_polygon`).
+**增量 Bowyer–Watson** 将点插入 UV 平面 Delaunay 三角剖分，然后**约束恢复**：对每条必需线段，遍历与之相交的三角形边，执行 Lawson 翻转或在约束上插入 Steiner 中点，直到该线段成为网格边的并集。最后用 `point_in_polygon` 删除质心在 Outer 外或任一 Inner 内的三角形（even-odd / 绕向规则）。
 
-## File map
+## 文件映射
 
-| File | Responsibility |
-|------|----------------|
-| `kernel/include/brep/topology.hpp` | Declare `Face::outer_loops()` |
-| `kernel/src/topology.cpp` | Implement `outer_loops()` |
-| `kernel/src/validate.cpp` | Outer count `>= 1` |
-| `kernel/include/brep/mesh/cdt.hpp` | CDT types + `triangulate_constrained` |
-| `kernel/src/mesh/cdt.cpp` | Bowyer–Watson + constraint recovery |
-| `kernel/include/brep/mesh/loop_sample.hpp` | Sampled ring / region types + APIs |
-| `kernel/src/mesh/loop_sample.cpp` | Edge sampling, seam unwrap, region grouping |
-| `kernel/src/mesh.cpp` | Orchestrate CDT for Plane + Sphere; remove ear-clip path when Task 10 lands |
-| `cmake/BrepCore.cmake` | Compile new `.cpp` into `brep_core` |
-| `tests/CMakeLists.txt` | Register new test binaries |
-| `tests/kernel/test_inner_loop.cpp` | Multi-outer validate |
-| `tests/kernel/test_cdt.cpp` | CDT unit tests |
-| `tests/kernel/test_loop_sample.cpp` | Sampling + seam |
-| `tests/kernel/test_tessellate_inner.cpp` | Corner-touching hole |
-| `tests/kernel/test_tessellate_trimmed_sphere.cpp` | Trimmed sphere |
-| `tests/kernel/test_tessellate_untitled_union.cpp` | `untitled.xl` pose regression |
+| 文件 | 职责 |
+|------|------|
+| `kernel/include/brep/topology.hpp` | 声明 `Face::outer_loops()` |
+| `kernel/src/topology.cpp` | 实现 `outer_loops()` |
+| `kernel/src/validate.cpp` | Outer 数量 `>= 1` |
+| `kernel/include/brep/mesh/cdt.hpp` | CDT 类型 + `triangulate_constrained` |
+| `kernel/src/mesh/cdt.cpp` | Bowyer–Watson + 约束恢复 |
+| `kernel/include/brep/mesh/loop_sample.hpp` | 采样环 / 区域类型与 API |
+| `kernel/src/mesh/loop_sample.cpp` | 边采样、缝展开、区域分组 |
+| `kernel/src/mesh.cpp` | 编排 Plane + Sphere 的 CDT；Task 10 完成后移除耳切路径 |
+| `cmake/BrepCore.cmake` | 将新 `.cpp` 编译进 `brep_core` |
+| `tests/CMakeLists.txt` | 注册新测试可执行文件 |
+| `tests/kernel/test_inner_loop.cpp` | 多 Outer 校验 |
+| `tests/kernel/test_cdt.cpp` | CDT 单元测试 |
+| `tests/kernel/test_loop_sample.cpp` | 采样 + 缝 |
+| `tests/kernel/test_tessellate_inner.cpp` | 贴角孔 |
+| `tests/kernel/test_tessellate_trimmed_sphere.cpp` | 裁剪球面 |
+| `tests/kernel/test_tessellate_untitled_union.cpp` | `untitled.xl` 构型回归 |
 
 ---
 
-### Task 1: Multi-Outer topology + validate
+### 任务 1：多 Outer 拓扑 + 校验
 
-**Files:**
-- Modify: `kernel/include/brep/topology.hpp`
-- Modify: `kernel/src/topology.cpp`
-- Modify: `kernel/src/validate.cpp` (Outer count check ~lines 44–57)
-- Modify: `tests/kernel/test_inner_loop.cpp` (`ExactlyOneOuterRequired` → allow multiple)
-- Test: `tests/kernel/test_inner_loop.cpp`
+**文件：**
+- 修改：`kernel/include/brep/topology.hpp`
+- 修改：`kernel/src/topology.cpp`
+- 修改：`kernel/src/validate.cpp`（Outer 数量检查约第 44–57 行）
+- 修改：`tests/kernel/test_inner_loop.cpp`（`ExactlyOneOuterRequired` → 允许多个）
+- 测试：`tests/kernel/test_inner_loop.cpp`
 
-**Interfaces:**
-- Consumes: existing `Face::loops`, `LoopType`
-- Produces: `std::vector<Loop*> Face::outer_loops() const;` — all loops with `type == Outer`, stable order = `loops` order. `outer_loop()` remains first Outer or `nullptr`.
+**接口：**
+- 消费：现有 `Face::loops`、`LoopType`
+- 产出：`std::vector<Loop*> Face::outer_loops() const;` — 所有 `type == Outer` 的环，稳定顺序 = `loops` 顺序。`outer_loop()` 仍为第一个 Outer 或 `nullptr`。
 
-- [ ] **Step 1: Rewrite the failing validate expectation**
+- [ ] **步骤 1：改写失败的校验期望**
 
-Replace `TEST(InnerLoop, ExactlyOneOuterRequired)` with:
+将 `TEST(InnerLoop, ExactlyOneOuterRequired)` 替换为：
 
 ```cpp
 TEST(InnerLoop, MultipleOutersAllowed) {
@@ -76,9 +76,9 @@ TEST(InnerLoop, MultipleOutersAllowed) {
 }
 ```
 
-Add declaration usage — test will fail to compile until `outer_loops` exists; that is OK — add a compile-only stub next if needed. Prefer: first change validate only and keep test asserting `ok()`, then add `outer_loops` in same task.
+添加声明用法 — 在 `outer_loops` 存在前测试会编译失败；这可以接受 — 必要时先加仅编译桩。优先：先只改校验并让测试断言 `ok()`，再在同一任务中加 `outer_loops`。
 
-Also keep:
+同时保留：
 
 ```cpp
 TEST(InnerLoop, MissingOuterStillErrors) {
@@ -90,7 +90,7 @@ TEST(InnerLoop, MissingOuterStillErrors) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify current behavior fails new expectation**
+- [ ] **步骤 2：运行测试，验证当前行为不符合新期望**
 
 ```powershell
 $env:PATH = "C:\Qt6\Tools\mingw1310_64\bin;" + $env:PATH
@@ -99,17 +99,17 @@ cmake --build cmake-build-mingw-debug --target brep_test_inner_loop -j 8
 .\cmake-build-mingw-debug\bin\brep_test_inner_loop.exe --gtest_filter=InnerLoop.MultipleOutersAllowed
 ```
 
-Expected: FAIL (validate still requires exactly one outer) and/or compile error if `outer_loops` missing.
+预期：FAIL（校验仍要求恰好一个 outer）和/或若缺少 `outer_loops` 则编译错误。
 
-- [ ] **Step 3: Implement `outer_loops` + validate change**
+- [ ] **步骤 3：实现 `outer_loops` + 校验变更**
 
-In `topology.hpp` inside `Face`:
+在 `topology.hpp` 的 `Face` 内：
 
 ```cpp
 [[nodiscard]] std::vector<Loop*> outer_loops() const;
 ```
 
-In `topology.cpp`:
+在 `topology.cpp`：
 
 ```cpp
 std::vector<Loop*> Face::outer_loops() const {
@@ -121,7 +121,7 @@ std::vector<Loop*> Face::outer_loops() const {
 }
 ```
 
-In `validate.cpp` replace the `outer_count != 1` error block with:
+在 `validate.cpp` 将 `outer_count != 1` 错误块替换为：
 
 ```cpp
 if (outer_count == 0) {
@@ -131,17 +131,17 @@ if (outer_count == 0) {
 // outer_count >= 1 is OK (multi-outer allowed)
 ```
 
-Delete the old `"exactly one outer loop required"` branch entirely.
+完全删除旧的 `"exactly one outer loop required"` 分支。
 
-- [ ] **Step 4: Run tests**
+- [ ] **步骤 4：运行测试**
 
 ```powershell
 .\cmake-build-mingw-debug\bin\brep_test_inner_loop.exe
 ```
 
-Expected: all PASS.
+预期：全部 PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git add kernel/include/brep/topology.hpp kernel/src/topology.cpp kernel/src/validate.cpp tests/kernel/test_inner_loop.cpp
@@ -150,18 +150,18 @@ git commit -m "Allow multiple outer loops on a face."
 
 ---
 
-### Task 2: CDT mesh + unconstrained Delaunay
+### 任务 2：CDT 网格 + 无约束 Delaunay
 
-**Files:**
-- Create: `kernel/include/brep/mesh/cdt.hpp`
-- Create: `kernel/src/mesh/cdt.cpp`
-- Modify: `cmake/BrepCore.cmake` (add `mesh/cdt.cpp`)
-- Create: `tests/kernel/test_cdt.cpp`
-- Modify: `tests/CMakeLists.txt` (register `brep_test_cdt`)
+**文件：**
+- 新建：`kernel/include/brep/mesh/cdt.hpp`
+- 新建：`kernel/src/mesh/cdt.cpp`
+- 修改：`cmake/BrepCore.cmake`（添加 `mesh/cdt.cpp`）
+- 新建：`tests/kernel/test_cdt.cpp`
+- 修改：`tests/CMakeLists.txt`（注册 `brep_test_cdt`）
 
-**Interfaces:**
-- Consumes: `brep::Point2d` from `brep/math.hpp`
-- Produces:
+**接口：**
+- 消费：`brep/math.hpp` 中的 `brep::Point2d`
+- 产出：
 
 ```cpp
 namespace brep::mesh {
@@ -183,9 +183,9 @@ struct CdtResult {
 }
 ```
 
-- [ ] **Step 1: Write failing unit test (square → 2 triangles)**
+- [ ] **步骤 1：编写失败单元测试（正方形 → 2 个三角形）**
 
-`tests/kernel/test_cdt.cpp`:
+`tests/kernel/test_cdt.cpp`：
 
 ```cpp
 #include "brep/mesh/cdt.hpp"
@@ -211,7 +211,7 @@ TEST(Cdt, UnconstrainedSquareTwoTriangles) {
 }
 ```
 
-Register in `tests/CMakeLists.txt` (mirror other tests):
+在 `tests/CMakeLists.txt` 中注册（参照其他测试）：
 
 ```cmake
 add_executable(brep_test_cdt kernel/test_cdt.cpp)
@@ -223,40 +223,40 @@ gtest_discover_tests(brep_test_cdt
 )
 ```
 
-- [ ] **Step 2: Run test — expect link/compile fail**
+- [ ] **步骤 2：运行测试 — 预期链接/编译失败**
 
 ```powershell
 cmake --build cmake-build-mingw-debug --target brep_test_cdt -j 8
 ```
 
-Expected: FAIL (missing symbols / file).
+预期：FAIL（缺少符号/文件）。
 
-- [ ] **Step 3: Minimal Bowyer–Watson implementation**
+- [ ] **步骤 3：最小 Bowyer–Watson 实现**
 
-Create `cdt.hpp` with the API above.
+用上述 API 创建 `cdt.hpp`。
 
-In `cdt.cpp` implement at least:
-1. Bounding super-triangle covering all points (+ margin).
-2. Insert each input point; locate triangle containing point (walk or linear scan); Bowyer–Watson cavity; retriangulate to point.
-3. Remove any triangle that still touches a super-vertex.
-4. Ignore `constraints` for this task (accept empty only; if non-empty, set `ok=false` with message — next task fills in).
+在 `cdt.cpp` 中至少实现：
+1. 覆盖所有点（+ 边距）的包围超级三角形。
+2. 插入每个输入点；定位包含该点的三角形（行走或线性扫描）；Bowyer–Watson 空腔；向该点重新三角化。
+3. 移除仍接触超级顶点的任意三角形。
+4. 本任务忽略 `constraints`（仅接受空约束；若非空，设 `ok=false` 并给出消息 — 下一任务补全）。
 
-Add to `cmake/BrepCore.cmake`:
+添加到 `cmake/BrepCore.cmake`：
 
 ```cmake
 ${BREP_KERNEL_DIR}/src/mesh/cdt.cpp
 ```
 
-- [ ] **Step 4: Run test — expect PASS**
+- [ ] **步骤 4：运行测试 — 预期 PASS**
 
 ```powershell
 cmake --build cmake-build-mingw-debug --target brep_test_cdt -j 8
 .\cmake-build-mingw-debug\bin\brep_test_cdt.exe --gtest_filter=Cdt.UnconstrainedSquareTwoTriangles
 ```
 
-Expected: PASS.
+预期：PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git add kernel/include/brep/mesh/cdt.hpp kernel/src/mesh/cdt.cpp cmake/BrepCore.cmake tests/kernel/test_cdt.cpp tests/CMakeLists.txt
@@ -265,15 +265,15 @@ git commit -m "Add parametric CDT scaffold with unconstrained Delaunay."
 
 ---
 
-### Task 3: Constraint edges + polygonal hole
+### 任务 3：约束边 + 带孔多边形
 
-**Files:**
-- Modify: `kernel/src/mesh/cdt.cpp`
-- Modify: `tests/kernel/test_cdt.cpp`
+**文件：**
+- 修改：`kernel/src/mesh/cdt.cpp`
+- 修改：`tests/kernel/test_cdt.cpp`
 
-**Interfaces:**
-- Consumes: `triangulate_constrained` from Task 2
-- Produces: same API; constraints honored; triangles only inside outer when caller passes outer+hole edges and then filters — **for this task**, CDT returns full Delaunay of points with constraints present as edges; add helper:
+**接口：**
+- 消费：任务 2 的 `triangulate_constrained`
+- 产出：同一 API；约束被满足；调用方传入 outer+hole 边并过滤后，三角形仅在 outer 内 — **本任务**中，CDT 返回带约束边的点集完整 Delaunay；添加辅助函数：
 
 ```cpp
 [[nodiscard]] CdtResult triangulate_polygon_with_holes(
@@ -282,9 +282,9 @@ git commit -m "Add parametric CDT scaffold with unconstrained Delaunay."
     double eps = 1e-12);
 ```
 
-Implementation: concatenate vertices, build consecutive constraint edges for each ring (close last→first), call `triangulate_constrained`, then drop triangles whose centroid fails `in_outer && !in_any_hole`.
+实现：合并顶点，为每个环构建连续约束边（闭合 last→first），调用 `triangulate_constrained`，再丢弃质心不满足 `in_outer && !in_any_hole` 的三角形。
 
-- [ ] **Step 1: Failing test — square with square hole**
+- [ ] **步骤 1：失败测试 — 带方形孔的正方形**
 
 ```cpp
 TEST(Cdt, SquareWithHoleKeepsBoundaryAndDropsInterior) {
@@ -310,34 +310,34 @@ TEST(Cdt, SquareWithHoleKeepsBoundaryAndDropsInterior) {
 }
 ```
 
-Implement the barycentric helper fully in the test file (copy pattern from `test_tessellate_inner.cpp`).
+在测试文件中完整实现重心坐标辅助函数（从 `test_tessellate_inner.cpp` 复制模式）。
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期 FAIL**
 
 ```powershell
 .\cmake-build-mingw-debug\bin\brep_test_cdt.exe --gtest_filter=Cdt.SquareWithHoleKeepsBoundaryAndDropsInterior
 ```
 
-Expected: FAIL (`ok=false` or hole covered).
+预期：FAIL（`ok=false` 或孔被覆盖）。
 
-- [ ] **Step 3: Implement constraint recovery + polygon helper**
+- [ ] **步骤 3：实现约束恢复 + 多边形辅助函数**
 
-In `cdt.cpp`:
-- For each constraint `(i,j)`: while segment not in mesh, find an intersecting edge; if flippable and flip brings endpoints closer to being connected, flip; else insert midpoint Steiner on the constraint, split, continue.
-- Mark constrained edges so flips never destroy them once recovered.
-- Implement `point_in_polygon` (ray cast) for filtering.
-- Expose `triangulate_polygon_with_holes` in `cdt.hpp`.
+在 `cdt.cpp` 中：
+- 对每条约束 `(i,j)`：当线段不在网格中时，找相交边；若可翻转且翻转使端点更接近连通，则翻转；否则在约束上插入 Steiner 中点，分裂，继续。
+- 标记约束边，恢复后翻转不得破坏它们。
+- 实现 `point_in_polygon`（射线法）用于过滤。
+- 在 `cdt.hpp` 中暴露 `triangulate_polygon_with_holes`。
 
-- [ ] **Step 4: Run — expect PASS**
+- [ ] **步骤 4：运行 — 预期 PASS**
 
 ```powershell
 cmake --build cmake-build-mingw-debug --target brep_test_cdt -j 8
 .\cmake-build-mingw-debug\bin\brep_test_cdt.exe
 ```
 
-Expected: all PASS.
+预期：全部 PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git add kernel/include/brep/mesh/cdt.hpp kernel/src/mesh/cdt.cpp tests/kernel/test_cdt.cpp
@@ -346,18 +346,18 @@ git commit -m "Recover CDT constraints and triangulate polygons with holes."
 
 ---
 
-### Task 4: Loop edge sampling (line + circle)
+### 任务 4：环边采样（直线 + 圆）
 
-**Files:**
-- Create: `kernel/include/brep/mesh/loop_sample.hpp`
-- Create: `kernel/src/mesh/loop_sample.cpp`
-- Modify: `cmake/BrepCore.cmake`
-- Create: `tests/kernel/test_loop_sample.cpp`
-- Modify: `tests/CMakeLists.txt`
+**文件：**
+- 新建：`kernel/include/brep/mesh/loop_sample.hpp`
+- 新建：`kernel/src/mesh/loop_sample.cpp`
+- 修改：`cmake/BrepCore.cmake`
+- 新建：`tests/kernel/test_loop_sample.cpp`
+- 修改：`tests/CMakeLists.txt`
 
-**Interfaces:**
-- Consumes: `Loop`, `Edge`, `Curve`, `TessellationOptions`, `Surface` (`PlaneSurface` / `SphereSurface` `param_of`)
-- Produces:
+**接口：**
+- 消费：`Loop`、`Edge`、`Curve`、`TessellationOptions`、`Surface`（`PlaneSurface` / `SphereSurface` 的 `param_of`）
+- 产出：
 
 ```cpp
 namespace brep::mesh {
@@ -380,12 +380,12 @@ struct SampledRing {
 }
 ```
 
-Sampling rules:
-- `LineCurve`: at least endpoints; if length large vs `linear_deflection`, subdivide uniformly so chord error for a straight line is 0 (still OK to just use endpoints).
-- `CircleCurve`: choose `n = max(2, ceil(Δθ / α))` where `α` from angular deflection and from `2*acos(1 - h/R)` with `h = linear_deflection` (fallback `0.02*R`).
-- Project each XYZ with `PlaneSurface::param_of` or `SphereSurface::param_of`.
+采样规则：
+- `LineCurve`：至少端点；若长度相对 `linear_deflection` 较大，均匀细分使直线弦高误差为 0（仅用端点也可）。
+- `CircleCurve`：取 `n = max(2, ceil(Δθ / α))`，其中 `α` 来自角偏差及 `2*acos(1 - h/R)`，`h = linear_deflection`（回退 `0.02*R`）。
+- 用 `PlaneSurface::param_of` 或 `SphereSurface::param_of` 将各 XYZ 投影。
 
-- [ ] **Step 1: Failing test — quarter circle gets >2 samples**
+- [ ] **步骤 1：失败测试 — 四分之一圆得到 >2 个采样点**
 
 ```cpp
 TEST(LoopSample, QuarterCircleHasInteriorSamples) {
@@ -396,17 +396,17 @@ TEST(LoopSample, QuarterCircleHasInteriorSamples) {
 }
 ```
 
-Construct using `model.make_circle`, `make_edge` with `t0=0`, `t1=pi/2`, vertices at `(1,0,0)` and `(0,1,0)`.
+用 `model.make_circle`、`make_edge`（`t0=0`、`t1=pi/2`），顶点在 `(1,0,0)` 与 `(0,1,0)` 构造。
 
-- [ ] **Step 2: Run — expect FAIL**
+- [ ] **步骤 2：运行 — 预期 FAIL**
 
-- [ ] **Step 3: Implement sampling**
+- [ ] **步骤 3：实现采样**
 
-Wire `sample_edge_xyz` / `sample_loop`. For sphere `param_of`, normalize `u` into `[0, 2π)`.
+接入 `sample_edge_xyz` / `sample_loop`。球面 `param_of` 将 `u` 归一化到 `[0, 2π)`。
 
-- [ ] **Step 4: PASS + register `brep_test_loop_sample`**
+- [ ] **步骤 4：PASS + 注册 `brep_test_loop_sample`**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git commit -m "Add deflection-based loop edge sampling for tessellation."
@@ -414,16 +414,16 @@ git commit -m "Add deflection-based loop edge sampling for tessellation."
 
 ---
 
-### Task 5: Region grouping + plane faces via CDT
+### 任务 5：区域分组 + 平面 CDT 细分
 
-**Files:**
-- Modify: `kernel/src/mesh/loop_sample.cpp` / `.hpp` (add `group_face_regions`)
-- Modify: `kernel/src/mesh.cpp` (`tessellate_plane_face` → CDT path)
-- Test: `tests/kernel/test_tessellate_inner.cpp` (existing must stay green)
+**文件：**
+- 修改：`kernel/src/mesh/loop_sample.cpp` / `.hpp`（添加 `group_face_regions`）
+- 修改：`kernel/src/mesh.cpp`（`tessellate_plane_face` → CDT 路径）
+- 测试：`tests/kernel/test_tessellate_inner.cpp`（现有测试须保持通过）
 
-**Interfaces:**
-- Consumes: `Face::outer_loops()`, `inner_loops()`, `sample_loop`, `triangulate_polygon_with_holes`
-- Produces:
+**接口：**
+- 消费：`Face::outer_loops()`、`inner_loops()`、`sample_loop`、`triangulate_polygon_with_holes`
+- 产出：
 
 ```cpp
 struct FaceRegion {
@@ -434,38 +434,38 @@ struct FaceRegion {
     const Face& face, const Surface& surface, const TessellationOptions& opts);
 ```
 
-Assignment: hole centroid UV → `point_in_polygon(outer)`; if none match, `BREP_WARN` and skip hole.
+归属：孔质心 UV → `point_in_polygon(outer)`；若无匹配，`BREP_WARN` 并跳过该孔。
 
-`tessellate_plane_face`:
+`tessellate_plane_face`：
 1. `group_face_regions`
-2. For each region, `triangulate_polygon_with_holes`
-3. Append 3D verts with plane normal + normalized UV
-4. Respect face sense (existing flip logic)
+2. 对每个区域，`triangulate_polygon_with_holes`
+3. 追加带平面法向 + 归一化 UV 的 3D 顶点
+4. 尊重面朝向（现有翻转逻辑）
 
-- [ ] **Step 1: Ensure existing hole test still expresses intent**
+- [ ] **步骤 1：确保现有孔测试仍表达意图**
 
-No change required if already present; run:
+若已存在则无需修改；运行：
 
 ```powershell
 .\cmake-build-mingw-debug\bin\brep_test_tessellate_inner.exe
 ```
 
-After switching implementation, it must still PASS. If you switch before it passes, fix CDT filtering.
+切换实现后仍须 PASS。若在通过前切换，修复 CDT 过滤。
 
-- [ ] **Step 2: Temporarily break by calling empty CDT** — optional; prefer direct replace and watch `HoleCenterNotCovered`.
+- [ ] **步骤 2：临时调用空 CDT 制造失败 — 可选；优先直接替换并观察 `HoleCenterNotCovered`。**
 
-- [ ] **Step 3: Replace `tessellate_plane_face` body** to use CDT. Keep old `bridge_hole` / `ear_clip` functions in file for now (deleted in Task 10).
+- [ ] **步骤 3：替换 `tessellate_plane_face` 主体** 为 CDT。暂时保留文件中旧 `bridge_hole` / `ear_clip` 函数（Task 10 删除）。
 
-- [ ] **Step 4: Run**
+- [ ] **步骤 4：运行**
 
 ```powershell
 cmake --build cmake-build-mingw-debug --target brep_test_tessellate_inner -j 8
 .\cmake-build-mingw-debug\bin\brep_test_tessellate_inner.exe
 ```
 
-Expected: PASS (`HoleCenterNotCovered`).
+预期：PASS（`HoleCenterNotCovered`）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git commit -m "Tessellate planar faces with parametric CDT."
@@ -473,19 +473,19 @@ git commit -m "Tessellate planar faces with parametric CDT."
 
 ---
 
-### Task 6: Corner-touching hole (Sphere∪Box plane case)
+### 任务 6：贴角孔（Sphere∪Box 平面情形）
 
-**Files:**
-- Modify: `tests/kernel/test_tessellate_inner.cpp`
-- Modify: `kernel/src/mesh/cdt.cpp` / `loop_sample.cpp` if shared-vertex merge needed
+**文件：**
+- 修改：`tests/kernel/test_tessellate_inner.cpp`
+- 修改：`kernel/src/mesh/cdt.cpp` / `loop_sample.cpp`（若需共享顶点合并）
 
-**Interfaces:**
-- Consumes: plane tessellation from Task 5
-- Produces: correct mesh when Inner shares the Outer corner vertex
+**接口：**
+- 消费：任务 5 的平面细分
+- 产出：Inner 与 Outer 共享角顶点时网格正确
 
-- [ ] **Step 1: Failing test**
+- [ ] **步骤 1：失败测试**
 
-Build a sheet face: Outer unit square `[0,1]²`; Inner triangle `(0,0) → (0.5,0) → (0,0.5)` (CW) sharing corner `(0,0)` — same `Vertex*` for outer and inner at corner.
+构造 sheet 面：Outer 单位正方形 `[0,1]²`；Inner 三角形 `(0,0) → (0.5,0) → (0,0.5)`（CW），在角 `(0,0)` 与 Outer 共享 — outer 与 inner 在该角使用同一 `Vertex*`。
 
 ```cpp
 TEST(TessellateInner, CornerTouchingHoleNotCovered) {
@@ -497,13 +497,13 @@ TEST(TessellateInner, CornerTouchingHoleNotCovered) {
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL** if CDT duplicates corner UV without merging or filters wrong.
+- [ ] **步骤 2：运行 — 若 CDT 重复角 UV 未合并或过滤错误，预期 FAIL**
 
-- [ ] **Step 3: Fix** — when building CDT input, merge UV points within `eps` (e.g. `1e-9` relative to bbox); do not insert bridge edges.
+- [ ] **步骤 3：修复** — 构建 CDT 输入时，在 `eps` 内（如相对 bbox 的 `1e-9`）合并 UV 点；不插入 bridge 边。
 
-- [ ] **Step 4: PASS**
+- [ ] **步骤 4：PASS**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git commit -m "Support corner-touching inner loops in planar CDT tessellation."
@@ -511,15 +511,15 @@ git commit -m "Support corner-touching inner loops in planar CDT tessellation."
 
 ---
 
-### Task 7: Sphere UV seam unwrap
+### 任务 7：球面 UV 缝展开
 
-**Files:**
-- Modify: `kernel/include/brep/mesh/loop_sample.hpp`
-- Modify: `kernel/src/mesh/loop_sample.cpp`
-- Modify: `tests/kernel/test_loop_sample.cpp`
+**文件：**
+- 修改：`kernel/include/brep/mesh/loop_sample.hpp`
+- 修改：`kernel/src/mesh/loop_sample.cpp`
+- 修改：`tests/kernel/test_loop_sample.cpp`
 
-**Interfaces:**
-- Produces:
+**接口：**
+- 产出：
 
 ```cpp
 /// Make ring UV contiguous: if |Δu|>π between adjacent samples, shift by ±2π
@@ -527,7 +527,7 @@ git commit -m "Support corner-touching inner loops in planar CDT tessellation."
 [[nodiscard]] SampledRing unwrap_sphere_ring(SampledRing ring);
 ```
 
-- [ ] **Step 1: Failing test**
+- [ ] **步骤 1：失败测试**
 
 ```cpp
 TEST(LoopSample, SphereRingAcrossSeamIsContiguous) {
@@ -544,15 +544,15 @@ TEST(LoopSample, SphereRingAcrossSeamIsContiguous) {
 }
 ```
 
-Adjust fixture to three points clearly crossing the seam.
+调整 fixture 为三个明确跨缝的点。
 
-- [ ] **Step 2: FAIL**
+- [ ] **步骤 2：FAIL**
 
-- [ ] **Step 3: Implement sequential unwrap** — for `i=1..n-1`, while `u[i]-u[i-1] > π` subtract `2π`; while `< -π` add `2π`. Close ring carefully (compare last to first).
+- [ ] **步骤 3：实现顺序展开** — 对 `i=1..n-1`，当 `u[i]-u[i-1] > π` 减 `2π`；当 `< -π` 加 `2π`。闭合环时谨慎比较 last 与 first。
 
-- [ ] **Step 4: PASS**
+- [ ] **步骤 4：PASS**
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git commit -m "Unwrap sphere loop UV across the periodic seam."
@@ -560,35 +560,35 @@ git commit -m "Unwrap sphere loop UV across the periodic seam."
 
 ---
 
-### Task 8: Trimmed sphere face tessellation
+### 任务 8：裁剪球面细分
 
-**Files:**
-- Modify: `kernel/src/mesh.cpp` — replace `tessellate_sphere_face` full grid with CDT path when `outer_loop()` exists
-- Create: `tests/kernel/test_tessellate_trimmed_sphere.cpp`
-- Modify: `tests/CMakeLists.txt`
-- Keep full closed sphere (`make_sphere` single face with seam) working: if the only outer samples the full domain, CDT still fills the sphere; alternatively detect closed analytic sphere (existing path) when loops are the standard seam+poles. **Rule for this task:** always use CDT from sampled loops; update `brep_test_tessellate_sphere` if counts change but normals/coverage must remain valid.
+**文件：**
+- 修改：`kernel/src/mesh.cpp` — 当存在 `outer_loop()` 时，用 CDT 路径替换 `tessellate_sphere_face` 整网格
+- 新建：`tests/kernel/test_tessellate_trimmed_sphere.cpp`
+- 修改：`tests/CMakeLists.txt`
+- 保持完整闭合球（`make_sphere` 单面带缝）可用：若唯一 outer 采样覆盖全参数域，CDT 仍填满球面；或在环为标准缝+极点时检测闭合解析球（现有路径）。**本任务规则：** 始终从采样环使用 CDT；若计数变化，更新 `brep_test_tessellate_sphere`，但法向/覆盖必须仍有效。
 
-**Interfaces:**
-- Consumes: `group_face_regions` + `unwrap_sphere_ring` + `triangulate_polygon_with_holes`
-- For each UV vertex: `xyz = sphere.eval(u_mod, v)`, `u_mod = fmod(u, 2π)` normalized to `[0,2π)`; normal via `face.normal_at`
+**接口：**
+- 消费：`group_face_regions` + `unwrap_sphere_ring` + `triangulate_polygon_with_holes`
+- 对每个 UV 顶点：`xyz = sphere.eval(u_mod, v)`，`u_mod = fmod(u, 2π)` 归一化到 `[0,2π)`；法向经 `face.normal_at`
 
-- [ ] **Step 1: Failing test — ⅞ ball outer has no points in deleted octant**
+- [ ] **步骤 1：失败测试 — ⅞ 球 outer 在删除的八分象限内无点**
 
-Reuse octant topology from `build_axis_octant_ball` path: call boolean Subtract Sphere−Box at origin, or build the same 4-face body; tessellate; pick a point deep in the removed +++ octant on the sphere surface; assert not covered. Also:
+复用 `build_axis_octant_ball` 路径的八分拓扑：调用布尔 Subtract 原点处 Sphere−Box，或构造相同 4 面体；细分；在球面上被移除 +++ 八分象限深处取点；断言未被覆盖。另：
 
 ```cpp
 EXPECT_LT(mesh.vertices.size(), 300u);  // full default sphere is ~325
 ```
 
-Tune threshold after measuring.
+测量后调整阈值。
 
-- [ ] **Step 2: FAIL** (current code draws full sphere ⇒ point covered / vert count high)
+- [ ] **步骤 2：FAIL**（当前代码画整球 ⇒ 点被覆盖 / 顶点数高）
 
-- [ ] **Step 3: Implement trimmed sphere tessellation**
+- [ ] **步骤 3：实现裁剪球面细分**
 
-Delete/stop calling the nu×nv grid for faces that have loops. Closed `make_sphere` still has one outer loop around the seam — sampling must cover the full sphere domain so CDT fills it (may need both poles + dense equator). If closed sphere quality regresses, add Steiner grid points **inside** the UV domain that pass the inside-outer test (optional densify using `TessellationOptions` segment counts as a UV lattice clipped by the outer).
+对有环的面删除/停止调用 nu×nv 网格。闭合 `make_sphere` 仍有绕缝的一个 outer 环 — 采样须覆盖整球参数域以便 CDT 填满（可能需要两极 + 密赤道）。若闭合球质量回退，在 UV 域内添加通过 inside-outer 测试的 Steiner 网格点（可选：用 `TessellationOptions` 段数作为 UV 格点，由 outer 裁剪）。
 
-- [ ] **Step 4: Run**
+- [ ] **步骤 4：运行**
 
 ```powershell
 cmake --build cmake-build-mingw-debug --target brep_test_tessellate_trimmed_sphere brep_test_tessellate_sphere -j 8
@@ -596,9 +596,9 @@ cmake --build cmake-build-mingw-debug --target brep_test_tessellate_trimmed_sphe
 .\cmake-build-mingw-debug\bin\brep_test_tessellate_sphere.exe
 ```
 
-Expected: both PASS.
+预期：两者均 PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git commit -m "Tessellate trimmed sphere faces with seam-aware CDT."
@@ -606,16 +606,16 @@ git commit -m "Tessellate trimmed sphere faces with seam-aware CDT."
 
 ---
 
-### Task 9: `untitled.xl` Sphere∪Box tessellation regression
+### 任务 9：`untitled.xl` Sphere∪Box 细分回归
 
-**Files:**
-- Create: `tests/kernel/test_tessellate_untitled_union.cpp`
-- Modify: `tests/CMakeLists.txt`
+**文件：**
+- 新建：`tests/kernel/test_tessellate_untitled_union.cpp`
+- 修改：`tests/CMakeLists.txt`
 
-**Interfaces:**
-- Consumes: `evaluate` boolean Union + `tessellate_body`
+**接口：**
+- 消费：`evaluate` 布尔 Union + `tessellate_body`
 
-- [ ] **Step 1: Failing/regression test with exact pose**
+- [ ] **步骤 1：带精确位姿的失败/回归测试**
 
 ```cpp
 TEST(TessellateUntitledUnion, CornerSphereBoxLooksTrimmed) {
@@ -651,20 +651,20 @@ TEST(TessellateUntitledUnion, CornerSphereBoxLooksTrimmed) {
 }
 ```
 
-Refine the inward direction to match `detect_corner_octant` signs for this corner (`sx=-1,sy=-1,sz=+1`).
+将 inward 方向精化以匹配该角点的 `detect_corner_octant` 符号（`sx=-1,sy=-1,sz=+1`）。
 
-- [ ] **Step 2: Run against current main** — if Tasks 5–8 done, may already PASS; if not, FAIL documents the bug.
+- [ ] **步骤 2：对当前 main 运行 — 若任务 5–8 已完成，可能已 PASS；否则 FAIL 记录 bug**
 
-- [ ] **Step 3: Fix any remaining filtering/sampling gaps until PASS**
+- [ ] **步骤 3：修复剩余过滤/采样缺口直至 PASS**
 
-- [ ] **Step 4: Also run curved boolean + tessellate suite**
+- [ ] **步骤 4：同时运行曲面布尔 + 细分套件**
 
 ```powershell
 .\cmake-build-mingw-debug\bin\brep_test_sphere_curved_boolean.exe --gtest_filter=SphereBoxBoolean.*
 .\cmake-build-mingw-debug\bin\brep_test_tessellate_untitled_union.exe
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git commit -m "Add untitled.xl sphere-box union tessellation regression."
@@ -672,26 +672,26 @@ git commit -m "Add untitled.xl sphere-box union tessellation regression."
 
 ---
 
-### Task 10: Remove ear-clip path + doc cross-links
+### 任务 10：移除耳切路径 + 文档交叉引用
 
-**Files:**
-- Modify: `kernel/src/mesh.cpp` — delete unused `bridge_hole`, `ear_clip_triangulate`, `ensure_ccw/cw` if only used by old path (keep helpers still needed)
-- Modify: `docs/superpowers/specs/2026-08-10-analytic-sphere-brep-boolean-design.md` — short note under Phase 1 / tessellation pointing to CDT spec
-- Modify: `docs/superpowers/specs/2026-08-11-trimmed-face-cdt-tessellation-design.md` — status → Implemented (date)
+**文件：**
+- 修改：`kernel/src/mesh.cpp` — 删除未使用的 `bridge_hole`、`ear_clip_triangulate`、`ensure_ccw/cw`（若仅旧路径使用；仍需要的辅助函数保留）
+- 修改：`docs/superpowers/specs/2026-08-10-analytic-sphere-brep-boolean-design.md` — 在 Phase 1 / 细分下简短注明指向 CDT 规格
+- 修改：`docs/superpowers/specs/2026-08-11-trimmed-face-cdt-tessellation-design.md` — 状态 → 已实现（日期）
 
-- [ ] **Step 1: Confirm no tests call old symbols** (grep `bridge_hole`)
+- [ ] **步骤 1：确认无测试调用旧符号**（grep `bridge_hole`）
 
-- [ ] **Step 2: Delete dead code; build all mesh-related tests**
+- [ ] **步骤 2：删除死代码；构建所有网格相关测试**
 
 ```powershell
 cmake --build cmake-build-mingw-debug --target brep_test_cdt brep_test_loop_sample brep_test_tessellate_inner brep_test_tessellate_sphere brep_test_tessellate_trimmed_sphere brep_test_tessellate_untitled_union brep_test_inner_loop -j 8
 ```
 
-- [ ] **Step 3: Run all of the above exes — all PASS**
+- [ ] **步骤 3：运行上述全部 exe — 全部 PASS**
 
-- [ ] **Step 4: Manual viewer check (human):** open `C:/Users/xingbl/Desktop/untitled.xl`, Fuse the two GUIDs; expect solid box + spherical cap.
+- [ ] **步骤 4：手动 viewer 检查（人工）：** 打开 `C:/Users/xingbl/Desktop/untitled.xl`，对两 GUID Fuse；预期实心盒 + 球冠。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git commit -m "Remove ear-clip tessellation path; link CDT design as implemented."
@@ -699,24 +699,24 @@ git commit -m "Remove ear-clip tessellation path; link CDT design as implemented
 
 ---
 
-## Spec coverage checklist
+## 规格覆盖清单
 
-| Spec requirement | Task |
+| 规格要求 | 任务 |
 |------------------|------|
-| Multi Outer validate + `outer_loops()` | 1 |
-| CDT data structures + triangulate | 2–3 |
-| Deflection loop sampling | 4 |
-| Region grouping / multi hole plane | 5 |
-| Corner-touching hole | 6 |
-| Sphere seam unwrap | 7 |
-| Trimmed sphere (no full ball) | 8 |
-| `untitled.xl` regression | 9 |
-| No third-party lib / remove ear-clip | 10 + Global Constraints |
-| Cylinder | Explicitly deferred (non-goal) |
+| 多 Outer 校验 + `outer_loops()` | 1 |
+| CDT 数据结构 + 三角剖分 | 2–3 |
+| 偏差环采样 | 4 |
+| 区域分组 / 平面多孔 | 5 |
+| 贴角孔 | 6 |
+| 球面缝展开 | 7 |
+| 裁剪球面（非整球） | 8 |
+| `untitled.xl` 回归 | 9 |
+| 无第三方库 / 移除耳切 | 10 + 全局约束 |
+| 圆柱 | 明确延后（非目标） |
 
-## Placeholder / consistency self-review
+## 占位符 / 一致性自检
 
-- Algorithm locked to Bowyer–Watson + constraint recovery (no TBD).
-- API names consistent: `triangulate_constrained`, `triangulate_polygon_with_holes`, `sample_loop`, `group_face_regions`, `unwrap_sphere_ring`.
-- Test binary names match `tests/CMakeLists.txt` patterns.
-- Build directory and PATH match repo practice.
+- 算法锁定为 Bowyer–Watson + 约束恢复（无 TBD）。
+- API 名称一致：`triangulate_constrained`、`triangulate_polygon_with_holes`、`sample_loop`、`group_face_regions`、`unwrap_sphere_ring`。
+- 测试可执行文件名与 `tests/CMakeLists.txt` 模式一致。
+- 构建目录与 PATH 符合仓库惯例。
