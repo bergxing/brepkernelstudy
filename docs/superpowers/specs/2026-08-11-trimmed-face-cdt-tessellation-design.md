@@ -1,7 +1,7 @@
 # 裁剪面细分：自研参数域 CDT
 
 **日期**：2026-08-11  
-**状态**：已决议（方案 2：自研 CDT）  
+**状态**：**已实现**（2026-08-11；自研参数域 CDT 替换平面 ear-clip / 整球 UV 网格）  
 **触发**：`untitled.xl` 中球∪盒（`33e92047-…` ∪ `cba4ae3a-…`）布尔拓扑通过，但显示异常——整球网格 + 带贴角内环的平面填充失败。  
 **关联**：
 - 布尔设计 [2026-08-10-analytic-sphere-brep-boolean-design.md](./2026-08-10-analytic-sphere-brep-boolean-design.md)（Phase 1 细分；T2.x Inner；T3.7 Sphere∪Box）

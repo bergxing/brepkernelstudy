@@ -1,7 +1,7 @@
 # 解析球面 + 通用 B-Rep 布尔 —— 技术实现方案
 
 日期：2026-08-10  
-状态：Phase 0 已决议；**Phase 1（解析球 + 显示细分）已完成**  
+状态：Phase 0 已决议；**Phase 1（解析球 + 显示细分）已完成**；裁剪面 CDT 细分见 [2026-08-11-trimmed-face-cdt-tessellation-design.md](./2026-08-11-trimmed-face-cdt-tessellation-design.md)（2026-08-11 实现，替换 ear-clip / 整球 UV 网格）  
 分支：`cursor/modern-cpp-brep-kernel`
 
 ## 目标
