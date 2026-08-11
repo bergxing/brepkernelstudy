@@ -353,6 +353,9 @@ class IBooleanEvaluator {
 - 继续自研走向 NURBS，**或**
 - 在 `IBooleanEvaluator` 后增加可选 OCCT 后端（UI / 特征不变）
 
+**决议（2026-08-11，T5.1/T5.3）**：**继续自研**；本周期**不**做 OCCT 适配（T5.2 延期）。  
+评估：[2026-08-11-boolean-backend-evaluation.md](./2026-08-11-boolean-backend-evaluation.md)；ADR：[0005-boolean-backend-self-hosted.md](../../architecture/adr/0005-boolean-backend-self-hosted.md)。
+
 ---
 
 ## 规划模块 / 文件映射
@@ -435,7 +438,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 | 3 | T3.1～T3.6 | 弯曲求交 + 球面布尔 MVP | **已完成** — `Box∩Sphere` ⅛-ball |
 | 3+ | T3.7～T3.8 | 弯曲布尔扩展（待办） | `Sphere−Box`、`Sphere∪Sphere` |
 | 4 | T4.* | 柱面等扩展 | **T4.1～T4.4 完成**（含 BVH Median/SAH + 布尔宽相挂钩） |
-| 5 | T5.* | 自研 vs OCCT 决策 | 可选 |
+| 5 | T5.* | 自研 vs OCCT 决策 | **T5.1/T5.3 完成**（继续自研）；T5.2 延期 |
 
 ---
 
@@ -806,9 +809,9 @@ candidate_pairs(A,B) → 按 SurfaceKind 调已有 intersect_* → 再印记/分
 
 ### Phase 5 —— 决策门（可选）
 
-- [ ] **T5.1** 评估自研 NURBS 路径 vs 可选 OCCT 后端
-- [ ] **T5.2** 若选 OCCT：在 `IBooleanEvaluator` 后增加适配器，UI/特征不变
-- [ ] **T5.3** 形成书面决策（短 ADR）
+- [x] **T5.1** 评估自研 NURBS 路径 vs 可选 OCCT 后端 — 见 [2026-08-11-boolean-backend-evaluation.md](./2026-08-11-boolean-backend-evaluation.md)
+- [ ] **T5.2** 若选 OCCT：在 `IBooleanEvaluator` 后增加适配器，UI/特征不变 — **延期**（ADR 0005：本周期不选 OCCT）
+- [x] **T5.3** 形成书面决策（短 ADR）— [ADR 0005](../../architecture/adr/0005-boolean-backend-self-hosted.md)
 
 ---
 

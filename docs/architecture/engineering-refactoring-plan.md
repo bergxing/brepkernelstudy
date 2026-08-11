@@ -585,7 +585,7 @@ endif()
 ### B. 相关文档
 
 - [Viewer 中英双语设计](../viewer/i18n-zh-en-bilingual-design.md)
-- ADR：[`docs/architecture/adr/`](adr/)（0001 重构决策、0002 API 分级、0003 SHARED、[0004 同仓多子工程](adr/0004-monorepo-subprojects.md)）
+- ADR：[`docs/architecture/adr/`](adr/)（0001 重构决策、0002 API 分级、0003 SHARED、[0004 同仓多子工程](adr/0004-monorepo-subprojects.md)、[0005 布尔后端自研](adr/0005-boolean-backend-self-hosted.md)）
 
 ### C. 修订记录
 
