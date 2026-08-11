@@ -96,8 +96,8 @@ class DefaultBooleanEvaluator final : public IBooleanEvaluator {
     result.diagnostics =
         std::string("boolean: unsupported combination for ") + op_name(op) +
         " ('" + a.name + "' vs '" + b.name +
-        "'); supported: box–box, prism–box, sphere–box (Intersect ⅛ / "
-        "Sphere−Box), sphere–sphere (Union); " +
+        "'); supported: box–box, prism–box, sphere–box (Intersect/Sphere−Box/"
+        "Union corner), sphere–sphere (Union); " +
         probe.summary;
     BREP_WARN("{}", result.diagnostics);
     return result;

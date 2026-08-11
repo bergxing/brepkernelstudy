@@ -131,11 +131,12 @@ TEST(BoxBoolean, SubtractNoOverlapKeepsTarget) {
   EXPECT_NEAR(aabb_volume(mn, mx), 1.0, 1e-9);
 }
 
-TEST(BoxBoolean, RejectsSphereBoxPair) {
+TEST(BoxBoolean, RejectsNonCornerSphereBoxUnion) {
   Model model;
+  // Sphere center not at a corner and not contained → Union soft-fails.
   Body* box = make_box(model, BoxSpec{.min = {0, 0, 0}, .max = {2, 2, 2}});
   Body* sphere =
-      make_sphere(model, SphereSpec{.center = {1, 1, 1}, .radius = 0.5});
+      make_sphere(model, SphereSpec{.center = {3, 1, 1}, .radius = 0.5});
   auto eval = boolean::make_default_boolean_evaluator();
   const auto result =
       eval->evaluate(boolean::BooleanOp::Union, model, *box, *sphere, {});

@@ -10,8 +10,9 @@
 namespace brep::boolean {
 
 /// Sphere × axis-aligned box boolean.
-/// - Intersect: sphere center at box.min, box contains +++ octant → ⅛ ball
-/// - Subtract (sphere−box): same pose → ⅞ ball (T3.7)
+/// - Intersect / Sphere−Box / Sphere∪Box: sphere center at a box corner with
+///   the inward octant of the ball inside the box (⅛ / ⅞ / box+spherical patch)
+/// - Union also: either body contains the other → clone the outer body
 [[nodiscard]] BooleanResult evaluate_sphere_box_boolean(
     BooleanOp op, Model& model, const SphereSpec& sphere, const BoxSpec& box,
     bool sphere_is_a, const BooleanContext& ctx = {});

@@ -436,7 +436,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 | 2.x | T2.x.1～T2.x.3 | Inner loop + 拉伸孔 | 面可带内环 |
 | 2.1 | T2.1.1～T2.1.3 | 平面拉伸参与布尔 | 拉伸 Cut/并可用 |
 | 3 | T3.1～T3.6 | 弯曲求交 + 球面布尔 MVP | **已完成** — `Box∩Sphere` ⅛-ball |
-| 3+ | T3.7～T3.8 | 弯曲布尔扩展 | **特解已通** — Sphere−Box（⅞）、Sphere∪Sphere（双冠） |
+| 3+ | T3.7～T3.8 | 弯曲布尔扩展 | **特解已通** — Sphere−Box（⅞）、Sphere∪Box（角点八分）、Sphere∪Sphere（双冠） |
 | 4 | T4.* | 柱面等扩展 | **T4.1～T4.4 完成**（含 BVH Median/SAH + 布尔宽相挂钩） |
 | 5 | T5.* | 自研 vs OCCT 决策 | **T5.1/T5.3 完成**（继续自研）；T5.2 延期 |
 
@@ -681,12 +681,13 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 与已通的 `Box∩Sphere` **不冲突**：evaluator 按操作数类型分流；`evaluate_sphere_box_boolean` 保留八分球 Intersect 特解优先，再挂通用球×盒；`Sphere∪Sphere` 走独立球–球路径。
 
-#### T3.7 `Sphere−Box`（待办，Phase 3 扩展）
+#### T3.7 `Sphere−Box` / `Sphere∪Box`（Phase 3 扩展）
 
 - [x] 球为目标、盒为工具的 Cut（及对称盒−球若需要）— **Sphere−Box 特解（⅞ 球）**；Box−Sphere 仍软失败
+- [x] **Sphere∪Box：** 球心在盒角点且内向八分在盒内 → 盒 + 三面 quarter 内环 + 外球面片；包含则退化为外包体
 - [x] 多平面–球交圆印到球面；保留球面剩余 + 盒侧平面片 — **同构于 ⅛ 球翻转朝向（特解）**
-- [x] 路由：在 `evaluate_sphere_box_boolean` 中扩展 `Subtract`，**勿破坏**现有 ⅛-ball Intersect 特解
-- [x] **测试：** 至少一种构型结果 `validate_body` 通过；失败软诊断
+- [x] 路由：在 `evaluate_sphere_box_boolean` 中扩展 `Subtract`/`Union`，**勿破坏**现有 ⅛-ball Intersect 特解
+- [x] **测试：** ⅛/⅞/角点并集（含 untitled.xl 角点构型）`validate_body` 通过；失败软诊断
 - [ ] **依赖建议：** 通用「圆印到球面 / 打断 seam」优先于特解堆叠 — 仍适用后续泛化
 
 #### T3.8 `Sphere∪Sphere`（待办，Phase 3 扩展）
