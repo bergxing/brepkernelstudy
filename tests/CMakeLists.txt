@@ -6,6 +6,14 @@ gtest_discover_tests(brep_test_math
   DISCOVERY_MODE PRE_TEST
 )
 
+add_executable(brep_test_cdt kernel/test_cdt.cpp)
+target_link_libraries(brep_test_cdt PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_cdt
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_cdt>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_cdt."
+)
+
 add_executable(brep_test_snap kernel/test_snap_query.cpp)
 target_link_libraries(brep_test_snap PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_snap

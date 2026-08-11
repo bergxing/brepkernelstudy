@@ -16,6 +16,7 @@ add_library(brep_core ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/mesh.cpp
   ${BREP_KERNEL_DIR}/src/guid.cpp
   ${BREP_KERNEL_DIR}/src/object_registry.cpp
+  ${BREP_KERNEL_DIR}/src/mesh/cdt.cpp
   ${BREP_KERNEL_DIR}/src/snap/snap_query.cpp
   ${BREP_KERNEL_DIR}/src/bool/evaluator_stub.cpp
   ${BREP_KERNEL_DIR}/src/bool/intersect_plane_plane.cpp
