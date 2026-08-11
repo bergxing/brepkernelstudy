@@ -141,3 +141,19 @@ gtest_discover_tests(brep_test_sphere_box_boolean
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_sphere_box_boolean."
 )
+
+add_executable(brep_test_cylinder_surface kernel/test_cylinder_surface.cpp)
+target_link_libraries(brep_test_cylinder_surface PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_cylinder_surface
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_cylinder_surface>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_cylinder_surface."
+)
+
+add_executable(brep_test_cylinder_intersect kernel/test_cylinder_intersect.cpp)
+target_link_libraries(brep_test_cylinder_intersect PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_cylinder_intersect
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_cylinder_intersect>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_cylinder_intersect."
+)

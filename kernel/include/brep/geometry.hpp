@@ -190,4 +190,35 @@ class SphereSurface final : public Surface {
   double radius_{1.0};
 };
 
+/// Infinite analytic cylinder.
+/// UV: u = angle about axis [0, 2π); v = signed height along axis.
+/// Frame: origin on axis; axis unit; x_axis/y_axis orthonormal, right-handed.
+class CylinderSurface final : public Surface {
+ public:
+  CylinderSurface(Point3d origin, Vector3d axis, double radius);
+
+  [[nodiscard]] SurfaceKind kind() const noexcept override {
+    return SurfaceKind::Cylinder;
+  }
+  [[nodiscard]] Point3d eval(double u, double v) const override;
+  [[nodiscard]] Vector3d normal(double u, double v) const override;
+
+  /// Project to cylinder UV (radial direction ignored for radius; uses
+  /// direction from axis).
+  [[nodiscard]] Point2d param_of(const Point3d& p) const;
+
+  [[nodiscard]] const Point3d& origin() const noexcept { return origin_; }
+  [[nodiscard]] const Vector3d& axis() const noexcept { return axis_; }
+  [[nodiscard]] const Vector3d& x_axis() const noexcept { return x_axis_; }
+  [[nodiscard]] const Vector3d& y_axis() const noexcept { return y_axis_; }
+  [[nodiscard]] double radius() const noexcept { return radius_; }
+
+ private:
+  Point3d origin_;
+  Vector3d axis_;
+  Vector3d x_axis_;
+  Vector3d y_axis_;
+  double radius_{1.0};
+};
+
 }  // namespace brep

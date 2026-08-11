@@ -7,6 +7,8 @@
 #include "brep/bool/intersect_plane_plane.hpp"
 #include "brep/bool/intersect_plane_sphere.hpp"
 #include "brep/bool/intersect_sphere_sphere.hpp"
+#include "brep/bool/intersect_plane_cylinder.hpp"
+#include "brep/bool/intersect_sphere_cylinder.hpp"
 #include "brep/bool/box_boolean.hpp"
 #include "brep/bool/planar_boolean.hpp"
 #include "brep/bool/planar_recognize.hpp"

@@ -32,6 +32,8 @@ class Model {
                            std::string name = {});
   SphereSurface* make_sphere_surface(Point3d center, double radius,
                                      std::string name = {});
+  CylinderSurface* make_cylinder_surface(Point3d origin, Vector3d axis,
+                                         double radius, std::string name = {});
 
   // --- topology factories --------------------------------------------------
   Vertex* make_vertex(Point* p, double tol = 1e-7, std::string name = {});

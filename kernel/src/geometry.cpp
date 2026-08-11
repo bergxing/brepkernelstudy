@@ -62,4 +62,44 @@ Point2d SphereSurface::param_of(const Point3d& p) const {
   return Point2d{u, v};
 }
 
+CylinderSurface::CylinderSurface(Point3d origin, Vector3d axis, double radius)
+    : origin_(origin), radius_(radius) {
+  if (!(radius_ > 0.0)) {
+    throw std::invalid_argument("CylinderSurface: radius must be positive");
+  }
+  const double len = axis.norm();
+  if (!(len > 0.0)) {
+    throw std::invalid_argument("CylinderSurface: zero-length axis");
+  }
+  axis_ = axis / len;
+  const Vector3d ref =
+      std::abs(axis_.x()) < 0.9 ? Vector3d{1, 0, 0} : Vector3d{0, 1, 0};
+  x_axis_ = axis_.cross(ref).normalized();
+  y_axis_ = axis_.cross(x_axis_).normalized();
+}
+
+Point3d CylinderSurface::eval(double u, double v) const {
+  return origin_ + axis_ * v + x_axis_ * (radius_ * std::cos(u)) +
+         y_axis_ * (radius_ * std::sin(u));
+}
+
+Vector3d CylinderSurface::normal(double u, double /*v*/) const {
+  return (x_axis_ * std::cos(u) + y_axis_ * std::sin(u)).normalized();
+}
+
+Point2d CylinderSurface::param_of(const Point3d& p) const {
+  const Vector3d d = p - origin_;
+  const double v = d.dot(axis_);
+  const Vector3d radial = d - axis_ * v;
+  const double horiz = radial.norm();
+  double u = 0.0;
+  if (horiz > 1e-15) {
+    u = std::atan2(radial.dot(y_axis_), radial.dot(x_axis_));
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    if (u < 0.0) u += kTwoPi;
+    if (u >= kTwoPi) u = 0.0;
+  }
+  return Point2d{u, v};
+}
+
 }  // namespace brep

@@ -344,8 +344,9 @@ class IBooleanEvaluator {
 
 ### Phase 4 —— 扩展曲面（可选）
 
-- `CylinderSurface` 与更多求交对
-- 更好的 pcurve、命名（`TopologyRef`）、性能（BVH）
+- `CylinderSurface` 与更多求交对 — **T4.1/T4.2 已完成（偏轴球–柱曲线待扩展）**
+- 更好的 pcurve、命名（`TopologyRef`）— **T4.3 约定已文档化**
+- 性能（BVH）— **T4.4 延期**
 
 ### Phase 5 —— 决策门
 
@@ -433,7 +434,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 | 2.1 | T2.1.1～T2.1.3 | 平面拉伸参与布尔 | 拉伸 Cut/并可用 |
 | 3 | T3.1～T3.6 | 弯曲求交 + 球面布尔 MVP | **已完成** — `Box∩Sphere` ⅛-ball |
 | 3+ | T3.7～T3.8 | 弯曲布尔扩展（待办） | `Sphere−Box`、`Sphere∪Sphere` |
-| 4 | T4.* | 柱面等扩展 | 可选；**可与 T3.7/T3.8 并行启动** |
+| 4 | T4.* | 柱面等扩展 | **T4.1～T4.3 完成**；T4.4 BVH 延期 |
 | 5 | T5.* | 自研 vs OCCT 决策 | 可选 |
 
 ---
@@ -699,10 +700,14 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 ### Phase 4 —— 扩展（可选，不阻塞主线）
 
-- [ ] **T4.1** `CylinderSurface` + 工厂
-- [ ] **T4.2** Cylinder–Plane / Cylinder–Sphere 求交
-- [ ] **T4.3** 改进 pcurve / `TopologyRef` 命名
-- [ ] **T4.4** 求交加速结构（BVH）
+- [x] **T4.1** `CylinderSurface` + 工厂（`make_cylinder_surface`；UV：`u` 角、`v` 轴向高）
+- [x] **T4.2** Cylinder–Plane / Cylinder–Sphere 求交  
+  - Plane：圆 / 椭圆 / 平行母线 / 空  
+  - Sphere：共轴圆（偏轴一般曲线标 `Unsupported`，后续扩展）
+- [x] **T4.3** 改进 pcurve / `TopologyRef` 命名（约定写入 `topology_ref.hpp`）
+- [ ] **T4.4** 求交加速结构（BVH）— **延期**（无阻塞；布尔仍以解析对为主）
+
+**退出：** T4.1～T4.3 已满足；T4.4 可选后续。
 
 ---
 

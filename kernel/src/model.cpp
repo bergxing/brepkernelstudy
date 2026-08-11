@@ -76,6 +76,18 @@ SphereSurface* Model::make_sphere_surface(Point3d center, double radius,
   return raw;
 }
 
+CylinderSurface* Model::make_cylinder_surface(Point3d origin, Vector3d axis,
+                                              double radius,
+                                              std::string /*name*/) {
+  auto s = std::make_unique<CylinderSurface>(origin, axis, radius);
+  s->id = next_id();
+  CylinderSurface* raw = s.get();
+  surfaces_.push_back(std::move(s));
+  BREP_TRACE("make_cylinder_surface id={} origin={} axis={} r={:.6g}", raw->id,
+             origin, axis, radius);
+  return raw;
+}
+
 Vertex* Model::make_vertex(Point* p, double tol, std::string name) {
   Vertex* v = emplace(vertices_);
   v->point = p;
