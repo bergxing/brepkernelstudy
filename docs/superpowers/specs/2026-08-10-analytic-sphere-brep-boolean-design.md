@@ -346,7 +346,7 @@ class IBooleanEvaluator {
 
 - `CylinderSurface` 与更多求交对 — **T4.1/T4.2 已完成（偏轴球–柱曲线待扩展）**
 - 更好的 pcurve、命名（`TopologyRef`）— **T4.3 约定已文档化**
-- 性能（BVH）— **T4.4 延期**
+- 性能（BVH）— **T4.4 方案已锁定：面 AABB 二叉树（Median）+ SAH 建树递进**（见任务拆解）
 
 ### Phase 5 —— 决策门
 
@@ -434,7 +434,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 | 2.1 | T2.1.1～T2.1.3 | 平面拉伸参与布尔 | 拉伸 Cut/并可用 |
 | 3 | T3.1～T3.6 | 弯曲求交 + 球面布尔 MVP | **已完成** — `Box∩Sphere` ⅛-ball |
 | 3+ | T3.7～T3.8 | 弯曲布尔扩展（待办） | `Sphere−Box`、`Sphere∪Sphere` |
-| 4 | T4.* | 柱面等扩展 | **T4.1～T4.3 完成**；T4.4 BVH 延期 |
+| 4 | T4.* | 柱面等扩展 | **T4.1～T4.3 完成**；T4.4 BVH（面 AABB + SAH）待做 |
 | 5 | T5.* | 自研 vs OCCT 决策 | 可选 |
 
 ---
@@ -705,9 +705,102 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
   - Plane：圆 / 椭圆 / 平行母线 / 空  
   - Sphere：共轴圆（偏轴一般曲线标 `Unsupported`，后续扩展）
 - [x] **T4.3** 改进 pcurve / `TopologyRef` 命名（约定写入 `topology_ref.hpp`）
-- [ ] **T4.4** 求交加速结构（BVH）— **延期**（无阻塞；布尔仍以解析对为主）
+- [ ] **T4.4** 求交加速结构（BVH）— 方案已锁定（**面 AABB 二叉树 + SAH 建树，递进交付**）
 
-**退出：** T4.1～T4.3 已满足；T4.4 可选后续。
+**退出：** T4.1～T4.3 已满足；T4.4 按下方勾选推进。
+
+#### T4.4 详细方案 —— 面 AABB BVH（中位数）→ SAH
+
+> **关系：** 二者是**同一套数据结构上的递进**，不是两套算法。  
+> 查询（盒重叠下钻）相同；差别只在**建树时如何把图元分到左右子树**。  
+> 中位数版先通；SAH 作为 `BuildQuality` 升级，可切换对比。
+
+##### 目标与非目标
+
+| 做 | 不做（本阶段） |
+|----|----------------|
+| 按 **Face** 建 AABB 二叉树 | 八叉树 / 体素 |
+| 宽相：`query_overlaps`、双树 `candidate_face_pairs` | 改写已有盒/⅛ 球特解路径（可选挂钩，不强制） |
+| 建树质量：`Median` → `SAH`（建议 binning 近似） | 完整光线追踪 / GPU BVH |
+| 面盒来自顶点环；解析球/柱用解析紧包围 | 动态增删 refit（首版整树重建即可） |
+
+##### 模块与文件
+
+```text
+kernel/include/brep/spatial/aabb.hpp      # Aabb: merge, overlaps, surface_area, expand
+kernel/include/brep/spatial/face_bvh.hpp  # FaceBvh, BuildQuality{Median, Sah}
+kernel/src/spatial/aabb.cpp              # 可选：若头文件全 inline 可省略
+kernel/src/spatial/face_bvh.cpp          # 建树 + 查询
+tests/kernel/test_face_bvh.cpp           # 重叠/不相交/Median vs SAH 冒烟
+```
+
+注册：`cmake/BrepCore.cmake`；由布尔或测试按需 include。
+
+##### 数据模型
+
+```text
+struct Aabb { Point3d min, max; };
+
+struct FaceBvhNode {
+  Aabb bounds;
+  int left{-1}, right{-1};   // 内部：子节点；叶子：均为 -1
+  int face_begin{0}, face_count{0};  // 叶子：faces[] 区间
+};
+
+class FaceBvh {
+  // build(Body&, BuildQuality)
+  // query_overlaps(Aabb) -> vector<Face*>
+  // static candidate_pairs(const FaceBvh& a, const FaceBvh& b)
+};
+```
+
+**面 AABB 估计：** 平面/一般 → 遍历 Outer（+ Inner）顶点；`SphereSurface` → 球心 ± R；`CylinderSurface` → 当面环顶点，无环时用轴段×半径保守盒。
+
+##### T4.4.a —— 中位数 / 面 AABB 二叉树
+
+1. 收集 Body 全部 Face → 每面 AABB → 根盒  
+2. 递归：最长轴 + 面盒中心**中位数**剖分  
+3. 停止：`face_count ≤ leaf_max`（默认 4）或无法再分  
+4. API：`FaceBvh::build(body, BuildQuality::Median)`
+
+**测试：** 分离体候选为空；重叠体候选 > 0 且 ⊆ 朴素 \(N\times M\)。
+
+##### T4.4.b —— SAH 高质量建树
+
+同一 `FaceBvh`，换剖分代价（\(C_{\mathrm{trav}}\)、\(C_{\mathrm{isect}}\) 可配）：
+
+\[
+C = C_{\mathrm{trav}} + \frac{SA(L)}{SA(P)} N_L C_{\mathrm{isect}} + \frac{SA(R)}{SA(P)} N_R C_{\mathrm{isect}}
+\]
+
+**推荐 binning（16～32 桶）** 近似 SAH，避免每层 \(O(n^2)\)。  
+API：`FaceBvh::build(body, BuildQuality::Sah)`。
+
+**测试：** 正确性同 Median；可选统计 `nodes_visited`（Sah 不差于 Median，弱断言或日志）。
+
+##### 查询
+
+- 单树：查询 AABB 与节点重叠则下钻  
+- 双树：根盒不交则剪；否则优先展开表面积更大一侧；两叶子再面盒过滤
+
+##### 与布尔挂接（T4.4.c，可选后置）
+
+```text
+candidate_pairs(A,B) → 按 SurfaceKind 调已有 intersect_* → 再印记/分类
+```
+
+现有盒布尔 / ⅛-ball **不必**立刻改；BVH 测绿后再挂通用面–面路径。
+
+##### 任务勾选
+
+- [ ] **T4.4.a** `Aabb` + `FaceBvh` Median + `query_overlaps` / `candidate_pairs` + 测试  
+- [ ] **T4.4.b** `BuildQuality::Sah`（binning SAH）+ 正确性测试  
+- [ ] **T4.4.c**（可选）布尔宽相挂钩一次冒烟；注释说明 Median vs SAH
+
+##### 排期
+
+- Median 与 SAH **都可以做**，做成**可切换同构 BVH**。  
+- 与 T3.7 / T3.8、Phase 5 **无冲突**。
 
 ---
 
@@ -737,5 +830,6 @@ T1.1 → T1.2 → T1.3 → T1.4 → T1.5 → T1.6
   → T2.x.1 → T2.x.2 → T2.x.3
   → T2.1.* → T3.1～T3.6（MVP 已完成）
   → Phase 4 / T5 按需
+  → T4.4.a 面 AABB Median BVH → T4.4.b SAH →（可选 T4.4.c 挂钩宽相）
   → T3.7 Sphere−Box、T3.8 Sphere∪Sphere（弯曲扩展待办，不阻塞 Phase 4）
 ```
