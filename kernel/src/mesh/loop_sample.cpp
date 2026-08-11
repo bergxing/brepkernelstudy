@@ -131,17 +131,46 @@ SampledRing sample_loop(const Loop& loop, const Surface& surface,
 
   loop.for_each_coedge([&](const CoEdge& coedge) {
     const auto edge_points = sample_edge_xyz(coedge, opts);
-    for (std::size_t i = ring.points.empty() ? 0 : 1; i < edge_points.size();
-         ++i) {
+    if (edge_points.size() < 2) {
+      return;
+    }
+    for (std::size_t i = 0; i < edge_points.size(); ++i) {
       const Point3d& xyz = edge_points[i];
-      ring.points.push_back({xyz, project_to_surface(surface, xyz)});
+      Point2d uv;
+      if (coedge.pcurve) {
+        const double t = static_cast<double>(i) /
+                         static_cast<double>(edge_points.size() - 1);
+        uv = coedge.pcurve->eval(t);
+      } else {
+        uv = project_to_surface(surface, xyz);
+      }
+
+      if (!ring.points.empty() && i == 0) {
+        const SampledPoint& prev = ring.points.back();
+        const bool same_xyz =
+            prev.xyz.distance_to(xyz) <= kPointTolerance;
+        const double du = prev.uv.u() - uv.u();
+        const double dv = prev.uv.v() - uv.v();
+        const bool same_uv = du * du + dv * dv <= 1e-24;
+        // Seam partners share 3D but differ in u (0 vs 2π): keep both.
+        if (same_xyz && same_uv) {
+          continue;
+        }
+      }
+
+      ring.points.push_back({xyz, uv});
     }
   });
 
-  if (ring.points.size() > 1 &&
-      ring.points.front().xyz.distance_to(ring.points.back().xyz) <=
-          kPointTolerance) {
-    ring.points.pop_back();
+  if (ring.points.size() > 1) {
+    const SampledPoint& a = ring.points.front();
+    const SampledPoint& b = ring.points.back();
+    const double du = a.uv.u() - b.uv.u();
+    const double dv = a.uv.v() - b.uv.v();
+    if (a.xyz.distance_to(b.xyz) <= kPointTolerance &&
+        du * du + dv * dv <= 1e-24) {
+      ring.points.pop_back();
+    }
   }
   return ring;
 }
@@ -154,8 +183,41 @@ SampledRing unwrap_sphere_ring(SampledRing ring) {
     return ring;
   }
 
-  const auto unwrap_from = [&](std::size_t start) {
-    for (std::size_t i = start; i < points.size(); ++i) {
+  const auto same_xyz = [](const SampledPoint& a, const SampledPoint& b) {
+    return a.xyz.distance_to(b.xyz) <= kPointTolerance;
+  };
+
+  // Sequential unwrap, but do not collapse intentional UV cuts where the same
+  // 3D point is identified across the seam (u=0 vs u=2π at poles/seam).
+  for (std::size_t i = 1; i < points.size(); ++i) {
+    if (same_xyz(points[i], points[i - 1])) {
+      continue;
+    }
+    double& u = points[i].uv.u();
+    const double prev = points[i - 1].uv.u();
+    while (u - prev > kPi) {
+      u -= kTwoPi;
+    }
+    while (u - prev < -kPi) {
+      u += kTwoPi;
+    }
+  }
+
+  // Close carefully only when the ring ends are distinct 3D points. Identified
+  // seam endpoints already encode the periodic cut and must keep their Δu.
+  if (!same_xyz(points.front(), points.back())) {
+    double& u0 = points.front().uv.u();
+    const double ulast = points.back().uv.u();
+    while (u0 - ulast > kPi) {
+      u0 -= kTwoPi;
+    }
+    while (u0 - ulast < -kPi) {
+      u0 += kTwoPi;
+    }
+    for (std::size_t i = 1; i < points.size(); ++i) {
+      if (same_xyz(points[i], points[i - 1])) {
+        continue;
+      }
       double& u = points[i].uv.u();
       const double prev = points[i - 1].uv.u();
       while (u - prev > kPi) {
@@ -165,22 +227,6 @@ SampledRing unwrap_sphere_ring(SampledRing ring) {
         u += kTwoPi;
       }
     }
-  };
-
-  unwrap_from(1);
-
-  // Close carefully: bring first into the same 2π sheet as last, then
-  // re-propagate so adjacent samples stay contiguous.
-  {
-    double& u0 = points.front().uv.u();
-    const double ulast = points.back().uv.u();
-    while (u0 - ulast > kPi) {
-      u0 -= kTwoPi;
-    }
-    while (u0 - ulast < -kPi) {
-      u0 += kTwoPi;
-    }
-    unwrap_from(1);
   }
 
   return ring;

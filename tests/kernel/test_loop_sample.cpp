@@ -82,15 +82,17 @@ TEST(LoopSample, PlaneLoopProjectsCornersWithoutClosingDuplicate) {
 
 TEST(LoopSample, SphereRingAcrossSeamIsContiguous) {
   using brep::Point2d;
+  using brep::Point3d;
   using brep::mesh::SampledRing;
   using brep::mesh::unwrap_sphere_ring;
 
   SampledRing r;
   // Three samples crossing the periodic seam near u=0 / u=2π.
+  // Distinct xyz required: identical points encode an intentional seam cut.
   r.points = {
-      {{}, Point2d{6.0, 0.1}},
-      {{}, Point2d{6.2, 0.0}},   // near 2π
-      {{}, Point2d{0.1, -0.1}},  // just past the seam
+      {Point3d{0.99, 0.05, -0.1}, Point2d{6.0, 0.1}},
+      {Point3d{0.99, 0.0, -0.05}, Point2d{6.2, 0.0}},   // near 2π
+      {Point3d{0.99, -0.05, 0.05}, Point2d{0.1, -0.1}},  // just past the seam
   };
 
   const auto u = unwrap_sphere_ring(r);

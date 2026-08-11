@@ -31,9 +31,12 @@ struct CdtResult {
     double eps = 1e-12);
 
 /// Triangulate a counter-clockwise outer polygon with clockwise holes.
+/// Optional Steiner points are inserted before constraint recovery; they must
+/// lie inside the outer and outside all holes to affect the kept mesh.
 [[nodiscard]] CdtResult triangulate_polygon_with_holes(
     const std::vector<Point2d>& outer_ccw,
     const std::vector<std::vector<Point2d>>& holes_cw,
+    const std::vector<Point2d>& steiner_points = {},
     double eps = 1e-12);
 
 }  // namespace brep::mesh

@@ -404,7 +404,8 @@ CdtResult triangulate_constrained(
 
 CdtResult triangulate_polygon_with_holes(
     const std::vector<Point2d>& outer_ccw,
-    const std::vector<std::vector<Point2d>>& holes_cw, double eps) {
+    const std::vector<std::vector<Point2d>>& holes_cw,
+    const std::vector<Point2d>& steiner_points, double eps) {
   CdtResult result;
   if (outer_ccw.size() < 3) {
     result.diagnostics = "Outer polygon must have at least three vertices";
@@ -426,6 +427,12 @@ CdtResult triangulate_polygon_with_holes(
   accumulate_bbox(outer_ccw);
   for (const auto& hole : holes_cw) {
     accumulate_bbox(hole);
+  }
+  for (const Point2d& point : steiner_points) {
+    min_u = std::min(min_u, point.u());
+    max_u = std::max(max_u, point.u());
+    min_v = std::min(min_v, point.v());
+    max_v = std::max(max_v, point.v());
   }
   const double extent = std::max({max_u - min_u, max_v - min_v, 1.0});
   const double merge_eps =
@@ -467,6 +474,9 @@ CdtResult triangulate_polygon_with_holes(
       return result;
     }
     append_ring(hole);
+  }
+  for (const Point2d& point : steiner_points) {
+    find_or_add(point);
   }
 
   result = triangulate_constrained(points, constraints, eps);

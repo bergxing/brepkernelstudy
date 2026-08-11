@@ -42,8 +42,8 @@ TEST(TessellateSphere, DefaultMeshScaleAndNormals) {
   EXPECT_GE(tri_count, static_cast<std::size_t>(24 * 12));
   EXPECT_LE(tri_count, static_cast<std::size_t>(128 * 64 * 2));
 
-  // Vertex count for a (nu+1)×(nv+1) grid with closed u column.
-  EXPECT_GE(mesh.vertices.size(), static_cast<std::size_t>(25 * 13));
+  // CDT + interior UV lattice (not a rigid (nu+1)×(nv+1) grid).
+  EXPECT_GE(mesh.vertices.size(), static_cast<std::size_t>(24 * 10));
   EXPECT_LE(mesh.vertices.size(), static_cast<std::size_t>(129 * 65));
 
   Face* face = body->shells.at(0)->faces.at(0);

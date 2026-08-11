@@ -337,72 +337,398 @@ std::pair<int, int> sphere_segment_counts(double radius,
   return {nu, nv};
 }
 
+[[nodiscard]] double normalize_sphere_u(double u) {
+  constexpr double kTwoPi = 2.0 * std::numbers::pi;
+  double u_mod = std::fmod(u, kTwoPi);
+  if (u_mod < 0.0) {
+    u_mod += kTwoPi;
+  }
+  if (u_mod >= kTwoPi) {
+    u_mod = 0.0;
+  }
+  return u_mod;
+}
+
+[[nodiscard]] bool point_in_polygon_uv(const Point2d& point,
+                                       const std::vector<Point2d>& ring) {
+  bool inside = false;
+  for (std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
+    const Point2d& a = ring[i];
+    const Point2d& b = ring[j];
+    if ((a.v() > point.v()) != (b.v() > point.v()) &&
+        point.u() < (b.u() - a.u()) * (point.v() - a.v()) / (b.v() - a.v()) +
+                        a.u()) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+[[nodiscard]] bool is_analytic_sphere_seam_outer(const Face& face) {
+  const Loop* loop = face.outer_loop();
+  if (!loop || loop->size() != 2) {
+    return false;
+  }
+  const CoEdge* c0 = loop->first;
+  const CoEdge* c1 = c0 ? c0->next : nullptr;
+  return c0 && c1 && c0->edge != nullptr && c0->edge == c1->edge;
+}
+
+[[nodiscard]] Point3d spherical_polygon_interior_hint(
+    const SphereSurface& sphere, const std::vector<Point3d>& boundary) {
+  Vector3d sum{0, 0, 0};
+  for (const Point3d& p : boundary) {
+    sum += p - sphere.center();
+  }
+  if (sum.squaredNorm() < 1e-24) {
+    return boundary.empty() ? sphere.center() : boundary.front();
+  }
+  return sphere.center() + sum.normalized() * sphere.radius();
+}
+
+/// Great-circle polygon test on the sphere. `interior_hint` must lie inside the
+/// bounded spherical polygon described by `boundary`.
+[[nodiscard]] bool point_in_spherical_polygon(
+    const Point3d& p, const Point3d& center,
+    const std::vector<Point3d>& boundary, const Point3d& interior_hint) {
+  if (boundary.size() < 3) {
+    return false;
+  }
+  const Vector3d pd = p - center;
+  const Vector3d hint = interior_hint - center;
+  if (pd.squaredNorm() < 1e-24 || hint.squaredNorm() < 1e-24) {
+    return false;
+  }
+  const Vector3d pn = pd.normalized();
+  const Vector3d hn = hint.normalized();
+  for (std::size_t i = 0; i < boundary.size(); ++i) {
+    const Vector3d a = boundary[i] - center;
+    const Vector3d b = boundary[(i + 1) % boundary.size()] - center;
+    const Vector3d n = a.cross(b);
+    if (n.squaredNorm() < 1e-24) {
+      continue;
+    }
+    const Vector3d nn = n.normalized();
+    if (pn.dot(nn) * hn.dot(nn) < 0.0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+[[nodiscard]] bool point_on_spherical_face(
+    const Point3d& p, const SphereSurface& sphere,
+    const std::vector<Point3d>& boundary_xyz, bool uv_complement) {
+  if (boundary_xyz.size() < 3) {
+    return true;
+  }
+  const Point3d hint = spherical_polygon_interior_hint(sphere, boundary_xyz);
+  const bool in_poly =
+      point_in_spherical_polygon(p, sphere.center(), boundary_xyz, hint);
+  return uv_complement ? !in_poly : in_poly;
+}
+
+/// True when the oriented face interior lies outside the UV polygon image of
+/// the outer loop (large spherical patches such as a ⅞-ball).
+[[nodiscard]] bool sphere_face_needs_uv_complement(
+    const SphereSurface& sphere, const Face& face,
+    const std::vector<Point2d>& outer_uv,
+    const std::vector<Point3d>& outer_xyz) {
+  if (outer_uv.size() < 3 || outer_uv.size() != outer_xyz.size()) {
+    return false;
+  }
+  const Point3d& center = sphere.center();
+  const double radius = sphere.radius();
+  constexpr double kPi = std::numbers::pi;
+
+  for (std::size_t i = 0; i < outer_xyz.size(); ++i) {
+    const std::size_t j = (i + 1) % outer_xyz.size();
+    const Point3d& a = outer_xyz[i];
+    const Point3d& b = outer_xyz[j];
+    Vector3d tangent = b - a;
+    if (tangent.squaredNorm() < 1e-18) {
+      continue;
+    }
+    tangent = tangent.normalized();
+
+    const Point2d umid{(outer_uv[i].u() + outer_uv[j].u()) * 0.5,
+                       (outer_uv[i].v() + outer_uv[j].v()) * 0.5};
+    const double u_eval = normalize_sphere_u(umid.u());
+    const double v_eval =
+        std::clamp(umid.v(), -0.5 * kPi + 1e-6, 0.5 * kPi - 1e-6);
+    const Point3d mid = sphere.eval(u_eval, v_eval);
+    const Vector3d normal = face.normal_at(u_eval, v_eval);
+    // Face interior lies to the left of the coedge when the head is along the
+    // face normal: tangent × normal (right-handed).
+    Vector3d into_face = tangent.cross(normal);
+    if (into_face.squaredNorm() < 1e-18) {
+      continue;
+    }
+    into_face = into_face.normalized();
+
+    const Point3d probed_raw = mid + into_face * (0.02 * radius);
+    const Vector3d dir = probed_raw - center;
+    if (dir.squaredNorm() < 1e-18) {
+      continue;
+    }
+    const Point3d on_sphere = center + dir.normalized() * radius;
+    Point2d probe_uv = sphere.param_of(on_sphere);
+    while (probe_uv.u() - umid.u() > kPi) {
+      probe_uv.u() -= 2.0 * kPi;
+    }
+    while (probe_uv.u() - umid.u() < -kPi) {
+      probe_uv.u() += 2.0 * kPi;
+    }
+    // Align v near mid (poles are noisy).
+    if (std::abs(probe_uv.v() - umid.v()) > 0.5 * kPi) {
+      continue;
+    }
+    return !point_in_polygon_uv(probe_uv, outer_uv);
+  }
+  return false;
+}
+
+[[nodiscard]] std::vector<Point2d> sphere_steiner_lattice(
+    const std::vector<Point2d>& outer_ccw,
+    const std::vector<std::vector<Point2d>>& holes_cw, int nu, int nv) {
+  if (outer_ccw.empty() || nu < 2 || nv < 2) {
+    return {};
+  }
+  double u_min = outer_ccw.front().u();
+  double u_max = u_min;
+  double v_min = outer_ccw.front().v();
+  double v_max = v_min;
+  for (const Point2d& p : outer_ccw) {
+    u_min = std::min(u_min, p.u());
+    u_max = std::max(u_max, p.u());
+    v_min = std::min(v_min, p.v());
+    v_max = std::max(v_max, p.v());
+  }
+  const double du = u_max - u_min;
+  const double dv = v_max - v_min;
+  if (du < 1e-12 || dv < 1e-12) {
+    return {};
+  }
+
+  std::vector<Point2d> steiner;
+  steiner.reserve(static_cast<std::size_t>(nu - 1) *
+                  static_cast<std::size_t>(nv - 1));
+  for (int iv = 1; iv < nv; ++iv) {
+    const double v =
+        v_min + (static_cast<double>(iv) / static_cast<double>(nv)) * dv;
+    for (int iu = 1; iu < nu; ++iu) {
+      const double u =
+          u_min + (static_cast<double>(iu) / static_cast<double>(nu)) * du;
+      const Point2d p{u, v};
+      if (!point_in_polygon_uv(p, outer_ccw)) {
+        continue;
+      }
+      bool in_hole = false;
+      for (const auto& hole : holes_cw) {
+        if (point_in_polygon_uv(p, hole)) {
+          in_hole = true;
+          break;
+        }
+      }
+      if (!in_hole) {
+        steiner.push_back(p);
+      }
+    }
+  }
+  return steiner;
+}
+
 void tessellate_sphere_face(const Face& face, TriangleMesh& mesh,
                             const TessellationOptions& opts) {
   const auto* sphere = dynamic_cast<const SphereSurface*>(face.surface);
-  if (!sphere) return;
-
-  const auto [nu, nv] = sphere_segment_counts(sphere->radius(), opts);
-  const std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
-  const int cols = nu + 1;
-
-  for (int iv = 0; iv <= nv; ++iv) {
-    const double v =
-        -0.5 * std::numbers::pi +
-        (static_cast<double>(iv) / static_cast<double>(nv)) * std::numbers::pi;
-    for (int iu = 0; iu <= nu; ++iu) {
-      // iu==nu duplicates u=0 at u=2π so the seam column shares positions.
-      const double u =
-          (static_cast<double>(iu) / static_cast<double>(nu)) *
-          2.0 * std::numbers::pi;
-      const double u_eval = (iu == nu) ? 0.0 : u;
-      MeshVertex mv;
-      mv.position = sphere->eval(u_eval, v);
-      mv.normal = face.normal_at(u_eval, v);
-      mv.uv = Point2d{static_cast<double>(iu) / static_cast<double>(nu),
-                      static_cast<double>(iv) / static_cast<double>(nv)};
-      mesh.vertices.push_back(mv);
-    }
+  if (!sphere) {
+    return;
+  }
+  if (!face.outer_loop()) {
+    BREP_WARN("tessellate: sphere face '{}' has no outer loop", face.name);
+    return;
   }
 
-  auto idx = [&](int iu, int iv) -> std::uint32_t {
-    return base + static_cast<std::uint32_t>(iv * cols + iu);
-  };
+  constexpr double kPi = std::numbers::pi;
+  constexpr double kTwoPi = 2.0 * kPi;
+  const auto [nu, nv] = sphere_segment_counts(sphere->radius(), opts);
 
-  // Probe a mid-latitude quad (pole rows are degenerate).
-  const int probe_v = std::max(1, nv / 2);
-  const std::uint32_t i00 = idx(0, probe_v);
-  const std::uint32_t i10 = idx(1, probe_v);
-  const std::uint32_t i01 = idx(0, probe_v + 1);
-  const Point3d& p00 = mesh.vertices[i00].position;
-  const Point3d& p10 = mesh.vertices[i10].position;
-  const Point3d& p01 = mesh.vertices[i01].position;
-  const Vector3d geom = (p10 - p00).cross(p01 - p00);
-  const bool flip = geom.dot(mesh.vertices[i00].normal) < 0.0;
+  for (brep::mesh::FaceRegion region :
+       brep::mesh::group_face_regions(face, *sphere, opts)) {
+    region.outer = brep::mesh::unwrap_sphere_ring(std::move(region.outer));
+    for (brep::mesh::SampledRing& hole : region.holes) {
+      hole = brep::mesh::unwrap_sphere_ring(std::move(hole));
+    }
 
-  auto push_tri = [&](std::uint32_t a, std::uint32_t b, std::uint32_t c) {
-    const Vector3d area =
-        (mesh.vertices[b].position - mesh.vertices[a].position)
-            .cross(mesh.vertices[c].position - mesh.vertices[a].position);
-    if (area.squaredNorm() < 1e-24) return;
-    mesh.indices.push_back(a);
-    mesh.indices.push_back(b);
-    mesh.indices.push_back(c);
-  };
+    std::vector<Point2d> outer_uv;
+    std::vector<Point3d> outer_xyz;
+    outer_uv.reserve(region.outer.points.size());
+    outer_xyz.reserve(region.outer.points.size());
+    for (const brep::mesh::SampledPoint& point : region.outer.points) {
+      outer_uv.push_back(point.uv);
+      outer_xyz.push_back(point.xyz);
+    }
 
-  for (int iv = 0; iv < nv; ++iv) {
-    for (int iu = 0; iu < nu; ++iu) {
-      const std::uint32_t a = idx(iu, iv);
-      const std::uint32_t b = idx(iu + 1, iv);
-      const std::uint32_t c = idx(iu + 1, iv + 1);
-      const std::uint32_t d = idx(iu, iv + 1);
-      if (!flip) {
-        push_tri(a, b, c);
-        push_tri(a, c, d);
-      } else {
-        push_tri(a, d, c);
-        push_tri(a, c, b);
+    const std::vector<Point3d> boundary_xyz = outer_xyz;
+    bool uv_complement = false;
+
+    if (is_analytic_sphere_seam_outer(face)) {
+      outer_uv = {
+          Point2d{0.0, -0.5 * kPi},
+          Point2d{0.0, 0.5 * kPi},
+          Point2d{kTwoPi, 0.5 * kPi},
+          Point2d{kTwoPi, -0.5 * kPi},
+      };
+      outer_xyz = {
+          sphere->eval(0.0, -0.5 * kPi),
+          sphere->eval(0.0, 0.5 * kPi),
+          sphere->eval(0.0, 0.5 * kPi),
+          sphere->eval(0.0, -0.5 * kPi),
+      };
+    } else if (outer_uv.size() < 3) {
+      BREP_WARN("tessellate: sphere face '{}' has <3 outer vertices", face.name);
+      continue;
+    }
+
+    std::vector<std::vector<Point2d>> holes_uv;
+    holes_uv.reserve(region.holes.size() + 1);
+    for (const brep::mesh::SampledRing& hole : region.holes) {
+      std::vector<Point2d> uv;
+      std::vector<Point3d> xyz;
+      uv.reserve(hole.points.size());
+      xyz.reserve(hole.points.size());
+      for (const brep::mesh::SampledPoint& point : hole.points) {
+        uv.push_back(point.uv);
+        xyz.push_back(point.xyz);
       }
+      if (uv.size() < 3) {
+        continue;
+      }
+      ensure_cw(uv, xyz);
+      holes_uv.push_back(std::move(uv));
+    }
+
+    if (!is_analytic_sphere_seam_outer(face) &&
+        sphere_face_needs_uv_complement(*sphere, face, outer_uv, outer_xyz)) {
+      uv_complement = true;
+      std::vector<Point2d> cut = outer_uv;
+      std::vector<Point3d> cut_xyz = outer_xyz;
+      ensure_cw(cut, cut_xyz);
+      holes_uv.insert(holes_uv.begin(), std::move(cut));
+
+      double u_min = outer_uv.front().u();
+      double u_max = u_min;
+      for (const Point2d& p : outer_uv) {
+        u_min = std::min(u_min, p.u());
+        u_max = std::max(u_max, p.u());
+      }
+      double u0 = u_min;
+      if (u_max - u_min < kTwoPi - 1e-9) {
+        u0 = 0.5 * (u_min + u_max) - kPi;
+      }
+      outer_uv = {
+          Point2d{u0, -0.5 * kPi},
+          Point2d{u0, 0.5 * kPi},
+          Point2d{u0 + kTwoPi, 0.5 * kPi},
+          Point2d{u0 + kTwoPi, -0.5 * kPi},
+      };
+      outer_xyz = {
+          sphere->eval(normalize_sphere_u(outer_uv[0].u()), outer_uv[0].v()),
+          sphere->eval(normalize_sphere_u(outer_uv[1].u()), outer_uv[1].v()),
+          sphere->eval(normalize_sphere_u(outer_uv[2].u()), outer_uv[2].v()),
+          sphere->eval(normalize_sphere_u(outer_uv[3].u()), outer_uv[3].v()),
+      };
+    }
+
+    ensure_ccw(outer_uv, outer_xyz);
+
+    std::vector<Point2d> steiner =
+        sphere_steiner_lattice(outer_uv, holes_uv, nu, nv);
+    if (!is_analytic_sphere_seam_outer(face) && boundary_xyz.size() >= 3) {
+      steiner.erase(
+          std::remove_if(
+              steiner.begin(), steiner.end(),
+              [&](const Point2d& uv) {
+                const Point3d p =
+                    sphere->eval(normalize_sphere_u(uv.u()), uv.v());
+                return !point_on_spherical_face(p, *sphere, boundary_xyz,
+                                                uv_complement);
+              }),
+          steiner.end());
+    }
+
+    const brep::mesh::CdtResult cdt =
+        brep::mesh::triangulate_polygon_with_holes(outer_uv, holes_uv, steiner);
+    if (!cdt.ok) {
+      BREP_WARN("tessellate: sphere CDT failed for face '{}': {}", face.name,
+                cdt.diagnostics);
+      continue;
+    }
+
+    double u_min = std::numeric_limits<double>::infinity();
+    double u_max = -std::numeric_limits<double>::infinity();
+    double v_min = std::numeric_limits<double>::infinity();
+    double v_max = -std::numeric_limits<double>::infinity();
+    for (const brep::mesh::CdtVertex& vertex : cdt.vertices) {
+      u_min = std::min(u_min, vertex.uv.u());
+      u_max = std::max(u_max, vertex.uv.u());
+      v_min = std::min(v_min, vertex.uv.v());
+      v_max = std::max(v_max, vertex.uv.v());
+    }
+    const double du = std::max(u_max - u_min, 1e-9);
+    const double dv = std::max(v_max - v_min, 1e-9);
+    const std::uint32_t base =
+        static_cast<std::uint32_t>(mesh.vertices.size());
+
+    for (const brep::mesh::CdtVertex& vertex : cdt.vertices) {
+      const double u_eval = normalize_sphere_u(vertex.uv.u());
+      const double v_eval = vertex.uv.v();
+      MeshVertex mesh_vertex;
+      mesh_vertex.position = sphere->eval(u_eval, v_eval);
+      mesh_vertex.normal = face.normal_at(u_eval, v_eval);
+      mesh_vertex.uv = Point2d{(vertex.uv.u() - u_min) / du,
+                               (vertex.uv.v() - v_min) / dv};
+      mesh.vertices.push_back(mesh_vertex);
+    }
+
+    auto push_tri = [&](std::uint32_t a, std::uint32_t b, std::uint32_t c) {
+      const Point3d centroid{
+          (mesh.vertices[a].position.x() + mesh.vertices[b].position.x() +
+           mesh.vertices[c].position.x()) /
+              3.0,
+          (mesh.vertices[a].position.y() + mesh.vertices[b].position.y() +
+           mesh.vertices[c].position.y()) /
+              3.0,
+          (mesh.vertices[a].position.z() + mesh.vertices[b].position.z() +
+           mesh.vertices[c].position.z()) /
+              3.0,
+      };
+      if (!is_analytic_sphere_seam_outer(face) && boundary_xyz.size() >= 3 &&
+          !point_on_spherical_face(centroid, *sphere, boundary_xyz,
+                                   uv_complement)) {
+        return;
+      }
+      const Vector3d area =
+          (mesh.vertices[b].position - mesh.vertices[a].position)
+              .cross(mesh.vertices[c].position - mesh.vertices[a].position);
+      if (area.squaredNorm() < 1e-24) {
+        return;
+      }
+      if (area.dot(mesh.vertices[a].normal) < 0.0) {
+        mesh.indices.push_back(a);
+        mesh.indices.push_back(c);
+        mesh.indices.push_back(b);
+      } else {
+        mesh.indices.push_back(a);
+        mesh.indices.push_back(b);
+        mesh.indices.push_back(c);
+      }
+    };
+
+    for (const brep::mesh::CdtTriangle& triangle : cdt.triangles) {
+      push_tri(base + static_cast<std::uint32_t>(triangle.v[0]),
+               base + static_cast<std::uint32_t>(triangle.v[1]),
+               base + static_cast<std::uint32_t>(triangle.v[2]));
     }
   }
 }

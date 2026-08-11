@@ -118,6 +118,16 @@ gtest_discover_tests(brep_test_tessellate_inner
   TEST_PREFIX "brep_test_tessellate_inner."
 )
 
+add_executable(brep_test_tessellate_trimmed_sphere
+  kernel/test_tessellate_trimmed_sphere.cpp)
+target_link_libraries(brep_test_tessellate_trimmed_sphere PRIVATE brep
+                      GTest::gtest_main)
+gtest_discover_tests(brep_test_tessellate_trimmed_sphere
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_tessellate_trimmed_sphere>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_tessellate_trimmed_sphere."
+)
+
 add_executable(brep_test_planar_boolean kernel/test_planar_boolean.cpp)
 target_link_libraries(brep_test_planar_boolean PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_planar_boolean
