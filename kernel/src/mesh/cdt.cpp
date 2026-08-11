@@ -411,15 +411,52 @@ CdtResult triangulate_polygon_with_holes(
     return result;
   }
 
+  double min_u = outer_ccw.front().u();
+  double max_u = min_u;
+  double min_v = outer_ccw.front().v();
+  double max_v = min_v;
+  const auto accumulate_bbox = [&](const std::vector<Point2d>& ring) {
+    for (const Point2d& point : ring) {
+      min_u = std::min(min_u, point.u());
+      max_u = std::max(max_u, point.u());
+      min_v = std::min(min_v, point.v());
+      max_v = std::max(max_v, point.v());
+    }
+  };
+  accumulate_bbox(outer_ccw);
+  for (const auto& hole : holes_cw) {
+    accumulate_bbox(hole);
+  }
+  const double extent = std::max({max_u - min_u, max_v - min_v, 1.0});
+  const double merge_eps =
+      std::max(std::abs(eps), 1e-9 * extent);
+  const double merge_eps2 = merge_eps * merge_eps;
+
   std::vector<Point2d> points;
   std::vector<Edge> constraints;
+  const auto find_or_add = [&](const Point2d& point) {
+    for (std::size_t i = 0; i < points.size(); ++i) {
+      const double du = points[i].u() - point.u();
+      const double dv = points[i].v() - point.v();
+      if (du * du + dv * dv <= merge_eps2) {
+        return static_cast<int>(i);
+      }
+    }
+    points.push_back(point);
+    return static_cast<int>(points.size()) - 1;
+  };
   const auto append_ring = [&](const std::vector<Point2d>& ring) {
-    const int first = static_cast<int>(points.size());
-    points.insert(points.end(), ring.begin(), ring.end());
-    for (std::size_t i = 0; i < ring.size(); ++i) {
-      constraints.emplace_back(
-          first + static_cast<int>(i),
-          first + static_cast<int>((i + 1) % ring.size()));
+    std::vector<int> indices;
+    indices.reserve(ring.size());
+    for (const Point2d& point : ring) {
+      indices.push_back(find_or_add(point));
+    }
+    for (std::size_t i = 0; i < indices.size(); ++i) {
+      const int a = indices[i];
+      const int b = indices[(i + 1) % indices.size()];
+      if (a != b) {
+        constraints.emplace_back(a, b);
+      }
     }
   };
 
