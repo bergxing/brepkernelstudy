@@ -29,6 +29,10 @@ struct FaceRegion {
 [[nodiscard]] std::vector<FaceRegion> group_face_regions(
     const Face& face, const Surface& surface, const TessellationOptions& opts);
 
+/// Make ring UV contiguous: if |Δu|>π between adjacent samples, shift by ±2π
+/// so the polyline does not jump the seam. May expand u outside [0,2π).
+[[nodiscard]] SampledRing unwrap_sphere_ring(SampledRing ring);
+
 /// Sample one edge in its coedge direction using chord-height deflection.
 [[nodiscard]] std::vector<Point3d> sample_edge_xyz(
     const CoEdge& ce, const TessellationOptions& opts);

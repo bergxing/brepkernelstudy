@@ -146,6 +146,46 @@ SampledRing sample_loop(const Loop& loop, const Surface& surface,
   return ring;
 }
 
+SampledRing unwrap_sphere_ring(SampledRing ring) {
+  constexpr double kPi = std::numbers::pi;
+  constexpr double kTwoPi = 2.0 * kPi;
+  auto& points = ring.points;
+  if (points.size() < 2) {
+    return ring;
+  }
+
+  const auto unwrap_from = [&](std::size_t start) {
+    for (std::size_t i = start; i < points.size(); ++i) {
+      double& u = points[i].uv.u();
+      const double prev = points[i - 1].uv.u();
+      while (u - prev > kPi) {
+        u -= kTwoPi;
+      }
+      while (u - prev < -kPi) {
+        u += kTwoPi;
+      }
+    }
+  };
+
+  unwrap_from(1);
+
+  // Close carefully: bring first into the same 2π sheet as last, then
+  // re-propagate so adjacent samples stay contiguous.
+  {
+    double& u0 = points.front().uv.u();
+    const double ulast = points.back().uv.u();
+    while (u0 - ulast > kPi) {
+      u0 -= kTwoPi;
+    }
+    while (u0 - ulast < -kPi) {
+      u0 += kTwoPi;
+    }
+    unwrap_from(1);
+  }
+
+  return ring;
+}
+
 std::vector<FaceRegion> group_face_regions(
     const Face& face, const Surface& surface,
     const TessellationOptions& opts) {

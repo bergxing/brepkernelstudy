@@ -80,4 +80,25 @@ TEST(LoopSample, PlaneLoopProjectsCornersWithoutClosingDuplicate) {
   EXPECT_GT(ring.points.front().xyz.distance_to(ring.points.back().xyz), 1.0);
 }
 
+TEST(LoopSample, SphereRingAcrossSeamIsContiguous) {
+  using brep::Point2d;
+  using brep::mesh::SampledRing;
+  using brep::mesh::unwrap_sphere_ring;
+
+  SampledRing r;
+  // Three samples crossing the periodic seam near u=0 / u=2π.
+  r.points = {
+      {{}, Point2d{6.0, 0.1}},
+      {{}, Point2d{6.2, 0.0}},   // near 2π
+      {{}, Point2d{0.1, -0.1}},  // just past the seam
+  };
+
+  const auto u = unwrap_sphere_ring(r);
+  ASSERT_EQ(u.points.size(), 3u);
+  EXPECT_LT(std::abs(u.points[1].uv.u() - u.points[0].uv.u()),
+            std::numbers::pi);
+  EXPECT_LT(std::abs(u.points[2].uv.u() - u.points[1].uv.u()),
+            std::numbers::pi);
+}
+
 }  // namespace
