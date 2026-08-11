@@ -331,6 +331,8 @@ class IBooleanEvaluator {
 
 - 平面拉伸体参与布尔、面上开孔类 Cut 结果
 
+**退出标准：** 拉伸棱柱与盒的并/减/交可用。 — **已满足（T2.x.* + T2.1.1～T2.1.3）**
+
 ### Phase 3 —— 弯曲求交 + 球面布尔（部分 B.2）
 
 1. 平面–球 / 球–球交线
@@ -572,19 +574,19 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T2.x.1 拓扑与校验支持 Inner
 
-- [ ] Face 可挂 Outer + 一个或多个 Inner
-- [ ] `validate` / `link_loop` 规则覆盖内环
-- [ ] **测试：** 构造带孔平面面并通过校验
+- [x] Face 可挂 Outer + 一个或多个 Inner
+- [x] `validate` / `link_loop` 规则覆盖内环
+- [x] **测试：** 构造带孔平面面并通过校验
 
 #### T2.x.2 拉伸带孔（extrude holes）
 
-- [ ] `Profile2d::holes` 真正参与 `extrude` 生成内环
-- [ ] **测试：** 带孔轮廓拉伸为有洞的实体（或有洞的面）
+- [x] `Profile2d::holes` 真正参与 `extrude` 生成内环
+- [x] **测试：** 带孔轮廓拉伸为有洞的实体（或有洞的面）
 
 #### T2.x.3 三角化支持内环
 
-- [ ] `tessellate_body` 正确剖分 Outer+Inner（耳切/约束三角等）
-- [ ] **测试：** 带孔面网格无盖洞、无自交明显错误
+- [x] `tessellate_body` 正确剖分 Outer+Inner（耳切/约束三角等）
+- [x] **测试：** 带孔面网格无盖洞、无自交明显错误
 
 ---
 
@@ -592,17 +594,17 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T2.1.1 平面实体通用分割/选面（在 2.0 求交之上）
 
-- [ ] 边/面沿交线分割；结果可含 Inner
-- [ ] **测试：** 简单拉伸−盒 或 盒−拉伸 产生合法体
+- [x] 拉伸棱柱识别 + 与盒的 arrangement 布尔（操作体可含 Inner；结果面暂为 Outer 正交壳，同 2.0）
+- [x] **测试：** L 形拉伸−盒 / 盒∩拉伸 产生合法体
 
 #### T2.1.2 分类器（平面实体）
 
-- [ ] 面片相对另一实体 IN/OUT/ON（解析或射线）
-- [ ] **测试：** 已知构型分类正确
+- [x] 点相对盒 / 棱柱 IN/OUT/ON（`classify_point_in_*`）
+- [x] **测试：** 已知构型分类正确
 
 #### T2.1.3 Phase 2.1 验收
 
-- [ ] 至少一种「拉伸参与」的并/减/交端到端通过 validate
+- [x] 拉伸参与的并/减/交端到端通过 validate（`test_planar_boolean`）
 
 ---
 

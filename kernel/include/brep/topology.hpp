@@ -105,6 +105,7 @@ class Face : public Named {
   double tolerance{1e-7};
 
   [[nodiscard]] Loop* outer_loop() const noexcept;
+  [[nodiscard]] std::vector<Loop*> inner_loops() const;
   [[nodiscard]] Vector3d normal_at(double u, double v) const;
 };
 

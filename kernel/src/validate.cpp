@@ -40,6 +40,21 @@ ValidationReport validate_body(const Body& body) {
       if (!face->surface) {
         report.error(fn, "missing surface geometry");
       }
+
+      std::size_t outer_count = 0;
+      for (const Loop* loop : face->loops) {
+        if (!loop) continue;
+        if (loop->type == LoopType::Outer) ++outer_count;
+      }
+      if (outer_count == 0) {
+        report.error(fn, "missing outer loop");
+        continue;
+      }
+      if (outer_count != 1) {
+        report.error(fn, "exactly one outer loop required (got " +
+                             std::to_string(outer_count) + ")");
+        continue;
+      }
       if (!face->outer_loop()) {
         report.error(fn, "missing outer loop");
         continue;

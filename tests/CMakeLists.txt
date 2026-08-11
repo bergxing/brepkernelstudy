@@ -77,3 +77,43 @@ gtest_discover_tests(brep_test_box_boolean
   DISCOVERY_MODE PRE_TEST
   TEST_PREFIX "brep_test_box_boolean."
 )
+
+add_executable(brep_test_inner_loop kernel/test_inner_loop.cpp)
+target_link_libraries(brep_test_inner_loop PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_inner_loop
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_inner_loop>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_inner_loop."
+)
+
+add_executable(brep_test_extrude_holes kernel/test_extrude_holes.cpp)
+target_link_libraries(brep_test_extrude_holes PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_extrude_holes
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_extrude_holes>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_extrude_holes."
+)
+
+add_executable(brep_test_tessellate_inner kernel/test_tessellate_inner.cpp)
+target_link_libraries(brep_test_tessellate_inner PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_tessellate_inner
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_tessellate_inner>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_tessellate_inner."
+)
+
+add_executable(brep_test_planar_boolean kernel/test_planar_boolean.cpp)
+target_link_libraries(brep_test_planar_boolean PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_planar_boolean
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_planar_boolean>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_planar_boolean."
+)
+
+add_executable(brep_test_planar_classify kernel/test_planar_classify.cpp)
+target_link_libraries(brep_test_planar_classify PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_planar_classify
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_planar_classify>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_planar_classify."
+)

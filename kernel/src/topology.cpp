@@ -37,6 +37,14 @@ Loop* Face::outer_loop() const noexcept {
   return loops.empty() ? nullptr : loops.front();
 }
 
+std::vector<Loop*> Face::inner_loops() const {
+  std::vector<Loop*> inners;
+  for (Loop* l : loops) {
+    if (l && l->type == LoopType::Inner) inners.push_back(l);
+  }
+  return inners;
+}
+
 Vector3d Face::normal_at(double u, double v) const {
   if (!surface) {
     BREP_ERROR("Face '{}' has no Surface geometry", name);

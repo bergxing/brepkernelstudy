@@ -4,11 +4,13 @@
 #include "brep/log.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <numbers>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace brep {
 namespace {
@@ -46,74 +48,257 @@ int clamp_segments(int value, int lo, int hi) {
   return std::clamp(value, std::min(lo, hi), std::max(lo, hi));
 }
 
-void tessellate_plane_face(const Face& face, TriangleMesh& mesh) {
-  const Loop* loop = face.outer_loop();
-  if (!loop || !loop->first) return;
+[[nodiscard]] double ring_signed_area2d(const std::vector<Point2d>& ring) {
+  double a = 0.0;
+  const std::size_t n = ring.size();
+  for (std::size_t i = 0; i < n; ++i) {
+    const std::size_t j = (i + 1) % n;
+    a += ring[i].u() * ring[j].v() - ring[j].u() * ring[i].v();
+  }
+  return 0.5 * a;
+}
 
-  std::vector<Point3d> ring;
-  loop->for_each_coedge([&](const CoEdge& ce) {
+void ensure_ccw(std::vector<Point2d>& uv, std::vector<Point3d>& xyz) {
+  if (ring_signed_area2d(uv) < 0.0) {
+    std::reverse(uv.begin(), uv.end());
+    std::reverse(xyz.begin(), xyz.end());
+  }
+}
+
+void ensure_cw(std::vector<Point2d>& uv, std::vector<Point3d>& xyz) {
+  if (ring_signed_area2d(uv) > 0.0) {
+    std::reverse(uv.begin(), uv.end());
+    std::reverse(xyz.begin(), xyz.end());
+  }
+}
+
+[[nodiscard]] double dist2_uv(const Point2d& a, const Point2d& b) {
+  const double du = a.u() - b.u();
+  const double dv = a.v() - b.v();
+  return du * du + dv * dv;
+}
+
+[[nodiscard]] bool point_in_triangle2d(const Point2d& p, const Point2d& a,
+                                       const Point2d& b, const Point2d& c) {
+  const double area = (b.u() - a.u()) * (c.v() - a.v()) -
+                      (b.v() - a.v()) * (c.u() - a.u());
+  if (std::abs(area) < 1e-18) return false;
+  const double s = ((a.u() - c.u()) * (p.v() - c.v()) -
+                    (a.v() - c.v()) * (p.u() - c.u())) /
+                   area;
+  const double t = ((b.u() - a.u()) * (p.v() - a.v()) -
+                    (b.v() - a.v()) * (p.u() - a.u())) /
+                   area;
+  return s >= -1e-12 && t >= -1e-12 && (s + t) <= 1.0 + 1e-12;
+}
+
+void collect_loop_ring(const Loop& loop, const PlaneSurface* plane,
+                       std::vector<Point3d>& xyz, std::vector<Point2d>& uv) {
+  xyz.clear();
+  uv.clear();
+  loop.for_each_coedge([&](const CoEdge& ce) {
     if (Vertex* v = ce.from()) {
-      ring.push_back(v->position());
+      xyz.push_back(v->position());
+      if (plane) {
+        uv.push_back(plane->param_of(v->position()));
+      } else {
+        uv.push_back(Point2d{0.0, 0.0});
+      }
     }
   });
-  if (ring.size() < 3) {
-    BREP_WARN("tessellate: face '{}' has <3 loop vertices", face.name);
+}
+
+/// Insert a CW hole into a CCW outer via a bridge (duplicated endpoints).
+void bridge_hole(std::vector<Point2d>& outer_uv, std::vector<Point3d>& outer_xyz,
+                 const std::vector<Point2d>& hole_uv,
+                 const std::vector<Point3d>& hole_xyz) {
+  if (hole_uv.size() < 3 || hole_uv.size() != hole_xyz.size()) return;
+
+  std::size_t hr = 0;
+  for (std::size_t i = 1; i < hole_uv.size(); ++i) {
+    if (hole_uv[i].u() > hole_uv[hr].u() ||
+        (hole_uv[i].u() == hole_uv[hr].u() &&
+         hole_uv[i].v() > hole_uv[hr].v())) {
+      hr = i;
+    }
+  }
+
+  std::size_t br = 0;
+  double best = dist2_uv(outer_uv[0], hole_uv[hr]);
+  for (std::size_t i = 1; i < outer_uv.size(); ++i) {
+    const double d = dist2_uv(outer_uv[i], hole_uv[hr]);
+    if (d < best) {
+      best = d;
+      br = i;
+    }
+  }
+
+  std::vector<Point2d> nu;
+  std::vector<Point3d> nx;
+  nu.reserve(outer_uv.size() + hole_uv.size() + 2);
+  nx.reserve(outer_xyz.size() + hole_xyz.size() + 2);
+  for (std::size_t i = 0; i <= br; ++i) {
+    nu.push_back(outer_uv[i]);
+    nx.push_back(outer_xyz[i]);
+  }
+  for (std::size_t k = 0; k < hole_uv.size(); ++k) {
+    const std::size_t idx = (hr + k) % hole_uv.size();
+    nu.push_back(hole_uv[idx]);
+    nx.push_back(hole_xyz[idx]);
+  }
+  nu.push_back(hole_uv[hr]);
+  nx.push_back(hole_xyz[hr]);
+  nu.push_back(outer_uv[br]);
+  nx.push_back(outer_xyz[br]);
+  for (std::size_t i = br + 1; i < outer_uv.size(); ++i) {
+    nu.push_back(outer_uv[i]);
+    nx.push_back(outer_xyz[i]);
+  }
+  outer_uv.swap(nu);
+  outer_xyz.swap(nx);
+}
+
+[[nodiscard]] bool is_convex_ear(const std::vector<Point2d>& poly, std::size_t i) {
+  const std::size_t n = poly.size();
+  const std::size_t i0 = (i + n - 1) % n;
+  const std::size_t i1 = i;
+  const std::size_t i2 = (i + 1) % n;
+  const Point2d& a = poly[i0];
+  const Point2d& b = poly[i1];
+  const Point2d& c = poly[i2];
+  // Interior angle convex for CCW polygon: cross(b-a, c-b) > 0
+  const double cross =
+      (b.u() - a.u()) * (c.v() - b.v()) - (b.v() - a.v()) * (c.u() - b.u());
+  if (cross <= 1e-14) return false;
+  for (std::size_t j = 0; j < n; ++j) {
+    if (j == i0 || j == i1 || j == i2) continue;
+    // Bridge insertion duplicates endpoints; ignore coincident verts.
+    if (dist2_uv(poly[j], a) < 1e-20 || dist2_uv(poly[j], b) < 1e-20 ||
+        dist2_uv(poly[j], c) < 1e-20) {
+      continue;
+    }
+    if (point_in_triangle2d(poly[j], a, b, c)) return false;
+  }
+  return true;
+}
+
+void ear_clip_triangulate(const std::vector<Point2d>& uv,
+                          std::vector<std::array<std::uint32_t, 3>>& tris) {
+  const std::size_t n0 = uv.size();
+  if (n0 < 3) return;
+  std::vector<std::uint32_t> idx(n0);
+  for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(n0); ++i) {
+    idx[i] = i;
+  }
+  std::vector<Point2d> poly = uv;
+
+  auto refresh_poly = [&]() {
+    poly.resize(idx.size());
+    for (std::size_t i = 0; i < idx.size(); ++i) poly[i] = uv[idx[i]];
+  };
+
+  int guard = static_cast<int>(n0) * static_cast<int>(n0) + 8;
+  while (idx.size() > 3 && guard-- > 0) {
+    bool clipped = false;
+    for (std::size_t i = 0; i < idx.size(); ++i) {
+      if (!is_convex_ear(poly, i)) continue;
+      const std::size_t i0 = (i + idx.size() - 1) % idx.size();
+      const std::size_t i2 = (i + 1) % idx.size();
+      tris.push_back({idx[i0], idx[i], idx[i2]});
+      idx.erase(idx.begin() + static_cast<std::ptrdiff_t>(i));
+      refresh_poly();
+      clipped = true;
+      break;
+    }
+    if (!clipped) break;
+  }
+  if (idx.size() == 3) {
+    tris.push_back({idx[0], idx[1], idx[2]});
+  }
+}
+
+void tessellate_plane_face(const Face& face, TriangleMesh& mesh) {
+  const Loop* outer = face.outer_loop();
+  if (!outer || !outer->first) return;
+
+  const auto* plane = dynamic_cast<const PlaneSurface*>(face.surface);
+  std::vector<Point3d> outer_xyz;
+  std::vector<Point2d> outer_uv;
+  collect_loop_ring(*outer, plane, outer_xyz, outer_uv);
+  if (outer_xyz.size() < 3) {
+    BREP_WARN("tessellate: face '{}' has <3 outer vertices", face.name);
     return;
+  }
+
+  ensure_ccw(outer_uv, outer_xyz);
+
+  for (Loop* loop : face.loops) {
+    if (!loop || loop->type != LoopType::Inner) continue;
+    std::vector<Point3d> hole_xyz;
+    std::vector<Point2d> hole_uv;
+    collect_loop_ring(*loop, plane, hole_xyz, hole_uv);
+    if (hole_xyz.size() < 3) continue;
+    ensure_cw(hole_uv, hole_xyz);
+    bridge_hole(outer_uv, outer_xyz, hole_uv, hole_xyz);
   }
 
   const Vector3d n = face.normal_at(0.0, 0.0);
 
-  // Ensure ring winding matches the outward face normal so Vulkan
-  // back-face culling keeps exterior faces visible.
-  if (ring.size() >= 3) {
-    const Vector3d geom_n = (ring[1] - ring[0]).cross(ring[2] - ring[0]);
-    if (geom_n.dot(n) < 0.0) {
-      std::reverse(ring.begin(), ring.end());
+  // Keep UV CCW for ear clipping; flip triangle winding if 3D disagrees.
+  bool flip_tris = false;
+  if (outer_xyz.size() >= 3) {
+    for (std::size_t i = 0; i < outer_xyz.size(); ++i) {
+      const Point3d& a = outer_xyz[i];
+      const Point3d& b = outer_xyz[(i + 1) % outer_xyz.size()];
+      const Point3d& c = outer_xyz[(i + 2) % outer_xyz.size()];
+      const Vector3d geom_n = (b - a).cross(c - a);
+      if (geom_n.squaredNorm() < 1e-24) continue;
+      flip_tris = geom_n.dot(n) < 0.0;
+      break;
     }
   }
 
-  std::vector<Point2d> raw_uv(ring.size());
   double u_min = std::numeric_limits<double>::infinity();
   double u_max = -std::numeric_limits<double>::infinity();
   double v_min = std::numeric_limits<double>::infinity();
   double v_max = -std::numeric_limits<double>::infinity();
-
-  if (const auto* plane = dynamic_cast<const PlaneSurface*>(face.surface)) {
-    for (std::size_t i = 0; i < ring.size(); ++i) {
-      raw_uv[i] = plane->param_of(ring[i]);
-      u_min = std::min(u_min, raw_uv[i].u());
-      u_max = std::max(u_max, raw_uv[i].u());
-      v_min = std::min(v_min, raw_uv[i].v());
-      v_max = std::max(v_max, raw_uv[i].v());
-    }
-  } else {
-    for (std::size_t i = 0; i < ring.size(); ++i) {
-      raw_uv[i] = Point2d{0.0, 0.0};
-    }
+  for (const Point2d& p : outer_uv) {
+    u_min = std::min(u_min, p.u());
+    u_max = std::max(u_max, p.u());
+    v_min = std::min(v_min, p.v());
+    v_max = std::max(v_max, p.v());
+  }
+  if (!plane) {
     u_min = 0.0;
     u_max = 1.0;
     v_min = 0.0;
     v_max = 1.0;
   }
-
   const double du = std::max(u_max - u_min, 1e-9);
   const double dv = std::max(v_max - v_min, 1e-9);
 
   const std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
-  for (std::size_t i = 0; i < ring.size(); ++i) {
+  for (std::size_t i = 0; i < outer_xyz.size(); ++i) {
     MeshVertex mv;
-    mv.position = ring[i];
+    mv.position = outer_xyz[i];
     mv.normal = n;
-    mv.uv = Point2d{(raw_uv[i].u() - u_min) / du, (raw_uv[i].v() - v_min) / dv};
+    mv.uv = Point2d{(outer_uv[i].u() - u_min) / du,
+                    (outer_uv[i].v() - v_min) / dv};
     mesh.vertices.push_back(mv);
   }
 
-  // Fan triangulation from vertex 0 (valid for convex loops; box faces are).
-  for (std::uint32_t i = 1; i + 1 < static_cast<std::uint32_t>(ring.size());
-       ++i) {
-    mesh.indices.push_back(base);
-    mesh.indices.push_back(base + i);
-    mesh.indices.push_back(base + i + 1);
+  std::vector<std::array<std::uint32_t, 3>> tris;
+  ear_clip_triangulate(outer_uv, tris);
+  for (const auto& t : tris) {
+    if (!flip_tris) {
+      mesh.indices.push_back(base + t[0]);
+      mesh.indices.push_back(base + t[1]);
+      mesh.indices.push_back(base + t[2]);
+    } else {
+      mesh.indices.push_back(base + t[0]);
+      mesh.indices.push_back(base + t[2]);
+      mesh.indices.push_back(base + t[1]);
+    }
   }
 }
 

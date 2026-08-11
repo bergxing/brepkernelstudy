@@ -21,6 +21,9 @@ add_library(brep_core ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/bool/intersect_plane_plane.cpp
   ${BREP_KERNEL_DIR}/src/bool/box_recognize.cpp
   ${BREP_KERNEL_DIR}/src/bool/box_boolean.cpp
+  ${BREP_KERNEL_DIR}/src/bool/planar_recognize.cpp
+  ${BREP_KERNEL_DIR}/src/bool/planar_boolean.cpp
+  ${BREP_KERNEL_DIR}/src/bool/classify.cpp
 )
 brep_kernel_include_dirs(brep_core)
 target_link_libraries(brep_core PUBLIC brep_eigen brep_boost_uuid brep_spdlog)

@@ -2,6 +2,8 @@
 
 #include "brep/bool/box_boolean.hpp"
 #include "brep/bool/box_recognize.hpp"
+#include "brep/bool/planar_boolean.hpp"
+#include "brep/bool/planar_recognize.hpp"
 #include "brep/log.hpp"
 
 #include <memory>
@@ -52,12 +54,26 @@ class DefaultBooleanEvaluator final : public IBooleanEvaluator {
       return evaluate_box_boolean(op, model, a, b, ctx);
     }
 
+    const auto prism_a = recognize_extrusion_prism(a, ctx);
+    const auto prism_b = recognize_extrusion_prism(b, ctx);
+    const auto box_a = recognize_axis_aligned_box(a, ctx);
+    const auto box_b = recognize_axis_aligned_box(b, ctx);
+
+    if (prism_a && box_b) {
+      return evaluate_prism_box_boolean(op, model, *prism_a, *box_b,
+                                        /*prism_is_a=*/true, ctx);
+    }
+    if (box_a && prism_b) {
+      return evaluate_prism_box_boolean(op, model, *prism_b, *box_a,
+                                        /*prism_is_a=*/false, ctx);
+    }
+
     BooleanResult result;
     result.mode = BooleanEvalMode::General;
     result.diagnostics =
         std::string("boolean: unsupported combination for ") + op_name(op) +
         " ('" + a.name + "' vs '" + b.name +
-        "'); only axis-aligned box–box is implemented";
+        "'); only box–box and prism–box are implemented";
     BREP_WARN("{}", result.diagnostics);
     return result;
   }
