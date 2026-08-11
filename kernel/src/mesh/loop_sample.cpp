@@ -1,6 +1,7 @@
 #include "brep/mesh/loop_sample.hpp"
 
 #include "brep/geometry.hpp"
+#include "brep/log.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -59,6 +60,34 @@ constexpr double kPointTolerance = 1e-12;
       "sample_loop: only plane and sphere surfaces are supported");
 }
 
+[[nodiscard]] Point2d ring_centroid(const SampledRing& ring) {
+  double u = 0.0;
+  double v = 0.0;
+  for (const SampledPoint& point : ring.points) {
+    u += point.uv.u();
+    v += point.uv.v();
+  }
+  const double count = static_cast<double>(ring.points.size());
+  return Point2d{u / count, v / count};
+}
+
+[[nodiscard]] bool point_in_polygon(const Point2d& point,
+                                    const SampledRing& ring) {
+  bool inside = false;
+  for (std::size_t i = 0, j = ring.points.size() - 1;
+       i < ring.points.size(); j = i++) {
+    const Point2d& a = ring.points[i].uv;
+    const Point2d& b = ring.points[j].uv;
+    if ((a.v() > point.v()) != (b.v() > point.v()) &&
+        point.u() < (b.u() - a.u()) * (point.v() - a.v()) /
+                            (b.v() - a.v()) +
+                        a.u()) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 }  // namespace
 
 std::vector<Point3d> sample_edge_xyz(const CoEdge& ce,
@@ -115,6 +144,43 @@ SampledRing sample_loop(const Loop& loop, const Surface& surface,
     ring.points.pop_back();
   }
   return ring;
+}
+
+std::vector<FaceRegion> group_face_regions(
+    const Face& face, const Surface& surface,
+    const TessellationOptions& opts) {
+  std::vector<FaceRegion> regions;
+  for (const Loop* outer : face.outer_loops()) {
+    if (outer) {
+      regions.push_back({sample_loop(*outer, surface, opts), {}});
+    }
+  }
+
+  for (const Loop* inner : face.inner_loops()) {
+    if (!inner) {
+      continue;
+    }
+    SampledRing hole = sample_loop(*inner, surface, opts);
+    if (hole.points.empty()) {
+      BREP_WARN("group_face_regions: empty inner loop on face '{}'", face.name);
+      continue;
+    }
+    const Point2d centroid = ring_centroid(hole);
+    const auto region = std::find_if(
+        regions.begin(), regions.end(), [&](const FaceRegion& candidate) {
+          return candidate.outer.points.size() >= 3 &&
+                 point_in_polygon(centroid, candidate.outer);
+        });
+    if (region == regions.end()) {
+      BREP_WARN(
+          "group_face_regions: inner loop centroid is outside all outer loops "
+          "on face '{}'",
+          face.name);
+      continue;
+    }
+    region->holes.push_back(std::move(hole));
+  }
+  return regions;
 }
 
 }  // namespace brep::mesh

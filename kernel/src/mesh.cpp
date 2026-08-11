@@ -2,6 +2,8 @@
 
 #include "brep/geometry.hpp"
 #include "brep/log.hpp"
+#include "brep/mesh/cdt.hpp"
+#include "brep/mesh/loop_sample.hpp"
 
 #include <algorithm>
 #include <array>
@@ -217,87 +219,93 @@ void ear_clip_triangulate(const std::vector<Point2d>& uv,
   }
 }
 
-void tessellate_plane_face(const Face& face, TriangleMesh& mesh) {
-  const Loop* outer = face.outer_loop();
-  if (!outer || !outer->first) return;
-
+void tessellate_plane_face(const Face& face, TriangleMesh& mesh,
+                           const TessellationOptions& opts) {
   const auto* plane = dynamic_cast<const PlaneSurface*>(face.surface);
-  std::vector<Point3d> outer_xyz;
-  std::vector<Point2d> outer_uv;
-  collect_loop_ring(*outer, plane, outer_xyz, outer_uv);
-  if (outer_xyz.size() < 3) {
-    BREP_WARN("tessellate: face '{}' has <3 outer vertices", face.name);
+  if (!plane) {
     return;
   }
 
-  ensure_ccw(outer_uv, outer_xyz);
-
-  for (Loop* loop : face.loops) {
-    if (!loop || loop->type != LoopType::Inner) continue;
-    std::vector<Point3d> hole_xyz;
-    std::vector<Point2d> hole_uv;
-    collect_loop_ring(*loop, plane, hole_xyz, hole_uv);
-    if (hole_xyz.size() < 3) continue;
-    ensure_cw(hole_uv, hole_xyz);
-    bridge_hole(outer_uv, outer_xyz, hole_uv, hole_xyz);
-  }
-
-  const Vector3d n = face.normal_at(0.0, 0.0);
-
-  // Keep UV CCW for ear clipping; flip triangle winding if 3D disagrees.
-  bool flip_tris = false;
-  if (outer_xyz.size() >= 3) {
-    for (std::size_t i = 0; i < outer_xyz.size(); ++i) {
-      const Point3d& a = outer_xyz[i];
-      const Point3d& b = outer_xyz[(i + 1) % outer_xyz.size()];
-      const Point3d& c = outer_xyz[(i + 2) % outer_xyz.size()];
-      const Vector3d geom_n = (b - a).cross(c - a);
-      if (geom_n.squaredNorm() < 1e-24) continue;
-      flip_tris = geom_n.dot(n) < 0.0;
-      break;
+  for (const brep::mesh::FaceRegion& region :
+       brep::mesh::group_face_regions(face, *plane, opts)) {
+    std::vector<Point2d> outer_uv;
+    std::vector<Point3d> outer_xyz;
+    outer_uv.reserve(region.outer.points.size());
+    outer_xyz.reserve(region.outer.points.size());
+    for (const brep::mesh::SampledPoint& point : region.outer.points) {
+      outer_uv.push_back(point.uv);
+      outer_xyz.push_back(point.xyz);
     }
-  }
+    if (outer_uv.size() < 3) {
+      BREP_WARN("tessellate: face '{}' has <3 outer vertices", face.name);
+      continue;
+    }
+    ensure_ccw(outer_uv, outer_xyz);
 
-  double u_min = std::numeric_limits<double>::infinity();
-  double u_max = -std::numeric_limits<double>::infinity();
-  double v_min = std::numeric_limits<double>::infinity();
-  double v_max = -std::numeric_limits<double>::infinity();
-  for (const Point2d& p : outer_uv) {
-    u_min = std::min(u_min, p.u());
-    u_max = std::max(u_max, p.u());
-    v_min = std::min(v_min, p.v());
-    v_max = std::max(v_max, p.v());
-  }
-  if (!plane) {
-    u_min = 0.0;
-    u_max = 1.0;
-    v_min = 0.0;
-    v_max = 1.0;
-  }
-  const double du = std::max(u_max - u_min, 1e-9);
-  const double dv = std::max(v_max - v_min, 1e-9);
+    std::vector<std::vector<Point2d>> holes_uv;
+    holes_uv.reserve(region.holes.size());
+    for (const brep::mesh::SampledRing& hole : region.holes) {
+      std::vector<Point2d> uv;
+      std::vector<Point3d> xyz;
+      uv.reserve(hole.points.size());
+      xyz.reserve(hole.points.size());
+      for (const brep::mesh::SampledPoint& point : hole.points) {
+        uv.push_back(point.uv);
+        xyz.push_back(point.xyz);
+      }
+      if (uv.size() < 3) {
+        continue;
+      }
+      ensure_cw(uv, xyz);
+      holes_uv.push_back(std::move(uv));
+    }
 
-  const std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
-  for (std::size_t i = 0; i < outer_xyz.size(); ++i) {
-    MeshVertex mv;
-    mv.position = outer_xyz[i];
-    mv.normal = n;
-    mv.uv = Point2d{(outer_uv[i].u() - u_min) / du,
-                    (outer_uv[i].v() - v_min) / dv};
-    mesh.vertices.push_back(mv);
-  }
+    const brep::mesh::CdtResult cdt =
+        brep::mesh::triangulate_polygon_with_holes(outer_uv, holes_uv);
+    if (!cdt.ok) {
+      BREP_WARN("tessellate: CDT failed for face '{}': {}", face.name,
+                cdt.diagnostics);
+      continue;
+    }
 
-  std::vector<std::array<std::uint32_t, 3>> tris;
-  ear_clip_triangulate(outer_uv, tris);
-  for (const auto& t : tris) {
-    if (!flip_tris) {
-      mesh.indices.push_back(base + t[0]);
-      mesh.indices.push_back(base + t[1]);
-      mesh.indices.push_back(base + t[2]);
-    } else {
-      mesh.indices.push_back(base + t[0]);
-      mesh.indices.push_back(base + t[2]);
-      mesh.indices.push_back(base + t[1]);
+    double u_min = std::numeric_limits<double>::infinity();
+    double u_max = -std::numeric_limits<double>::infinity();
+    double v_min = std::numeric_limits<double>::infinity();
+    double v_max = -std::numeric_limits<double>::infinity();
+    for (const brep::mesh::CdtVertex& vertex : cdt.vertices) {
+      u_min = std::min(u_min, vertex.uv.u());
+      u_max = std::max(u_max, vertex.uv.u());
+      v_min = std::min(v_min, vertex.uv.v());
+      v_max = std::max(v_max, vertex.uv.v());
+    }
+    const double du = std::max(u_max - u_min, 1e-9);
+    const double dv = std::max(v_max - v_min, 1e-9);
+    const std::uint32_t base =
+        static_cast<std::uint32_t>(mesh.vertices.size());
+    for (const brep::mesh::CdtVertex& vertex : cdt.vertices) {
+      MeshVertex mesh_vertex;
+      mesh_vertex.position = plane->eval(vertex.uv.u(), vertex.uv.v());
+      mesh_vertex.normal = face.normal_at(vertex.uv.u(), vertex.uv.v());
+      mesh_vertex.uv = Point2d{(vertex.uv.u() - u_min) / du,
+                               (vertex.uv.v() - v_min) / dv};
+      mesh.vertices.push_back(mesh_vertex);
+    }
+
+    const bool flip_tris =
+        plane->normal(0.0, 0.0).dot(face.normal_at(0.0, 0.0)) < 0.0;
+    for (const brep::mesh::CdtTriangle& triangle : cdt.triangles) {
+      const auto a = base + static_cast<std::uint32_t>(triangle.v[0]);
+      const auto b = base + static_cast<std::uint32_t>(triangle.v[1]);
+      const auto c = base + static_cast<std::uint32_t>(triangle.v[2]);
+      if (!flip_tris) {
+        mesh.indices.push_back(a);
+        mesh.indices.push_back(b);
+        mesh.indices.push_back(c);
+      } else {
+        mesh.indices.push_back(a);
+        mesh.indices.push_back(c);
+        mesh.indices.push_back(b);
+      }
     }
   }
 }
@@ -415,7 +423,7 @@ void tessellate_face(const Face& face, TriangleMesh& out,
       tessellate_sphere_face(face, out, opts);
       break;
     case SurfaceKind::Plane:
-      tessellate_plane_face(face, out);
+      tessellate_plane_face(face, out, opts);
       break;
     default:
       BREP_WARN("tessellate_face: unsupported surface kind on '{}'", face.name);

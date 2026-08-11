@@ -16,9 +16,18 @@ struct SampledRing {
   std::vector<SampledPoint> points;
 };
 
+struct FaceRegion {
+  SampledRing outer;
+  std::vector<SampledRing> holes;
+};
+
 /// Sample one loop into the parameter space of a plane or sphere.
 [[nodiscard]] SampledRing sample_loop(const Loop& loop, const Surface& surface,
                                       const TessellationOptions& opts);
+
+/// Sample face loops and assign each inner ring to its containing outer ring.
+[[nodiscard]] std::vector<FaceRegion> group_face_regions(
+    const Face& face, const Surface& surface, const TessellationOptions& opts);
 
 /// Sample one edge in its coedge direction using chord-height deflection.
 [[nodiscard]] std::vector<Point3d> sample_edge_xyz(
