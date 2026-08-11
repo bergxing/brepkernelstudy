@@ -320,7 +320,7 @@ class IBooleanEvaluator {
 4. 可选 AABB 盒子快路径（同一 API）
 5. Kernel gtest + Viewer 冒烟
 
-**退出标准：** 盒子真 B-Rep 并/减/交可用。
+**退出标准：** 盒子真 B-Rep 并/减/交可用。 — **已满足（T2.0.1～T2.0.7）**
 
 **穿插专项（Phase 2.0 后、2.1 / 3 前必须完成）**
 
@@ -551,11 +551,22 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T2.0.7 Phase 2.0 验收门禁
 
-- [ ] Kernel 盒布尔套件通过
-- [ ] Viewer 手工冒烟通过
-- [ ] 不依赖 Inner loop
+- [x] Kernel 盒布尔套件通过
+- [x] Viewer 冒烟：自动化（`SceneAdapter.AddBoolean*`）+ 手工清单（双选 → Fuse/Cut/Common，操作体抑制）
+- [x] 不依赖 Inner loop（盒结果面均为 Outer；L 形 Cut 为正交多面）
 
----
+**门禁证据（2026-08-11）：**
+- Kernel：`brep_test_boolean_skeleton`（3）、`brep_test_boolean_feature`（4）、`brep_test_intersect_plane_plane`（7）、`brep_test_box_boolean`（8）全绿
+- Viewer：`viewer_adapter_tests`（11，含 `AddBooleanUnionSuppressesOperands` / `AddBooleanSubtractPrimaryIsTarget`）全绿
+- ctest `-R "boolean|intersect_plane|SceneAdapter\.(AddBoolean|BoxSpec)"`：25/25 passed
+- Inner：`kernel/src/bool` 未使用 `LoopType::Inner`
+
+**手工冒烟清单（Viewer）：**
+1. 新建文档，创建两重叠盒
+2. 恰好选中 2 个 → Fuse / Cut / Common
+3. 差集时确认主选=目标、次选=工具
+4. 结果一体可见，操作体不可见；撤销/重做恢复
+5. 属性面板选中结果显示 `BooleanFeature` 与只读运算类型
 
 ### 穿插专项 —— Inner loop + 拉伸孔（2.0 后、2.1/3 前）
 
