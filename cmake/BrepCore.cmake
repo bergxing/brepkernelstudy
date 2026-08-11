@@ -29,6 +29,7 @@ add_library(brep_core ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/bool/planar_boolean.cpp
   ${BREP_KERNEL_DIR}/src/bool/sphere_recognize.cpp
   ${BREP_KERNEL_DIR}/src/bool/sphere_box_boolean.cpp
+  ${BREP_KERNEL_DIR}/src/bool/sphere_sphere_boolean.cpp
   ${BREP_KERNEL_DIR}/src/bool/classify.cpp
   ${BREP_KERNEL_DIR}/src/bool/broadphase.cpp
   ${BREP_KERNEL_DIR}/src/spatial/face_bvh.cpp

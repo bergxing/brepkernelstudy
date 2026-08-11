@@ -9,8 +9,9 @@
 
 namespace brep::boolean {
 
-/// Sphere × axis-aligned box boolean. MVP: Intersect when the sphere center is
-/// a box corner and the box fully contains that octant of the ball (→ ⅛ ball).
+/// Sphere × axis-aligned box boolean.
+/// - Intersect: sphere center at box.min, box contains +++ octant → ⅛ ball
+/// - Subtract (sphere−box): same pose → ⅞ ball (T3.7)
 [[nodiscard]] BooleanResult evaluate_sphere_box_boolean(
     BooleanOp op, Model& model, const SphereSpec& sphere, const BoxSpec& box,
     bool sphere_is_a, const BooleanContext& ctx = {});

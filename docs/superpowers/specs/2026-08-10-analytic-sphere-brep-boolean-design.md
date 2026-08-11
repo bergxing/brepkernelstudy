@@ -436,7 +436,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 | 2.x | T2.x.1～T2.x.3 | Inner loop + 拉伸孔 | 面可带内环 |
 | 2.1 | T2.1.1～T2.1.3 | 平面拉伸参与布尔 | 拉伸 Cut/并可用 |
 | 3 | T3.1～T3.6 | 弯曲求交 + 球面布尔 MVP | **已完成** — `Box∩Sphere` ⅛-ball |
-| 3+ | T3.7～T3.8 | 弯曲布尔扩展（待办） | `Sphere−Box`、`Sphere∪Sphere` |
+| 3+ | T3.7～T3.8 | 弯曲布尔扩展 | **特解已通** — Sphere−Box（⅞）、Sphere∪Sphere（双冠） |
 | 4 | T4.* | 柱面等扩展 | **T4.1～T4.4 完成**（含 BVH Median/SAH + 布尔宽相挂钩） |
 | 5 | T5.* | 自研 vs OCCT 决策 | **T5.1/T5.3 完成**（继续自研）；T5.2 延期 |
 
@@ -683,19 +683,19 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T3.7 `Sphere−Box`（待办，Phase 3 扩展）
 
-- [ ] 球为目标、盒为工具的 Cut（及对称盒−球若需要）
-- [ ] 多平面–球交圆印到球面；保留球面剩余 + 盒侧平面片
-- [ ] 路由：在 `evaluate_sphere_box_boolean` 中扩展 `Subtract`，**勿破坏**现有 ⅛-ball Intersect 特解
-- [ ] **测试：** 至少一种构型结果 `validate_body` 通过；失败软诊断
-- [ ] **依赖建议：** 通用「圆印到球面 / 打断 seam」优先于特解堆叠
+- [x] 球为目标、盒为工具的 Cut（及对称盒−球若需要）— **Sphere−Box 特解（⅞ 球）**；Box−Sphere 仍软失败
+- [x] 多平面–球交圆印到球面；保留球面剩余 + 盒侧平面片 — **同构于 ⅛ 球翻转朝向（特解）**
+- [x] 路由：在 `evaluate_sphere_box_boolean` 中扩展 `Subtract`，**勿破坏**现有 ⅛-ball Intersect 特解
+- [x] **测试：** 至少一种构型结果 `validate_body` 通过；失败软诊断
+- [ ] **依赖建议：** 通用「圆印到球面 / 打断 seam」优先于特解堆叠 — 仍适用后续泛化
 
 #### T3.8 `Sphere∪Sphere`（待办，Phase 3 扩展）
 
-- [ ] 双解析球 Fuse：交圆印两边 → 选片 → 沿圆缝合成单壳
-- [ ] 新路径（如 `evaluate_sphere_sphere_boolean`）；evaluator 识别两球后进入
-- [ ] 覆盖分离（并=两壳或外轮廓策略）、相交透镜、相切、一球含另一（退化为大球）等诊断
-- [ ] **测试：** 至少相交两球并集 `validate_body` 通过
-- [ ] **难度说明：** 见上节「为何 Sphere∪Sphere 比 Box∩Sphere 难」
+- [x] 双解析球 Fuse：交圆印两边 → 选片 → 沿圆缝合成单壳 — **相交双球冠特解**
+- [x] 新路径（如 `evaluate_sphere_sphere_boolean`）；evaluator 识别两球后进入
+- [x] 覆盖分离（并=两壳或外轮廓策略）、相交透镜、相切、一球含另一（退化为大球）等诊断 — **相交/包含/重合已通；分离与相切软失败**
+- [x] **测试：** 至少相交两球并集 `validate_body` 通过
+- [x] **难度说明：** 见上节「为何 Sphere∪Sphere 比 Box∩Sphere 难」
 
 > **排期：** T3.7 / T3.8 不阻塞 Phase 4。主线可进入 **Phase 4（柱面等）**；弯曲扩展按需插队。
 

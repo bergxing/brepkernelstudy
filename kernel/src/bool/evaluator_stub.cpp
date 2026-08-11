@@ -7,6 +7,7 @@
 #include "brep/bool/planar_recognize.hpp"
 #include "brep/bool/sphere_box_boolean.hpp"
 #include "brep/bool/sphere_recognize.hpp"
+#include "brep/bool/sphere_sphere_boolean.hpp"
 #include "brep/log.hpp"
 #include "brep/spatial/face_bvh.hpp"
 
@@ -81,17 +82,22 @@ class DefaultBooleanEvaluator final : public IBooleanEvaluator {
       return evaluate_sphere_box_boolean(op, model, *sphere_b, *box_a,
                                          /*sphere_is_a=*/false, ctx);
     }
+    if (sphere_a && sphere_b) {
+      return evaluate_sphere_sphere_boolean(op, model, *sphere_a, *sphere_b,
+                                            ctx);
+    }
 
     BooleanResult result;
     result.mode = BooleanEvalMode::General;
-    // Existing specialized paths (box / prism / ⅛-ball) are unchanged above.
+    // Existing specialized paths (box / prism / ⅛-ball / Sphere−Box / Sphere∪Sphere)
     // Soft-fail hook: Sah broad-phase + analytic intersect probe for diagnostics.
     const BroadphaseProbe probe =
         probe_face_pair_intersections(a, b, spatial::BuildQuality::Sah, ctx);
     result.diagnostics =
         std::string("boolean: unsupported combination for ") + op_name(op) +
         " ('" + a.name + "' vs '" + b.name +
-        "'); supported: box–box, prism–box, sphere–box (Intersect ⅛-ball); " +
+        "'); supported: box–box, prism–box, sphere–box (Intersect ⅛ / "
+        "Sphere−Box), sphere–sphere (Union); " +
         probe.summary;
     BREP_WARN("{}", result.diagnostics);
     return result;

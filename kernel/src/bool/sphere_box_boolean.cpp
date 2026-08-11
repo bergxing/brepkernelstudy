@@ -41,14 +41,12 @@ namespace {
   return norm_angle(std::atan2(d.dot(y_axis), d.dot(x_axis)));
 }
 
-/// Build circular edge along the shorter arc from `a` to `b` (t increasing).
 Edge* make_arc_edge(Model& model, CircleCurve* curve, Vertex* a, Vertex* b,
                     double tol, const std::string& name) {
   double t0 = circle_param_at(*curve, a->position());
   double t1 = circle_param_at(*curve, b->position());
   double forward = norm_angle(t1 - t0);
   if (forward > std::numbers::pi) {
-    // Prefer shorter arc: reverse endpoints.
     std::swap(a, b);
     std::swap(t0, t1);
     forward = norm_angle(t1 - t0);
@@ -60,14 +58,15 @@ Edge* make_arc_edge(Model& model, CircleCurve* curve, Vertex* a, Vertex* b,
 [[nodiscard]] Orientation sense_along(Edge* edge, Vertex* from, Vertex* to) {
   if (edge->v0 == from && edge->v1 == to) return Orientation::Forward;
   if (edge->v0 == to && edge->v1 == from) return Orientation::Reversed;
-  // Fall back: compare positions.
   const double d0 = (edge->v0->position() - from->position()).squaredNorm();
   const double d1 = (edge->v1->position() - from->position()).squaredNorm();
   return d0 <= d1 ? Orientation::Forward : Orientation::Reversed;
 }
 
-Body* build_positive_octant_ball(Model& model, const Point3d& c, double r,
-                                 double tol, const std::string& name) {
+/// `seven_eighths==false` → ⅛ ball (Intersect); true → ⅞ ball (Sphere−Box).
+Body* build_axis_octant_ball(Model& model, const Point3d& c, double r,
+                             double tol, const std::string& name,
+                             bool seven_eighths) {
   const Point3d ax{c.x() + r, c.y(), c.z()};
   const Point3d ay{c.x(), c.y() + r, c.z()};
   const Point3d az{c.x(), c.y(), c.z() + r};
@@ -94,7 +93,6 @@ Body* build_positive_octant_ball(Model& model, const Point3d& c, double r,
   CircleCurve* c_zx =
       model.make_circle(c, Vector3d{0, 1, 0}, r, name + "_czx");
 
-  // Requested directions: Ax→Ay, Ay→Az, Az→Ax (may store reversed internally).
   Edge* e_xy = make_arc_edge(model, c_xy, vx, vy, tol, name + "_exy");
   Edge* e_yz = make_arc_edge(model, c_yz, vy, vz, tol, name + "_eyz");
   Edge* e_zx = make_arc_edge(model, c_zx, vz, vx, tol, name + "_ezx");
@@ -103,41 +101,56 @@ Body* build_positive_octant_ball(Model& model, const Point3d& c, double r,
   Shell* shell = model.make_shell(true, name + "_shell");
   body->shells.push_back(shell);
 
+  // ⅛: planar outward into −octant via Reversed; ⅞: Forward → +octant outward.
+  const Orientation plane_sense =
+      seven_eighths ? Orientation::Forward : Orientation::Reversed;
+
   auto add_plane_face = [&](Vector3d u, Vector3d v, Edge* e0, Vertex* a0,
                             Vertex* b0, Edge* e1, Vertex* a1, Vertex* b1,
                             Edge* e2, Vertex* a2, Vertex* b2,
                             const std::string& fname) {
-    // Outward = -(u×v) via Reversed face sense when u×v points inward.
     PlaneSurface* surf = model.make_plane(c, u, v, fname);
-    Face* face = model.make_face(surf, Orientation::Reversed, fname);
+    Face* face = model.make_face(surf, plane_sense, fname);
     shell->faces.push_back(face);
     Loop* loop = model.make_loop(face, LoopType::Outer, fname + "_outer");
-    CoEdge* c0 = model.make_coedge(e0, sense_along(e0, a0, b0));
-    CoEdge* c1 = model.make_coedge(e1, sense_along(e1, a1, b1));
-    CoEdge* c2 = model.make_coedge(e2, sense_along(e2, a2, b2));
-    Model::link_loop(loop, std::array<CoEdge*, 3>{c0, c1, c2});
+    if (seven_eighths) {
+      // Opposite winding vs ⅛ ball.
+      CoEdge* c0 = model.make_coedge(e2, sense_along(e2, b2, a2));
+      CoEdge* c1 = model.make_coedge(e1, sense_along(e1, b1, a1));
+      CoEdge* c2 = model.make_coedge(e0, sense_along(e0, b0, a0));
+      Model::link_loop(loop, std::array<CoEdge*, 3>{c0, c1, c2});
+    } else {
+      CoEdge* c0 = model.make_coedge(e0, sense_along(e0, a0, b0));
+      CoEdge* c1 = model.make_coedge(e1, sense_along(e1, a1, b1));
+      CoEdge* c2 = model.make_coedge(e2, sense_along(e2, a2, b2));
+      Model::link_loop(loop, std::array<CoEdge*, 3>{c0, c1, c2});
+    }
   };
 
-  // z=cz outward -Z: O→Ax→Ay→O ; plane u=X,v=Y → +Z, Reversed → -Z
   add_plane_face({1, 0, 0}, {0, 1, 0}, e_ox, vo, vx, e_xy, vx, vy, e_oy, vy, vo,
                  name + "_fz");
-  // x=cx outward -X: O→Ay→Az→O ; u=Y,v=Z → +X, Reversed → -X
   add_plane_face({0, 1, 0}, {0, 0, 1}, e_oy, vo, vy, e_yz, vy, vz, e_oz, vz, vo,
                  name + "_fx");
-  // y=cy outward -Y: O→Az→Ax→O ; u=Z,v=X → +Y, Reversed → -Y
   add_plane_face({0, 0, 1}, {1, 0, 0}, e_oz, vo, vz, e_zx, vz, vx, e_ox, vx, vo,
                  name + "_fy");
 
-  // Sphere outward: opposite arc directions → Ax→Az→Ay→Ax
   {
     SphereSurface* surf = model.make_sphere_surface(c, r, name + "_fs");
     Face* face = model.make_face(surf, Orientation::Forward, name + "_fs");
     shell->faces.push_back(face);
     Loop* loop = model.make_loop(face, LoopType::Outer, name + "_fs_outer");
-    CoEdge* c0 = model.make_coedge(e_zx, sense_along(e_zx, vx, vz));  // Ax→Az
-    CoEdge* c1 = model.make_coedge(e_yz, sense_along(e_yz, vz, vy));  // Az→Ay
-    CoEdge* c2 = model.make_coedge(e_xy, sense_along(e_xy, vy, vx));  // Ay→Ax
-    Model::link_loop(loop, std::array<CoEdge*, 3>{c0, c1, c2});
+    if (seven_eighths) {
+      // Opposite winding: Ax→Ay→Az→Ax (vs ⅛ Ax→Az→Ay→Ax).
+      CoEdge* c0 = model.make_coedge(e_xy, sense_along(e_xy, vx, vy));
+      CoEdge* c1 = model.make_coedge(e_yz, sense_along(e_yz, vy, vz));
+      CoEdge* c2 = model.make_coedge(e_zx, sense_along(e_zx, vz, vx));
+      Model::link_loop(loop, std::array<CoEdge*, 3>{c0, c1, c2});
+    } else {
+      CoEdge* c0 = model.make_coedge(e_zx, sense_along(e_zx, vx, vz));
+      CoEdge* c1 = model.make_coedge(e_yz, sense_along(e_yz, vz, vy));
+      CoEdge* c2 = model.make_coedge(e_xy, sense_along(e_xy, vy, vx));
+      Model::link_loop(loop, std::array<CoEdge*, 3>{c0, c1, c2});
+    }
   }
 
   for (Edge* e : {e_ox, e_oy, e_oz, e_xy, e_yz, e_zx}) {
@@ -184,33 +197,61 @@ BooleanResult evaluate_sphere_box_boolean(BooleanOp op, Model& model,
   BooleanResult result;
   result.mode = BooleanEvalMode::AnalyticPair;
   const double eps = std::max(ctx.fuzzy, 1e-9);
-  (void)sphere_is_a;
-
-  if (op != BooleanOp::Intersect) {
-    result.diagnostics =
-        std::string("boolean ") + op_name(op) +
-        ": sphere–box only Intersect (⅛-ball) is implemented";
-    BREP_WARN("{}", result.diagnostics);
-    return result;
-  }
+  const double tol = std::max(sphere.tolerance, box.tolerance);
 
   Point3d origin;
-  if (!is_contained_axis_octant(sphere, box, eps, origin)) {
+  const bool octant = is_contained_axis_octant(sphere, box, eps, origin);
+
+  if (op == BooleanOp::Intersect) {
+    if (!octant) {
+      result.diagnostics =
+          "boolean Intersect: sphere–box requires sphere center at box.min and "
+          "box containing the +++ octant of the ball";
+      BREP_WARN("{}", result.diagnostics);
+      return result;
+    }
+    result.body = build_axis_octant_ball(
+        model, origin, sphere.radius, tol,
+        std::string("bool_sphere_box_") + op_name(op), /*seven_eighths=*/false);
+    if (!result.body) {
+      result.diagnostics =
+          std::string("boolean ") + op_name(op) + ": failed to build ⅛-ball";
+    }
+    return result;
+  }
+
+  if (op == BooleanOp::Subtract && sphere_is_a) {
+    // T3.7: Sphere − Box, same octant pose → ⅞ ball.
+    if (!octant) {
+      result.diagnostics =
+          "boolean Subtract: Sphere−Box currently requires sphere center at "
+          "box.min with box containing the +++ octant (⅞-ball special case)";
+      BREP_WARN("{}", result.diagnostics);
+      return result;
+    }
+    result.body = build_axis_octant_ball(
+        model, origin, sphere.radius, tol,
+        std::string("bool_sphere_box_") + op_name(op), /*seven_eighths=*/true);
+    if (!result.body) {
+      result.diagnostics =
+          "boolean Subtract: failed to build Sphere−Box (⅞-ball)";
+    }
+    return result;
+  }
+
+  if (op == BooleanOp::Subtract && !sphere_is_a) {
     result.diagnostics =
-        "boolean Intersect: sphere–box requires sphere center at box.min and "
-        "box containing the +++ octant of the ball";
+        "boolean Subtract: Box−Sphere is not implemented yet (T3.7 covers "
+        "Sphere−Box only)";
     BREP_WARN("{}", result.diagnostics);
     return result;
   }
 
-  const std::string name = std::string("bool_sphere_box_") + op_name(op);
-  result.body = build_positive_octant_ball(
-      model, origin, sphere.radius, std::max(sphere.tolerance, box.tolerance),
-      name);
-  if (!result.body) {
-    result.diagnostics =
-        std::string("boolean ") + op_name(op) + ": failed to build ⅛-ball";
-  }
+  result.diagnostics =
+      std::string("boolean ") + op_name(op) +
+      ": sphere–box supports Intersect (⅛-ball) and Sphere−Box Subtract "
+      "(⅞-ball); Union not implemented";
+  BREP_WARN("{}", result.diagnostics);
   return result;
 }
 

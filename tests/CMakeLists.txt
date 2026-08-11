@@ -142,6 +142,14 @@ gtest_discover_tests(brep_test_sphere_box_boolean
   TEST_PREFIX "brep_test_sphere_box_boolean."
 )
 
+add_executable(brep_test_sphere_curved_boolean kernel/test_sphere_curved_boolean.cpp)
+target_link_libraries(brep_test_sphere_curved_boolean PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_sphere_curved_boolean
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_sphere_curved_boolean>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_sphere_curved_boolean."
+)
+
 add_executable(brep_test_cylinder_surface kernel/test_cylinder_surface.cpp)
 target_link_libraries(brep_test_cylinder_surface PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_cylinder_surface
