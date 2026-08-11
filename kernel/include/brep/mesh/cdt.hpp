@@ -30,4 +30,10 @@ struct CdtResult {
     const std::vector<std::pair<int, int>>& constraints,
     double eps = 1e-12);
 
+/// Triangulate a counter-clockwise outer polygon with clockwise holes.
+[[nodiscard]] CdtResult triangulate_polygon_with_holes(
+    const std::vector<Point2d>& outer_ccw,
+    const std::vector<std::vector<Point2d>>& holes_cw,
+    double eps = 1e-12);
+
 }  // namespace brep::mesh
