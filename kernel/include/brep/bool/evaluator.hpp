@@ -21,15 +21,16 @@ class IBooleanEvaluator {
                                                const BooleanContext& ctx) = 0;
 };
 
-/// Phase 2.0.1 skeleton: links and always fails with a clear diagnostic until
-/// box / general paths are implemented (T2.0.4+).
+/// Phase 2.0.1 skeleton stub (always fails). Prefer
+/// `make_default_boolean_evaluator` for production (box–box path).
 [[nodiscard]] std::unique_ptr<IBooleanEvaluator> make_stub_boolean_evaluator();
 
 using BooleanEvaluatorFactory =
     std::function<std::shared_ptr<IBooleanEvaluator>()>;
 
-/// Optional override used by Part / XL load (tests inject a fake until T2.0.5).
+/// Optional override used by Part / XL load (tests inject a fake until needed).
 void set_boolean_evaluator_factory(BooleanEvaluatorFactory factory);
+/// Default: axis-aligned box–box Fuse/Cut/Common; other combos fail soft.
 [[nodiscard]] std::shared_ptr<IBooleanEvaluator> make_default_boolean_evaluator();
 
 }  // namespace brep::boolean

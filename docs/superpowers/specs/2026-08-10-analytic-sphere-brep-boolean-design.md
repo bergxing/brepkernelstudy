@@ -533,9 +533,11 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 
 #### T2.0.5 盒子布尔重建（并/减/交）
 
-- [ ] 实现盒–盒 Fuse/Cut/Common → 合法 B-Rep Shell（面均可 Outer）
-- [ ] 可含 AABB 快路径，但出口仍为 B-Rep
-- [ ] **测试：** 三种运算 + `validate_body`；空结果/无交失败有诊断
+- [x] 实现盒–盒 Fuse/Cut/Common → 合法 B-Rep Shell（面均可 Outer）
+- [x] 可含 AABB 快路径，但出口仍为 B-Rep
+- [x] **测试：** 三种运算 + `validate_body`；空结果/无交失败有诊断（`brep_test_box_boolean`）
+
+**主要文件：** `box_boolean.cpp`、`box_recognize.cpp`、`evaluator_stub.cpp`
 
 #### T2.0.6 Viewer：双选 + 菜单/工具栏
 

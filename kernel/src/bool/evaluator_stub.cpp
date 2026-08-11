@@ -1,5 +1,7 @@
 #include "brep/bool/evaluator.hpp"
 
+#include "brep/bool/box_boolean.hpp"
+#include "brep/bool/box_recognize.hpp"
 #include "brep/log.hpp"
 
 #include <memory>
@@ -41,6 +43,26 @@ class StubBooleanEvaluator final : public IBooleanEvaluator {
   }
 };
 
+class DefaultBooleanEvaluator final : public IBooleanEvaluator {
+ public:
+  BooleanResult evaluate(BooleanOp op, Model& model, const Body& a,
+                         const Body& b, const BooleanContext& ctx) override {
+    if (recognize_axis_aligned_box(a, ctx) &&
+        recognize_axis_aligned_box(b, ctx)) {
+      return evaluate_box_boolean(op, model, a, b, ctx);
+    }
+
+    BooleanResult result;
+    result.mode = BooleanEvalMode::General;
+    result.diagnostics =
+        std::string("boolean: unsupported combination for ") + op_name(op) +
+        " ('" + a.name + "' vs '" + b.name +
+        "'); only axis-aligned box–box is implemented";
+    BREP_WARN("{}", result.diagnostics);
+    return result;
+  }
+};
+
 }  // namespace
 
 std::unique_ptr<IBooleanEvaluator> make_stub_boolean_evaluator() {
@@ -55,7 +77,7 @@ std::shared_ptr<IBooleanEvaluator> make_default_boolean_evaluator() {
   if (evaluator_factory()) {
     return evaluator_factory()();
   }
-  return make_stub_boolean_evaluator();
+  return std::make_shared<DefaultBooleanEvaluator>();
 }
 
 }  // namespace brep::boolean

@@ -106,7 +106,7 @@ TEST(BooleanFeature, UndoRedoRestoresOperands) {
 TEST(BooleanFeature, StubEvaluatorFailsWithoutSuppress) {
   auto doc = Document::create("bool_stub");
   Part& part = doc->add_part("Main");
-  // default stub evaluator
+  part.set_boolean_evaluator(boolean::make_stub_boolean_evaluator());
 
   Body* a = part.add_box(BoxSpec{.min = {0, 0, 0}, .max = {1, 1, 1}, .name = "A"});
   Body* b = part.add_box(BoxSpec{.min = {0, 0, 0}, .max = {1, 1, 1}, .name = "B"});
