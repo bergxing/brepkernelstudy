@@ -5,21 +5,21 @@
 
 ## 背景
 
-Phase 3 后 Viewer 已不再使用 `brep/brep.hpp`，但仍直接 include 大量 `brep/*.hpp`。工程化计划 Phase 4 要求按稳定级别提供聚合头，并引导客户端改用分级 API。
+Phase 3 后 Viewer 已不再使用 `brep/Brep.h`，但仍直接 include 大量 `brep/*.hpp`。工程化计划 Phase 4 要求按稳定级别提供聚合头，并引导客户端改用分级 API。
 
 ## 决策
 
 1. 在 `kernel/include/api/` 提供四个聚合头：
-   - `api/core.hpp` — 几何 / 拓扑 / 模型 / 身份 / 材质 / 日志
-   - `api/mesh.hpp` — 三角化与边提取
-   - `api/modeling.hpp` — Document/Part、builder、feat、param、sketch
-   - `api/persistence.hpp` — `.xl` / BKS cache IO
+   - `api/Core.h` — 几何 / 拓扑 / 模型 / 身份 / 材质 / 日志
+   - `api/Mesh.h` — 三角化与边提取
+   - `api/Modeling.h` — Document/Part、builder、feat、param、sketch
+   - `api/Persistence.h` — `.xl` / BKS cache IO
 2. `apps/viewer/**`（含 Adapter 与 viewer tests）**只允许** `#include "api/..."`。
-3. `brep/brep.hpp` 保留为兼容 umbrella，并带编译期废弃提示 + `[[deprecated]]` 哨兵。
+3. `brep/Brep.h` 保留为兼容 umbrella，并带编译期废弃提示 + `[[deprecated]]` 哨兵。
 4. **私有头**：实现细节放在 `kernel/internal/brep/internal/`，仅作为各 `brep_*` target 的 **PRIVATE** include；不得出现在 `kernel/include/` 下。
 5. **边界检查**：`scripts/check_include_boundaries.py` 由 CMake 注册为 `ctest` 名 `include_boundaries`。
 6. **类型归属文档**：[`api-module-owners.md`](api-module-owners.md)。
-7. 不做 `api/all.hpp`（避免再造全量 umbrella）。examples 可暂继续用 `brep/brep.hpp`（会有废弃警告）。
+7. 不做 `api/all.hpp`（避免再造全量 umbrella）。examples 可暂继续用 `brep/Brep.h`（会有废弃警告）。
 
 ## 理由
 

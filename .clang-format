@@ -1,0 +1,9 @@
+# brepkernelstudy C++ format — see .cursor/skills/google-cpp-style/project-overrides.md
+BasedOnStyle: Microsoft
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 80
+BreakBeforeBraces: Allman
+AllowShortFunctionsOnEmptyLine: Empty
+PointerAlignment: Left

@@ -126,8 +126,8 @@ endfunction()
 include(${BREP_CMAKE_DIR}/BrepLibType.cmake)
 
 add_library(viewer_adapter ${BREP_LIB_TYPE}
-  adapter/scene_adapter.cpp
-  adapter/document_service.cpp
+  adapter/SceneAdapter.cpp
+  adapter/DocumentService.cpp
 )
 brep_viewer_configure_lib(viewer_adapter)
 set_target_properties(viewer_adapter PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
@@ -138,29 +138,29 @@ add_library(viewer_runtime ${BREP_LIB_TYPE}
   ecs/world.cpp
   ecs/systems.cpp
   # former viewer_commands
-  commands/command_registry.cpp
-  commands/builtin_commands.cpp
-  commands/command_manager.cpp
-  commands/document_history.cpp
+  commands/CommandRegistry.cpp
+  commands/BuiltinCommands.cpp
+  commands/CommandManager.cpp
+  commands/DocumentHistory.cpp
   commands/picking.cpp
-  commands/snap/snap_settings.cpp
+  commands/snap/SnapSettings.cpp
   commands/snap/accusnap.cpp
-  commands/snap/snap_overlay.cpp
-  commands/command_palette.cpp
-  commands/tools/create_box_tool.cpp
-  commands/tools/create_sphere_tool.cpp
-  commands/tools/copy_tool.cpp
-  io/dxf_export.cpp
+  commands/snap/SnapOverlay.cpp
+  commands/CommandPalette.cpp
+  commands/tools/CreateBoxTool.cpp
+  commands/tools/CreateSphereTool.cpp
+  commands/tools/CopyTool.cpp
+  io/DxfExport.cpp
   document.cpp
   # former viewer_render
-  vulkan_window.cpp
-  vulkan_renderer.cpp
-  render/vulkan_buffer.cpp
-  render/vulkan_renderer_textures.cpp
-  render/vulkan_pipeline.cpp
-  render/mesh_uploader.cpp
-  render/vulkan_draw.cpp
-  select_rect_overlay.cpp
+  VulkanWindow.cpp
+  VulkanRenderer.cpp
+  render/VulkanBuffer.cpp
+  render/VulkanRendererTextures.cpp
+  render/VulkanPipeline.cpp
+  render/MeshUploader.cpp
+  render/VulkanDraw.cpp
+  SelectRectOverlay.cpp
 )
 brep_viewer_configure_lib(viewer_runtime)
 add_dependencies(viewer_runtime brep_viewer_shaders)
@@ -179,26 +179,26 @@ add_library(viewer_commands ALIAS viewer_runtime)
 add_library(viewer_render ALIAS viewer_runtime)
 
 add_library(viewer_ui ${BREP_LIB_TYPE}
-  app/viewer_app.cpp
-  assets/asset_catalog.cpp
+  app/ViewerApp.cpp
+  assets/AssetCatalog.cpp
   assets/assets.qrc
-  main_window.cpp
-  ui/view_manager.cpp
-  ui/cursor_tip.cpp
-  ui/context_menu.cpp
-  ui/commands_bridge.cpp
-  ui/main_window_menus.cpp
-  ui/property_dock_setup.cpp
-  ui/window_lifecycle.cpp
-  ui/view_cube_layout.cpp
-  ui/input_router.cpp
-  ui/snap_settings_dialog.cpp
-  home_window.cpp
-  splash_screen.cpp
-  view_cube.cpp
-  view_mdi_subwindow.cpp
-  property_panel.cpp
-  i18n/language_manager.cpp
+  MainWindow.cpp
+  ui/ViewManager.cpp
+  ui/CursorTip.cpp
+  ui/ContextMenu.cpp
+  ui/CommandsBridge.cpp
+  ui/MainWindowMenus.cpp
+  ui/PropertyDockSetup.cpp
+  ui/WindowLifecycle.cpp
+  ui/ViewCubeLayout.cpp
+  ui/InputRouter.cpp
+  ui/SnapSettingsDialog.cpp
+  HomeWindow.cpp
+  SplashScreen.cpp
+  ViewCube.cpp
+  ViewMdiSubwindow.cpp
+  PropertyPanel.cpp
+  i18n/LanguageManager.cpp
 )
 brep_viewer_configure_lib(viewer_ui)
 set_target_properties(viewer_ui PROPERTIES

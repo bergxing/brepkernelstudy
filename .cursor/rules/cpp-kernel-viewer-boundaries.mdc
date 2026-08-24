@@ -1,0 +1,33 @@
+---
+description: brepkernelstudy 模块边界 + Core Guidelines 并发/头文件 (SF.*, CP.*)
+globs: "{kernel/**,apps/viewer/**,tests/**}/*.{cpp,hpp}"
+alwaysApply: false
+---
+
+# 模块边界与头文件
+
+## Include 边界（ADR 0002）
+
+- **Viewer 生产代码**：仅 `#include "api/..."`（`bootstrap/` 与 tests 除外）
+- **Kernel tests / examples**：可用 `brep/...`
+- **禁止** Viewer include `Hypodermic`（除 `apps/viewer/bootstrap/`）
+
+运行边界检查：`ctest -R include_boundaries`
+
+## 头文件 (SF.*)
+
+- **SF.1**：`#pragma once`（本项目标准）
+- **SF.2**：include 顺序 — 对应头 → 项目头 → 第三方 → 标准库
+- **SF.7**：最小 include；能用前向声明则少 include
+- **SF.11**：头文件自洽（可单独编译）
+
+## 并发 (CP.*)
+
+- **CP.1**：假设多线程时，共享状态需明确；当前 kernel 默认 **单线程** Part 再生
+- **CP.2**：`const` 线程安全读；非 const 需文档说明
+- 不在 `IFeature::rebuild` / `IBooleanEvaluator::evaluate` 内做无锁全局可变单例
+
+## 常量 (Con.*)
+
+- 容差/模糊值：`BooleanContext::fuzzy`，勿魔法数字散落
+- 只读查询：`const` 方法 + `[[nodiscard]]`

@@ -1,0 +1,38 @@
+---
+description: C++ Core Guidelines 资源与所有权 (R.*, F.7, I.11)
+globs: "**/*.{cpp,hpp}"
+alwaysApply: false
+---
+
+# 所有权与 RAII
+
+## 规则
+
+| Guideline | 要求 |
+|-----------|------|
+| **R.1** | 所有资源通过 RAII 管理 |
+| **R.3** | 原始 owning 指针是 bug；用 `unique_ptr`/`shared_ptr` |
+| **R.11** | 避免显式 `new`/`delete`（工厂函数内集中分配可接受） |
+| **I.11** | 非拥有：`T*` / `T&`，调用方不 delete |
+| **F.7** | 返回非复制类型用 `unique_ptr` 或 `shared_ptr` |
+
+## 本项目模式
+
+```cpp
+// ✅ 工厂返回 unique_ptr
+[[nodiscard]] std::unique_ptr<BooleanPipeline> make_default_boolean_pipeline();
+
+// ✅ 共享服务：shared_ptr + 构造注入
+explicit Part(std::shared_ptr<boolean::IBooleanEvaluator> evaluator, ...);
+
+// ✅ 非拥有：Model 内 Body* 由 Model 容器拥有
+Body* make_body(...);  // 返回非拥有，Model 持有 unique_ptr
+
+// ❌ 避免
+auto* p = new Foo();  // 无 RAII 守卫
+```
+
+## B-Rep 注意
+
+- 拓扑实体（`Body`/`Face`/…）生命周期由 `Model`/`Part` 管理，勿跨 Document 裸指针缓存。
+- Viewer ECS `BodyRef` 只存 `Guid`，不拥有内核对象。

@@ -1,0 +1,40 @@
+---
+description: C++ Core Guidelines 接口与函数 (I.*, F.*)
+globs: "**/*.{cpp,hpp}"
+alwaysApply: false
+---
+
+# 接口与函数
+
+## 接口 (I.*)
+
+- **I.1**：接口用抽象类（`I` 前缀 + 虚析构），如 `IBooleanEvaluator`
+- **I.23** / **C.35**：基类析构 `virtual` 或 `protected`
+- **I.4**：设计应可静态验证；用 `[[nodiscard]]` 标记返回值
+- **I.27** / **P.1**：依赖接口，不依赖实现
+
+## 函数 (F.*)
+
+- **F.1**：短且只做一件事
+- **F.16**：输入 ≤2–3 个 `"cheap"` 标量/引用；多参数用 struct
+- **F.43**：禁止未定义行为的参数（空指针、越界）
+- **explicit** 单参构造（**C.46**）
+
+## 本项目命名
+
+| 种类 | 风格 | 示例 |
+|------|------|------|
+| 类型 / 函数 | PascalCase | `BooleanPipeline`, `Evaluate` |
+| 接口 | `I` + PascalCase | `IBooleanEvaluator` |
+| 变量 / 参数 | camelCase | `bodyCount`, `startIndex` |
+| **类成员变量** | **`m_` + camelCase** | `m_evaluator`, `m_bodyGuid` |
+| struct / DTO 成员 | PascalCase（无 `m_`） | `FaceIndex`, `OutputBody` |
+| 工厂 | `Make*` | `MakeDefaultBooleanEvaluator()` |
+
+```cpp
+// ✅
+[[nodiscard]] BooleanResult Evaluate(BooleanOp op, Model& model);
+
+// ❌
+BooleanResult Evaluate(...);  // 缺少 [[nodiscard]]，易忽略错误
+```

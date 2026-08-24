@@ -36,7 +36,7 @@ brepkernelstudy/
 Qt6 / Vulkan / EnTT
         ↓
    brep_viewer (单 executable，~30 个源文件直接编进 exe)
-        ↓  PRIVATE link，直接 #include "brep/brep.hpp"
+        ↓  PRIVATE link，直接 #include "brep/Brep.h"
       brep (单 static lib，所有内核模块一次编译)
         ↓
    Eigen / Boost.Uuid / spdlog
@@ -57,24 +57,24 @@ Qt6 / Vulkan / EnTT
 | 问题 | 具体表现 | 影响 |
 |------|----------|------|
 | **内核单库** | 根 `CMakeLists.txt` 一个 `add_library(brep …)` 包含 geometry/feat/io 全部 | 改 IO 也要重编 geometry；无法按需链接 |
-| **无稳定 API 边界** | Viewer 多处 `#include "brep/brep.hpp"`（umbrella 头） | 内核任意头文件变更可能触发 Viewer 全量重编 |
-| **UI 与领域逻辑混合** | `main_window.cpp` ~1300 行 | 难维护、难单测、多人协作冲突多 |
-| **渲染单体文件** | `vulkan_renderer.cpp` ~1200 行 | Vulkan 生命周期、管线、上传、绘制全在一个 TU |
+| **无稳定 API 边界** | Viewer 多处 `#include "brep/Brep.h"`（umbrella 头） | 内核任意头文件变更可能触发 Viewer 全量重编 |
+| **UI 与领域逻辑混合** | `MainWindow.cpp` ~1300 行 | 难维护、难单测、多人协作冲突多 |
+| **渲染单体文件** | `VulkanRenderer.cpp` ~1200 行 | Vulkan 生命周期、管线、上传、绘制全在一个 TU |
 | **特性 UI 无抽象** | `property_panel` 直接 `static_cast<const BoxFeature*>` | 每增加一种特征类型都要改 UI 层 |
 | **ECS 桥接承担过多** | `World::sync_part_bodies()` 直接调用 tessellation、读 FeatureTree | Viewer 的 ECS 层了解内核再生语义 |
 | **Viewer 无自动化测试** | 仅内核 examples 有 CTest | UI/命令/渲染回归靠手动 |
-| **umbrella 头鼓励宽依赖** | `brep/brep.hpp` 一次引入全部模块 | 新代码倾向于 include-everything |
+| **umbrella 头鼓励宽依赖** | `brep/Brep.h` 一次引入全部模块 | 新代码倾向于 include-everything |
 
 ### 1.4 关键文件规模（参考基线）
 
 | 文件 | 约行数 | 职责 |
 |------|--------|------|
-| `apps/viewer/main_window.cpp` | 1300+ | 菜单、MDI、输入、命令、属性面板、上下文菜单 |
-| `apps/viewer/vulkan_renderer.cpp` | 1200+ | Vulkan 全生命周期 |
+| `apps/viewer/MainWindow.cpp` | 1300+ | 菜单、MDI、输入、命令、属性面板、上下文菜单 |
+| `apps/viewer/VulkanRenderer.cpp` | 1200+ | Vulkan 全生命周期 |
 | `apps/viewer/ecs/systems.cpp` | 520+ | 渲染缓存、选中高亮 |
-| `apps/viewer/commands/builtin_commands.cpp` | 390+ | 文件/导出等内置命令 |
-| `apps/viewer/commands/tools/create_box_tool.cpp` | 390+ | 创建立方体交互 |
-| `apps/viewer/command_manager.cpp` | 90+ | 命令调度（已较清晰） |
+| `apps/viewer/commands/BuiltinCommands.cpp` | 390+ | 文件/导出等内置命令 |
+| `apps/viewer/commands/tools/CreateBoxTool.cpp` | 390+ | 创建立方体交互 |
+| `apps/viewer/CommandManager.cpp` | 90+ | 命令调度（已较清晰） |
 
 ---
 
@@ -87,7 +87,7 @@ Qt6 / Vulkan / EnTT
 | **模块化构建** | 内核与 Viewer 拆为多个 CMake target，增量编译 |
 | **依赖单向** | 上层依赖下层；内核不依赖 Qt/Vulkan |
 | **窄接口** | Viewer 通过 Adapter 访问文档/特征/网格，不直接依赖具体 Feature 类 |
-| **大文件拆分** | `main_window.cpp`、`vulkan_renderer.cpp` 按职责拆分到 <400 行/TU 为主 |
+| **大文件拆分** | `MainWindow.cpp`、`VulkanRenderer.cpp` 按职责拆分到 <400 行/TU 为主 |
 | **可测试** | 内核 + Adapter + 命令逻辑可单元测试；examples 保留 |
 | **渐进迁移** | 每阶段可独立合并，不中断功能开发 |
 
@@ -204,10 +204,10 @@ brepkernelstudy/
 │   ├── CMakeLists.txt          # project(brep_kernel)
 │   ├── include/brep/
 │   │   ├── api/                # 分级公开头（Phase 4）
-│   │   │   ├── core.hpp
-│   │   │   ├── modeling.hpp
-│   │   │   ├── persistence.hpp
-│   │   │   └── mesh.hpp
+│   │   │   ├── Core.h
+│   │   │   ├── Modeling.h
+│   │   │   ├── Persistence.h
+│   │   │   └── Mesh.h
 │   │   └── …                   # 现有模块头文件（逐步归类）
 │   └── src/
 │       ├── geometry.cpp, topology.cpp, …
@@ -217,8 +217,8 @@ brepkernelstudy/
 │       ├── CMakeLists.txt      # project(brep_viewer)
 │       ├── main.cpp            # 薄入口
 │       ├── adapter/            # Viewer 专用适配层（已确认）
-│       │   ├── scene_adapter.hpp / .cpp
-│       │   └── document_service.hpp / .cpp
+│       │   ├── SceneAdapter.h / .cpp
+│       │   └── DocumentService.h / .cpp
 │       ├── app/                # 应用壳（main_window 瘦身）
 │       ├── ui/                 # home, splash, property_panel, view_cube, …
 │       ├── render/             # vulkan_*, camera, shaders
@@ -267,32 +267,32 @@ brepkernelstudy/
 
 > 逻辑源码仍可按 `ecs/`、`commands/`、`render/` 分子目录；链接单元以 `viewer_runtime` 为准。ALIAS：`viewer_scene`/`viewer_commands`/`viewer_render` → `viewer_runtime`。
 
-#### 2.2 `main_window.cpp` 拆分
+#### 2.2 `MainWindow.cpp` 拆分
 
 | 新文件 | 职责 |
 |--------|------|
-| `ui/main_window_menus.cpp` | 菜单/工具栏创建、`retranslate_ui` |
-| `ui/view_manager.cpp` | MDI 子窗口创建、四视图、平铺/层叠 |
-| `ui/input_router.cpp` | `eventFilter`、滚轮缩放、工具鼠标路由 |
-| `ui/cursor_tip.cpp` | 光标跟随提示 |
-| `ui/context_menu.cpp` | 视口右键菜单 |
-| `app/main_window.cpp` | 构造/析构、生命周期、对外 slots（目标 <400 行） |
+| `ui/MainWindowMenus.cpp` | 菜单/工具栏创建、`retranslate_ui` |
+| `ui/ViewManager.cpp` | MDI 子窗口创建、四视图、平铺/层叠 |
+| `ui/InputRouter.cpp` | `eventFilter`、滚轮缩放、工具鼠标路由 |
+| `ui/CursorTip.cpp` | 光标跟随提示 |
+| `ui/ContextMenu.cpp` | 视口右键菜单 |
+| `app/MainWindow.cpp` | 构造/析构、生命周期、对外 slots（目标 <400 行） |
 
-#### 2.3 `vulkan_renderer.cpp` 拆分
+#### 2.3 `VulkanRenderer.cpp` 拆分
 
 | 新文件 | 职责 |
 |--------|------|
 | `render/vulkan_context.cpp` | Instance, device, swapchain, surface |
-| `render/vulkan_pipeline.cpp` | Shader module, pipeline layout, render pass |
-| `render/vulkan_buffer.cpp` | Vertex/index/uniform buffer 分配与更新 |
-| `render/vulkan_draw.cpp` | 每帧录制、draw call |
-| `render/mesh_uploader.cpp` | `TriangleMesh` / `EdgeMesh` → GPU |
+| `render/VulkanPipeline.cpp` | Shader module, pipeline layout, render pass |
+| `render/VulkanBuffer.cpp` | Vertex/index/uniform buffer 分配与更新 |
+| `render/VulkanDraw.cpp` | 每帧录制、draw call |
+| `render/MeshUploader.cpp` | `TriangleMesh` / `EdgeMesh` → GPU |
 
 #### 2.4 验收
 
 - [ ] Viewer 功能冒烟：新建/打开/保存/创盒/复制/撤销/语言切换/关闭保存提示
-- [ ] 无新增编译警告（examples 使用废弃 `brep/brep.hpp` 的 `#warning` 属预期，不计入）
-- [x] 单文件行数：`main_window.cpp` <400 行；拆分后多数 TU <500（例外：`ecs/systems.cpp` ~592，仍 <600）
+- [ ] 无新增编译警告（examples 使用废弃 `brep/Brep.h` 的 `#warning` 属预期，不计入）
+- [x] 单文件行数：`MainWindow.cpp` <400 行；拆分后多数 TU <500（例外：`ecs/systems.cpp` ~592，仍 <600）
 
 ---
 
@@ -335,7 +335,7 @@ add_library(brep_core STATIC
 target_include_directories(brep_core PUBLIC ${CMAKE_SOURCE_DIR}/kernel/include)
 target_link_libraries(brep_core PUBLIC Eigen3::Eigen brep_boost_uuid)
 
-add_library(brep_feat STATIC kernel/src/feat/feature_tree.cpp …)
+add_library(brep_feat STATIC kernel/src/feat/FeatureTree.cpp …)
 target_link_libraries(brep_feat PUBLIC brep_core)
 
 add_library(brep INTERFACE)
@@ -346,14 +346,14 @@ target_link_libraries(brep INTERFACE brep_core brep_feat brep_io brep_asm)
 
 - [x] 现有 examples 全部通过 `ctest`
 - [x] `brep_viewer` 正常编译运行
-- [ ] 修改 `kernel/src/io/xl_document.cpp` 时，`geometry.cpp` 所在 TU **不**重编（Ninja 验证）
+- [ ] 修改 `kernel/src/io/XlDocument.cpp` 时，`geometry.cpp` 所在 TU **不**重编（Ninja 验证）
 - [x] 仓库根目录无遗留 `include/`、`src/`（均已迁入 `kernel/`）
 
 ---
 
 ### Phase 3 — Adapter 适配层（5–7 天）
 
-**原则**：Viewer 与命令逐步改为只依赖 `apps/viewer/adapter/`，消除 `#include "brep/brep.hpp"`。
+**原则**：Viewer 与命令逐步改为只依赖 `apps/viewer/adapter/`，消除 `#include "brep/Brep.h"`。
 
 **CMake target**：`viewer_adapter`（STATIC），链接 `brep`；被 `viewer_scene`、`viewer_commands`、`viewer_ui` 依赖。
 
@@ -362,7 +362,7 @@ target_link_libraries(brep INTERFACE brep_core brep_feat brep_io brep_asm)
 命名空间：`brep::viewer::adapter`（Viewer 专用，与顶层内核 `brep::` 区分）。
 
 ```cpp
-// apps/viewer/adapter/scene_adapter.hpp
+// apps/viewer/adapter/SceneAdapter.h
 namespace brep::viewer::adapter {
 
 struct BoxParams { double length, width, height; };
@@ -398,7 +398,7 @@ class SceneAdapter {
 ```
 
 ```cpp
-// apps/viewer/adapter/document_service.hpp
+// apps/viewer/adapter/DocumentService.h
 namespace brep::viewer::adapter {
 
 class DocumentService {
@@ -428,11 +428,11 @@ class DocumentService {
 3. `property_panel` 改用 `SceneObject`
 4. `builtin_commands` 改用 `DocumentService`
 5. 工具类（`copy_tool`, `create_box_tool`）改用 Adapter
-6. 删除 Viewer 中 `#include "brep/brep.hpp"`（最后一步）
+6. 删除 Viewer 中 `#include "brep/Brep.h"`（最后一步）
 
 #### 3.4 验收
 
-- [x] Viewer 源码中 **0** 处 `#include "brep/brep.hpp"`（且仅允许 `api/*`）
+- [x] Viewer 源码中 **0** 处 `#include "brep/Brep.h"`（且仅允许 `api/*`）
 - [x] `property_panel` 无 `static_cast<const BoxFeature*>`（cast 仅留在 `adapter/`）
 - [x] Adapter 层有 GoogleTest：`mesh_for_body` / `object_for_*` / `box_params` / undo、DocumentService roundtrip（对应原草案 `tessellate` / 对象查询 / 复制相关能力）
 - [ ] 功能冒烟与 Phase 2 相同
@@ -445,18 +445,18 @@ class DocumentService {
 
 | 头文件 | 内容 | 稳定级别 |
 |--------|------|----------|
-| `api/core.hpp` | geometry, topology, model, types | 高 |
-| `api/mesh.hpp` | tessellation | 中 |
-| `api/modeling.hpp` | builder, feat, param | 中 |
-| `api/persistence.hpp` | io | 低（随格式演进） |
+| `api/Core.h` | geometry, topology, model, types | 高 |
+| `api/Mesh.h` | tessellation | 中 |
+| `api/Modeling.h` | builder, feat, param | 中 |
+| `api/Persistence.h` | io | 低（随格式演进） |
 
 #### 4.2 约束
 
-- `brep/brep.hpp` 保留但标记 `[[deprecated]]`，引导改用分级头
+- `brep/Brep.h` 保留但标记 `[[deprecated]]`，引导改用分级头
 - Viewer / Adapter 只允许 include `api/*`
 - `internal/` 目录不进入 PUBLIC include path
 
-> **第一刀（2026-08-09）**：已新增 `kernel/include/api/{core,mesh,modeling,persistence}.hpp`；Viewer/Adapter 已迁入 `api/*`；`brep.hpp` 已废弃提示。  
+> **第一刀（2026-08-09）**：已新增 `kernel/include/api/{core,mesh,modeling,persistence}.hpp`；Viewer/Adapter 已迁入 `api/*`；`Brep.h` 已废弃提示。  
 > **完整 Phase 4（2026-08-09）**：`kernel/internal/` PRIVATE include；`scripts/check_include_boundaries.py` + `ctest -R include_boundaries`；类型归属见 [`api-module-owners.md`](api-module-owners.md)。
 
 #### 4.3 验收
@@ -464,7 +464,7 @@ class DocumentService {
 - [x] CMake / include 检查脚本验证依赖边界（`include_boundaries`）
 - [x] 文档列出每个公开类型的所有者模块（`api-module-owners.md`）
 - [x] Viewer / Adapter 只 include `api/*`
-- [x] `brep/brep.hpp` 废弃提示
+- [x] `brep/Brep.h` 废弃提示
 - [x] ADR：`docs/architecture/adr/0002-api-header-tiers.md`
 - [x] `internal/` 不进入 PUBLIC include path（`kernel/internal` PRIVATE）
 
@@ -491,11 +491,11 @@ class DocumentService {
 ```
 tests/
 ├── kernel/
-│   ├── test_box_feature.cpp
-│   └── test_xl_roundtrip.cpp
+│   ├── test_BoxFeature.cpp
+│   └── test_XlRoundtrip.cpp
 apps/viewer/tests/              # Viewer 专用（含 adapter）
-    ├── test_scene_adapter.cpp
-    └── test_document_service.cpp
+    ├── TestSceneAdapter.cpp
+    └── TestDocumentService.cpp
 ```
 
 根 `CMakeLists.txt`：
@@ -558,8 +558,8 @@ endif()
 
 - [x] 内核至少 4 个独立 static/INTERFACE target（core/feat/io/asm）
 - [x] Viewer 至少 4 个 lib + 薄 exe（`viewer_ui` / `viewer_runtime` / `viewer_adapter` + 内核；默认 SHARED）
-- [x] `main_window.cpp` < 400 行；`vulkan_renderer.cpp` 已拆且无单 TU > 600 行
-- [x] Viewer 无 `#include "brep/brep.hpp"`；UI/命令无 Feature 具体类 `static_cast`（仅 `adapter` 内封装）
+- [x] `MainWindow.cpp` < 400 行；`VulkanRenderer.cpp` 已拆且无单 TU > 600 行
+- [x] Viewer 无 `#include "brep/Brep.h"`；UI/命令无 Feature 具体类 `static_cast`（仅 `adapter` 内封装）
 - [x] `tests/kernel/` 与 `apps/viewer/tests/` 覆盖内核与 Adapter 关键路径（math + adapter；可继续加厚）
 - [x] 同仓多子工程一期（ADR 0004）：根薄聚合；嵌套 `project(brep_kernel|brep_viewer)`；examples 归 kernel；`-S kernel` 可独立构建
 - [ ] `ctest` 全绿；Viewer 冒烟清单全通过（`ctest` 已绿；冒烟待手动执行）

@@ -6,8 +6,8 @@ if(NOT BREP_KERNEL_DIR)
 endif()
 
 add_library(brep_io ${BREP_LIB_TYPE}
-  ${BREP_KERNEL_DIR}/src/io/xl_document.cpp
-  ${BREP_KERNEL_DIR}/src/io/bks_cache.cpp
+  ${BREP_KERNEL_DIR}/src/io/XlDocument.cpp
+  ${BREP_KERNEL_DIR}/src/io/BksCache.cpp
 )
 brep_kernel_include_dirs(brep_io)
 target_link_libraries(brep_io PUBLIC brep_feat brep_asm)

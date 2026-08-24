@@ -6,7 +6,7 @@ if(NOT BREP_KERNEL_DIR)
 endif()
 
 add_library(brep_asm ${BREP_LIB_TYPE}
-  ${BREP_KERNEL_DIR}/src/asm/assembly.cpp
+  ${BREP_KERNEL_DIR}/src/asm/Assembly.cpp
 )
 brep_kernel_include_dirs(brep_asm)
 target_link_libraries(brep_asm PUBLIC brep_feat)

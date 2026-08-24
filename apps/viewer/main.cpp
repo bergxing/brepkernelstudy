@@ -1,5 +1,6 @@
-#include "app/viewer_app.hpp"
+#include "app/ViewerApp.h"
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
   return brep::viewer::run_viewer(argc, argv);
 }

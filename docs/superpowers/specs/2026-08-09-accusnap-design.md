@@ -40,7 +40,7 @@ Deliver CAD/MicroStation-like **object snap (AccuSnap)** for the viewer:
 
 | Layer | Responsibility | Location |
 |-------|----------------|----------|
-| Kernel SnapQuery | Emit world-space candidates from B-Rep | `kernel` + public `api/snap.hpp` (name may vary) |
+| Kernel SnapQuery | Emit world-space candidates from B-Rep | `kernel` + public `api/Snap.h` (name may vary) |
 | Viewer AccuSnap | Aperture, priority, grid, settings/keys, markers/tip | `apps/viewer/commands/snap/` |
 | Tools | Consume `PickResult`; no private ground/mesh pick duplication | box / sphere / copy (and future tools) |
 | AccuDraw (Phase 2) | Relative origin/axes, ortho lock, key-in | Hooks only on `SnapSession` / `CommandContext` |
@@ -211,18 +211,18 @@ All settings labels, tip snap names, and user-visible strings use `tr()` + `xcad
    - `CreateBoxTool::pick_ground` (base steps)
    - `CopyTool::pick_ground`
    - Box height: optional follow-up; document if still plane-only.
-3. Remove duplicated mesh/ground pick once callers are migrated (keep low-level `picking.hpp` ray/plane helpers).
+3. Remove duplicated mesh/ground pick once callers are migrated (keep low-level `Picking.h` ray/plane helpers).
 
 ### Suggested module layout
 
 ```text
-kernel/include/api/snap.hpp
+kernel/include/api/Snap.h
 kernel/include/brep/snap/...   # or src-only internals
 kernel/src/snap/...
 
-apps/viewer/commands/snap/accusnap.hpp|.cpp
-apps/viewer/commands/snap/snap_settings.hpp|.cpp
-apps/viewer/commands/snap/snap_overlay.hpp|.cpp   # markers
+apps/viewer/commands/snap/Accusnap.h|.cpp
+apps/viewer/commands/snap/SnapSettings.h|.cpp
+apps/viewer/commands/snap/SnapOverlay.h|.cpp   # markers
 apps/viewer/ui/...             # settings dialog + toolbar toggle
 ```
 

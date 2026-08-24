@@ -21,16 +21,16 @@ include(${BREP_CMAKE_DIR}/BrepInstall.cmake)
 option(BREP_BUILD_EXAMPLES "Build kernel example programs" ON)
 if(BREP_BUILD_EXAMPLES)
   set(BREP_EXAMPLES_DIR "${BREP_REPO_ROOT}/examples")
-  add_executable(box_demo ${BREP_EXAMPLES_DIR}/box_demo.cpp)
+  add_executable(box_demo ${BREP_EXAMPLES_DIR}/BoxDemo.cpp)
   target_link_libraries(box_demo PRIVATE brep)
 
   add_executable(smoke ${BREP_EXAMPLES_DIR}/smoke.cpp)
   target_link_libraries(smoke PRIVATE brep)
 
-  add_executable(parametric_smoke ${BREP_EXAMPLES_DIR}/parametric_smoke.cpp)
+  add_executable(parametric_smoke ${BREP_EXAMPLES_DIR}/ParametricSmoke.cpp)
   target_link_libraries(parametric_smoke PRIVATE brep)
 
-  add_executable(xl_roundtrip ${BREP_EXAMPLES_DIR}/xl_roundtrip.cpp)
+  add_executable(xl_roundtrip ${BREP_EXAMPLES_DIR}/XlRoundtrip.cpp)
   target_link_libraries(xl_roundtrip PRIVATE brep)
 
   enable_testing()
@@ -45,18 +45,8 @@ endif()
 # ---------------------------------------------------------------------------
 option(BREP_BUILD_TESTS "Build GoogleTest unit tests" ON)
 if(BREP_BUILD_TESTS)
-  if(NOT TARGET GTest::gtest_main)
-    include(FetchContent)
-    FetchContent_Declare(
-      googletest
-      URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    )
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-    set(INSTALL_GMOCK OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googletest)
-  endif()
+  include(${BREP_CMAKE_DIR}/BrepGoogleTest.cmake)
+  brep_make_googletest_available()
   enable_testing()
   add_subdirectory("${BREP_REPO_ROOT}/tests" "${CMAKE_CURRENT_BINARY_DIR}/repo_tests")
 endif()

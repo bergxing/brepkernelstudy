@@ -361,8 +361,8 @@ class IBooleanEvaluator {
 ## 规划模块 / 文件映射
 
 ```text
-kernel/include/brep/geometry.hpp          # SphereSurface
-kernel/include/brep/types.hpp             # SurfaceKind::Sphere
+kernel/include/brep/Geometry.h          # SphereSurface
+kernel/include/brep/Types.h             # SurfaceKind::Sphere
 kernel/src/builder.cpp                    # 解析 make_sphere
 kernel/src/mesh.cpp                       # 多曲面三角化
 kernel/include/brep/bool/...              # context、op、result
@@ -370,10 +370,10 @@ kernel/src/bool/intersect_*.cpp
 kernel/src/bool/split_*.cpp
 kernel/src/bool/classify.cpp
 kernel/src/bool/build.cpp
-kernel/include/brep/feat/boolean_feature.hpp
-kernel/src/feat/boolean_feature.cpp
+kernel/include/brep/feat/BooleanFeature.h
+kernel/src/feat/BooleanFeature.cpp
 apps/viewer/commands/...                  # 布尔命令
-apps/viewer/ui/main_window_menus.cpp      # 菜单 / 工具栏
+apps/viewer/ui/MainWindowMenus.cpp      # 菜单 / 工具栏
 docs/superpowers/specs/...                # 本文档 + 短 ADR
 ```
 
@@ -461,7 +461,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] `Model` 增加工厂（如 `make_sphere_surface`）
 - [x] **测试：** 赤道/极点求值与法向；已知点 `param_of` 往返（`brep_test_sphere_surface`）
 
-**主要文件：** `kernel/include/brep/types.hpp`、`geometry.hpp`、`model.hpp`、对应 `.cpp`、`tests/kernel/test_sphere_surface.cpp`
+**主要文件：** `kernel/include/brep/Types.h`、`Geometry.h`、`Model.h`、对应 `.cpp`、`tests/kernel/TestSphereSurface.cpp`
 
 #### T1.2 解析球 B-Rep 构建（替换三角壳）
 
@@ -470,7 +470,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] `SphereSpec.slices/stacks` 降级为兼容/调试字段（可不驱动拓扑）
 - [x] **测试：** `validate_body` 封闭实体；旧 XL Sphere 加载可再生
 
-**主要文件：** `kernel/src/builder.cpp`、`feat/sphere_feature.cpp`、`part.cpp`
+**主要文件：** `kernel/src/builder.cpp`、`feat/SphereFeature.cpp`、`part.cpp`
 
 #### T1.3 多曲面三角化 + 默认偏差
 
@@ -479,7 +479,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] 遵守 min/max 经纬段数
 - [x] **测试：** 默认偏差下网格规模合理；法向与解析法向方向一致（点抽样）
 
-**主要文件：** `kernel/include/brep/mesh.hpp`、`kernel/src/mesh.cpp`、`api/mesh.hpp`
+**主要文件：** `kernel/include/brep/Mesh.h`、`kernel/src/mesh.cpp`、`api/Mesh.h`
 
 #### T1.4 边线显示（隐藏 seam）
 
@@ -495,7 +495,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] 圆心捕捉继续走解析球心（`SphereFeature` / `SphereSurface`）
 - [x] **验收：** 交互创球、改半径、AccuSnap 圆心正常
 
-**主要文件：** `create_sphere_tool.cpp`、`scene_adapter`、`property_panel`、snap 相关
+**主要文件：** `CreateSphereTool.cpp`、`scene_adapter`、`property_panel`、snap 相关
 
 #### T1.6 Phase 1 验收门禁
 
@@ -514,7 +514,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] 目录骨架：`kernel/include/brep/bool/`、`kernel/src/bool/`
 - [x] **测试：** 空壳可链接；不支持组合返回明确失败
 
-**主要文件：** `brep/bool/*`、`src/bool/evaluator_stub.cpp`、`brep_test_boolean_skeleton`
+**主要文件：** `brep/bool/*`、`src/bool/EvaluatorStub.cpp`、`brep_test_boolean_skeleton`
 #### T2.0.2 `BooleanFeature` + 抑制操作体
 
 - [x] `BooleanFeature`：`op`、`target_feature_id`、`tool_feature_id`
@@ -522,21 +522,21 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] 接入 `FeatureTree` / `Regenerator` / `FeatureHistory`（撤销恢复抑制状态）
 - [x] **测试：** 添加布尔特征后操作体不可见、结果可见；undo/redo
 
-**主要文件：** `boolean_feature.hpp/.cpp`、`feature_history.*`、`part.*`、`CMake BrepFeat`
+**主要文件：** `BooleanFeature.h/.cpp`、`feature_history.*`、`part.*`、`CMake BrepFeat`
 
 #### T2.0.3 XL 持久化
 
 - [x] 序列化/反序列化 `BooleanFeature` + 抑制标志
 - [x] **测试：** xl_roundtrip 含布尔节点（`BooleanFeature.XlRoundtripPersistsBooleanAndSuppress`）
 
-**主要文件：** `xl_document.cpp`
+**主要文件：** `XlDocument.cpp`
 
 #### T2.0.4 平面–平面求交（最小 IntTools）
 
 - [x] Plane–Plane → 交线（或平行/重合诊断）
 - [x] **测试：** 正交平面交线；平行无交；重合 fuzzy 行为（`brep_test_intersect_plane_plane`）
 
-**主要文件：** `kernel/src/bool/intersect_plane_plane.cpp` 等
+**主要文件：** `kernel/src/bool/IntersectPlanePlane.cpp` 等
 
 #### T2.0.5 盒子布尔重建（并/减/交）
 
@@ -544,7 +544,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] 可含 AABB 快路径，但出口仍为 B-Rep
 - [x] **测试：** 三种运算 + `validate_body`；空结果/无交失败有诊断（`brep_test_box_boolean`）
 
-**主要文件：** `box_boolean.cpp`、`box_recognize.cpp`、`evaluator_stub.cpp`
+**主要文件：** `BoxBoolean.cpp`、`BoxRecognize.cpp`、`EvaluatorStub.cpp`
 
 #### T2.0.6 Viewer：双选 + 菜单/工具栏
 
@@ -554,7 +554,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] SceneAdapter / 属性：识别 Boolean 类型（可只读显示 op）
 - [x] **验收：** UI 完成盒并/减/交；操作体被抑制（`SceneAdapter.AddBoolean*`）
 
-**主要文件：** `builtin_commands.cpp`、`main_window_menus.cpp`、`scene_adapter.*`、i18n
+**主要文件：** `BuiltinCommands.cpp`、`MainWindowMenus.cpp`、`scene_adapter.*`、i18n
 
 #### T2.0.7 Phase 2.0 验收门禁
 
@@ -708,7 +708,7 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 - [x] **T4.2** Cylinder–Plane / Cylinder–Sphere 求交  
   - Plane：圆 / 椭圆 / 平行母线 / 空  
   - Sphere：共轴圆（偏轴一般曲线标 `Unsupported`，后续扩展）
-- [x] **T4.3** 改进 pcurve / `TopologyRef` 命名（约定写入 `topology_ref.hpp`）
+- [x] **T4.3** 改进 pcurve / `TopologyRef` 命名（约定写入 `TopologyRef.h`）
 - [x] **T4.4** 求交加速结构（BVH）— **完成**（Median + SAH + 宽相诊断挂钩；印记/分类仍后续）
 
 **退出：** T4.1～T4.3 已满足；T4.4 按下方勾选推进。
@@ -731,11 +731,11 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 ##### 模块与文件
 
 ```text
-kernel/include/brep/spatial/aabb.hpp      # Aabb: merge, overlaps, surface_area, expand
-kernel/include/brep/spatial/face_bvh.hpp  # FaceBvh, BuildQuality{Median, Sah}
+kernel/include/brep/spatial/Aabb.h      # Aabb: merge, overlaps, surface_area, expand
+kernel/include/brep/spatial/FaceBvh.h  # FaceBvh, BuildQuality{Median, Sah}
 kernel/src/spatial/aabb.cpp              # 可选：若头文件全 inline 可省略
-kernel/src/spatial/face_bvh.cpp          # 建树 + 查询
-tests/kernel/test_face_bvh.cpp           # 重叠/不相交/Median vs SAH 冒烟
+kernel/src/spatial/FaceBvh.cpp          # 建树 + 查询
+tests/kernel/TestFaceBvh.cpp           # 重叠/不相交/Median vs SAH 冒烟
 ```
 
 注册：`cmake/BrepCore.cmake`；由布尔或测试按需 include。

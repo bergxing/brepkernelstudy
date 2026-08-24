@@ -1,0 +1,38 @@
+---
+description: C++ Core Guidelines 错误处理 (E.*, ERR.*)
+globs: "**/*.{cpp,hpp}"
+alwaysApply: false
+---
+
+# 错误处理
+
+## 策略（与本项目一致）
+
+| 层级 | 模式 | 示例 |
+|------|------|------|
+| 布尔/特征 | 软失败 + 诊断 | `BooleanResult{ .diagnostics = "..." }` |
+| 验证 | 返回 `ValidateResult` / bool + 日志 | `validate_body` |
+| Viewer 命令 | `CommandResult::failed(msg)` | 用户可见中文提示 |
+| 不变量违反 | `BREP_ERROR` + early return | 不静默吞掉 |
+
+## Guideline 要点
+
+- **E.2**：Throw 仅用于 truly exceptional；本仓库 kernel **优先非异常**路径
+- **E.14**：用 purpose-specific 类型表达错误（`BooleanResult::ok()`）
+- **ERR.4**：错误信息应可诊断、可测试
+- 禁止空 `catch (...)` 且无日志（**E.12**）
+
+```cpp
+// ✅ 布尔软失败
+if (!eval.ok()) {
+  part.set_last_regen_detail(eval.diagnostics);
+  return false;
+}
+
+// ❌
+try { ... } catch (...) {}  // 无诊断
+```
+
+## 测试
+
+- 失败路径断言 `diagnostics` 非空，不只检查 `nullptr`。

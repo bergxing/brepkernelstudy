@@ -167,7 +167,7 @@ Qt 要点：仅 `installTranslator` **不会**自动改已创建控件上的文�
 推荐集中封装：
 
 ```cpp
-// apps/viewer/i18n/language_manager.hpp
+// apps/viewer/i18n/LanguageManager.h
 class LanguageManager : public QObject {
   // apply(QString lang_tag) -> bool
   // signals: languageChanged(QString)

@@ -1,4 +1,4 @@
-add_executable(brep_test_math kernel/test_math.cpp)
+add_executable(brep_test_math kernel/TestMath.cpp)
 target_link_libraries(brep_test_math PRIVATE brep GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(brep_test_math
@@ -6,7 +6,7 @@ gtest_discover_tests(brep_test_math
   DISCOVERY_MODE PRE_TEST
 )
 
-add_executable(brep_test_cdt kernel/test_cdt.cpp)
+add_executable(brep_test_cdt kernel/TestCdt.cpp)
 target_link_libraries(brep_test_cdt PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_cdt
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_cdt>
@@ -14,7 +14,7 @@ gtest_discover_tests(brep_test_cdt
   TEST_PREFIX "brep_test_cdt."
 )
 
-add_executable(brep_test_loop_sample kernel/test_loop_sample.cpp)
+add_executable(brep_test_loop_sample kernel/TestLoopSample.cpp)
 target_link_libraries(brep_test_loop_sample PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_loop_sample
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_loop_sample>
@@ -22,7 +22,7 @@ gtest_discover_tests(brep_test_loop_sample
   TEST_PREFIX "brep_test_loop_sample."
 )
 
-add_executable(brep_test_snap kernel/test_snap_query.cpp)
+add_executable(brep_test_snap kernel/TestSnapQuery.cpp)
 target_link_libraries(brep_test_snap PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_snap
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_snap>
@@ -30,7 +30,7 @@ gtest_discover_tests(brep_test_snap
   TEST_PREFIX "brep_test_snap."
 )
 
-add_executable(brep_test_sphere_surface kernel/test_sphere_surface.cpp)
+add_executable(brep_test_sphere_surface kernel/TestSphereSurface.cpp)
 target_link_libraries(brep_test_sphere_surface PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_sphere_surface
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_sphere_surface>
@@ -38,7 +38,7 @@ gtest_discover_tests(brep_test_sphere_surface
   TEST_PREFIX "brep_test_sphere_surface."
 )
 
-add_executable(brep_test_make_sphere kernel/test_make_sphere.cpp)
+add_executable(brep_test_make_sphere kernel/TestMakeSphere.cpp)
 target_link_libraries(brep_test_make_sphere PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_make_sphere
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_make_sphere>
@@ -46,7 +46,7 @@ gtest_discover_tests(brep_test_make_sphere
   TEST_PREFIX "brep_test_make_sphere."
 )
 
-add_executable(brep_test_tessellate_sphere kernel/test_tessellate_sphere.cpp)
+add_executable(brep_test_tessellate_sphere kernel/TestTessellateSphere.cpp)
 target_link_libraries(brep_test_tessellate_sphere PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_tessellate_sphere
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_tessellate_sphere>
@@ -54,7 +54,7 @@ gtest_discover_tests(brep_test_tessellate_sphere
   TEST_PREFIX "brep_test_tessellate_sphere."
 )
 
-add_executable(brep_test_extract_edges kernel/test_extract_edges.cpp)
+add_executable(brep_test_extract_edges kernel/TestExtractEdges.cpp)
 target_link_libraries(brep_test_extract_edges PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_extract_edges
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_extract_edges>
@@ -62,7 +62,7 @@ gtest_discover_tests(brep_test_extract_edges
   TEST_PREFIX "brep_test_extract_edges."
 )
 
-add_executable(brep_test_boolean_skeleton kernel/test_boolean_skeleton.cpp)
+add_executable(brep_test_boolean_skeleton kernel/TestBooleanSkeleton.cpp)
 target_link_libraries(brep_test_boolean_skeleton PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_boolean_skeleton
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_boolean_skeleton>
@@ -70,7 +70,7 @@ gtest_discover_tests(brep_test_boolean_skeleton
   TEST_PREFIX "brep_test_boolean_skeleton."
 )
 
-add_executable(brep_test_boolean_feature kernel/test_boolean_feature.cpp)
+add_executable(brep_test_boolean_feature kernel/TestBooleanFeature.cpp)
 target_link_libraries(brep_test_boolean_feature PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_boolean_feature
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_boolean_feature>
@@ -78,7 +78,7 @@ gtest_discover_tests(brep_test_boolean_feature
   TEST_PREFIX "brep_test_boolean_feature."
 )
 
-add_executable(brep_test_intersect_plane_plane kernel/test_intersect_plane_plane.cpp)
+add_executable(brep_test_intersect_plane_plane kernel/TestIntersectPlanePlane.cpp)
 target_link_libraries(brep_test_intersect_plane_plane PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_intersect_plane_plane
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_intersect_plane_plane>
@@ -86,7 +86,7 @@ gtest_discover_tests(brep_test_intersect_plane_plane
   TEST_PREFIX "brep_test_intersect_plane_plane."
 )
 
-add_executable(brep_test_box_boolean kernel/test_box_boolean.cpp)
+add_executable(brep_test_box_boolean kernel/TestBoxBoolean.cpp)
 target_link_libraries(brep_test_box_boolean PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_box_boolean
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_box_boolean>
@@ -94,7 +94,7 @@ gtest_discover_tests(brep_test_box_boolean
   TEST_PREFIX "brep_test_box_boolean."
 )
 
-add_executable(brep_test_inner_loop kernel/test_inner_loop.cpp)
+add_executable(brep_test_inner_loop kernel/TestInnerLoop.cpp)
 target_link_libraries(brep_test_inner_loop PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_inner_loop
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_inner_loop>
@@ -102,7 +102,7 @@ gtest_discover_tests(brep_test_inner_loop
   TEST_PREFIX "brep_test_inner_loop."
 )
 
-add_executable(brep_test_extrude_holes kernel/test_extrude_holes.cpp)
+add_executable(brep_test_extrude_holes kernel/TestExtrudeHoles.cpp)
 target_link_libraries(brep_test_extrude_holes PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_extrude_holes
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_extrude_holes>
@@ -110,7 +110,7 @@ gtest_discover_tests(brep_test_extrude_holes
   TEST_PREFIX "brep_test_extrude_holes."
 )
 
-add_executable(brep_test_tessellate_inner kernel/test_tessellate_inner.cpp)
+add_executable(brep_test_tessellate_inner kernel/TestTessellateInner.cpp)
 target_link_libraries(brep_test_tessellate_inner PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_tessellate_inner
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_tessellate_inner>
@@ -119,7 +119,7 @@ gtest_discover_tests(brep_test_tessellate_inner
 )
 
 add_executable(brep_test_tessellate_trimmed_sphere
-  kernel/test_tessellate_trimmed_sphere.cpp)
+  kernel/TestTessellateTrimmedSphere.cpp)
 target_link_libraries(brep_test_tessellate_trimmed_sphere PRIVATE brep
                       GTest::gtest_main)
 gtest_discover_tests(brep_test_tessellate_trimmed_sphere
@@ -129,7 +129,7 @@ gtest_discover_tests(brep_test_tessellate_trimmed_sphere
 )
 
 add_executable(brep_test_tessellate_untitled_union
-  kernel/test_tessellate_untitled_union.cpp)
+  kernel/TestTessellateUntitledUnion.cpp)
 target_link_libraries(brep_test_tessellate_untitled_union PRIVATE brep
                       GTest::gtest_main)
 gtest_discover_tests(brep_test_tessellate_untitled_union
@@ -138,7 +138,7 @@ gtest_discover_tests(brep_test_tessellate_untitled_union
   TEST_PREFIX "brep_test_tessellate_untitled_union."
 )
 
-add_executable(brep_test_planar_boolean kernel/test_planar_boolean.cpp)
+add_executable(brep_test_planar_boolean kernel/TestPlanarBoolean.cpp)
 target_link_libraries(brep_test_planar_boolean PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_planar_boolean
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_planar_boolean>
@@ -146,7 +146,7 @@ gtest_discover_tests(brep_test_planar_boolean
   TEST_PREFIX "brep_test_planar_boolean."
 )
 
-add_executable(brep_test_planar_classify kernel/test_planar_classify.cpp)
+add_executable(brep_test_planar_classify kernel/TestPlanarClassify.cpp)
 target_link_libraries(brep_test_planar_classify PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_planar_classify
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_planar_classify>
@@ -154,7 +154,7 @@ gtest_discover_tests(brep_test_planar_classify
   TEST_PREFIX "brep_test_planar_classify."
 )
 
-add_executable(brep_test_intersect_plane_sphere kernel/test_intersect_plane_sphere.cpp)
+add_executable(brep_test_intersect_plane_sphere kernel/TestIntersectPlaneSphere.cpp)
 target_link_libraries(brep_test_intersect_plane_sphere PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_intersect_plane_sphere
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_intersect_plane_sphere>
@@ -162,7 +162,7 @@ gtest_discover_tests(brep_test_intersect_plane_sphere
   TEST_PREFIX "brep_test_intersect_plane_sphere."
 )
 
-add_executable(brep_test_intersect_sphere_sphere kernel/test_intersect_sphere_sphere.cpp)
+add_executable(brep_test_intersect_sphere_sphere kernel/TestIntersectSphereSphere.cpp)
 target_link_libraries(brep_test_intersect_sphere_sphere PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_intersect_sphere_sphere
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_intersect_sphere_sphere>
@@ -170,7 +170,7 @@ gtest_discover_tests(brep_test_intersect_sphere_sphere
   TEST_PREFIX "brep_test_intersect_sphere_sphere."
 )
 
-add_executable(brep_test_sphere_box_boolean kernel/test_sphere_box_boolean.cpp)
+add_executable(brep_test_sphere_box_boolean kernel/TestSphereBoxBoolean.cpp)
 target_link_libraries(brep_test_sphere_box_boolean PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_sphere_box_boolean
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_sphere_box_boolean>
@@ -178,7 +178,7 @@ gtest_discover_tests(brep_test_sphere_box_boolean
   TEST_PREFIX "brep_test_sphere_box_boolean."
 )
 
-add_executable(brep_test_sphere_curved_boolean kernel/test_sphere_curved_boolean.cpp)
+add_executable(brep_test_sphere_curved_boolean kernel/TestSphereCurvedBoolean.cpp)
 target_link_libraries(brep_test_sphere_curved_boolean PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_sphere_curved_boolean
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_sphere_curved_boolean>
@@ -186,7 +186,7 @@ gtest_discover_tests(brep_test_sphere_curved_boolean
   TEST_PREFIX "brep_test_sphere_curved_boolean."
 )
 
-add_executable(brep_test_cylinder_surface kernel/test_cylinder_surface.cpp)
+add_executable(brep_test_cylinder_surface kernel/TestCylinderSurface.cpp)
 target_link_libraries(brep_test_cylinder_surface PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_cylinder_surface
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_cylinder_surface>
@@ -194,7 +194,7 @@ gtest_discover_tests(brep_test_cylinder_surface
   TEST_PREFIX "brep_test_cylinder_surface."
 )
 
-add_executable(brep_test_cylinder_intersect kernel/test_cylinder_intersect.cpp)
+add_executable(brep_test_cylinder_intersect kernel/TestCylinderIntersect.cpp)
 target_link_libraries(brep_test_cylinder_intersect PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_cylinder_intersect
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_cylinder_intersect>
@@ -202,7 +202,7 @@ gtest_discover_tests(brep_test_cylinder_intersect
   TEST_PREFIX "brep_test_cylinder_intersect."
 )
 
-add_executable(brep_test_face_bvh kernel/test_face_bvh.cpp)
+add_executable(brep_test_face_bvh kernel/TestFaceBvh.cpp)
 target_link_libraries(brep_test_face_bvh PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_face_bvh
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_face_bvh>
@@ -210,7 +210,7 @@ gtest_discover_tests(brep_test_face_bvh
   TEST_PREFIX "brep_test_face_bvh."
 )
 
-add_executable(brep_test_boolean_broadphase kernel/test_boolean_broadphase.cpp)
+add_executable(brep_test_boolean_broadphase kernel/TestBooleanBroadphase.cpp)
 target_link_libraries(brep_test_boolean_broadphase PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_boolean_broadphase
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_boolean_broadphase>

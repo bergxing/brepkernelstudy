@@ -147,17 +147,17 @@ tessellate_face(face, opts)
 
 | 路径 | 职责 |
 |------|------|
-| `kernel/include/brep/mesh/cdt.hpp` | CDT 数据结构与 `triangulate_constrained` |
+| `kernel/include/brep/mesh/Cdt.h` | CDT 数据结构与 `triangulate_constrained` |
 | `kernel/src/mesh/cdt.cpp` | CDT 实现 |
-| `kernel/src/mesh/loop_sample.cpp` | 边采样、球面缝展开、区域分组 |
-| `kernel/include/brep/mesh/loop_sample.hpp` | 采样 API（内部 / 测试可见） |
+| `kernel/src/mesh/LoopSample.cpp` | 边采样、球面缝展开、区域分组 |
+| `kernel/include/brep/mesh/LoopSample.h` | 采样 API（内部 / 测试可见） |
 | `kernel/src/mesh.cpp` | 编排；平面 / 球面走同一管线 |
-| `kernel/include/brep/topology.hpp` + `topology.cpp` | `outer_loops` |
+| `kernel/include/brep/Topology.h` + `topology.cpp` | `outer_loops` |
 | `kernel/src/validate.cpp` | 多 Outer 规则 |
-| `tests/kernel/test_cdt.cpp` | CDT 单元 |
-| `tests/kernel/test_tessellate_trimmed_sphere.cpp` | 球面裁剪 |
-| `tests/kernel/test_tessellate_inner.cpp` | 扩展贴角 / 多孔 |
-| `tests/kernel/test_inner_loop.cpp` | 多 Outer 校验 |
+| `tests/kernel/TestCdt.cpp` | CDT 单元 |
+| `tests/kernel/TestTessellateTrimmedSphere.cpp` | 球面裁剪 |
+| `tests/kernel/TestTessellateInner.cpp` | 扩展贴角 / 多孔 |
+| `tests/kernel/TestInnerLoop.cpp` | 多 Outer 校验 |
 
 圆柱第二批：`CylinderSurface::param_of` 已存在，采样器加 `SurfaceKind::Cylinder` 即可接入同一 CDT。
 

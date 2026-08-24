@@ -1,0 +1,29 @@
+---
+description: C++ Core Guidelines 基本原则（全项目 C++ 工作）
+globs: "**/*.{cpp,hpp,h}"
+alwaysApply: false
+---
+
+# C++ Core Guidelines — 基本原则
+
+编写或审查 C++ 时遵循 [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)。**本项目优先遵守仓库既有风格**（见 `.cursor/skills/cpp-core-guidelines/project-overrides.md`）。
+
+## 优先级
+
+1. **正确性**（类型安全、资源安全、明确所有权）
+2. **与现有代码一致**（命名、目录、API 分级）
+3. **Guideline 条文**（I/R/E/F/C/ES/Con/T）
+
+## 必须遵守（摘要）
+
+- **P.4/P.5**：Ideally correct program；编译期捕获错误
+- **I.11/I.12**：非拥有指针不 delete；非空用引用
+- **R.1–R.11**：RAII；`new`/`delete` 不散落业务代码
+- **F.16–F.21**： cheap in → 值或 `const&`；out → 非 const 引用或返回值
+- **E.2/E.14**：错误用返回值/`expected`/诊断字符串，避免空 catch
+- **Con.1–Con.5**：默认 `const`；不变量用 `const`/ `constexpr`
+- **ES.20–ES.23**：初始化；避免未初始化变量
+
+## 审查时
+
+涉及 kernel/viewer/布尔/IoC 时，读取 skill：`.cursor/skills/cpp-core-guidelines/SKILL.md`。

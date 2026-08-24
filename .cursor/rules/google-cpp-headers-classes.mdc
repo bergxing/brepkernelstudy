@@ -1,0 +1,81 @@
+---
+description: 头文件、类与函数布局（brep 约定）
+globs: "**/*.{cpp,hpp,h}"
+alwaysApply: false
+---
+
+# 头文件与类
+
+## 头文件
+
+- 自包含；Include What You Use
+- `#pragma once`
+- 前向声明仅在确需减编译依赖时使用
+
+## 类声明顺序
+
+```cpp
+class MyClass
+{
+public:
+    using ValueType = int;
+
+    static constexpr int kMaxSize = 100;
+
+    explicit MyClass(int value);
+    ~MyClass() override;
+
+    void Process();
+    int Count() const { return m_count; }
+    void SetCount(int count) { m_count = count; }
+
+protected:
+    // 子类需要时
+
+private:
+    void InternalHelper();
+
+    int m_count;
+    std::string m_displayName;
+};
+```
+
+## 类成员变量
+
+- **`class` 实例成员**：**`m_` + camelCase**（小驼峰），无论 `private` / `protected`
+- **禁止** 类成员使用 PascalCase 或无 `m_` 的 snake_case（`foo_`）
+- 访问器/修改器仍 PascalCase：`Count()` / `SetCount()`；参数 camelCase：`SetCount(int count)`
+
+```cpp
+class Part
+{
+    Model& Model() { return *m_model; }
+
+private:
+    std::unique_ptr<Model> m_model;
+    Guid m_activeBodyGuid;
+};
+```
+
+## struct
+
+- **仅** `struct` / 纯 DTO / 结果体：数据成员 **PascalCase**（无 `m_` 前缀）
+- 若 `struct` 内含复杂行为且需长期状态，优先改为 `class` 并用 `m_` 成员
+
+```cpp
+struct MeshOptions
+{
+    double TessellationTolerance;
+    bool MergeCoplanar;
+};
+```
+
+## 函数
+
+- PascalCase 名；短函数优先，复杂逻辑进 `.cpp`
+- 输出：返回值或 out 参数；Result 类型加 `[[nodiscard]]`
+
+## 本项目约束
+
+- Viewer 生产代码仅 `#include "api/..."`（ADR 0002）
+- Qt 类保持 Qt 惯例（`Q_OBJECT`、信号槽 PascalCase）

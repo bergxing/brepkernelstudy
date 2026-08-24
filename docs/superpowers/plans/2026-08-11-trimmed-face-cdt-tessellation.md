@@ -27,33 +27,33 @@
 
 | 文件 | 职责 |
 |------|------|
-| `kernel/include/brep/topology.hpp` | 声明 `Face::outer_loops()` |
+| `kernel/include/brep/Topology.h` | 声明 `Face::outer_loops()` |
 | `kernel/src/topology.cpp` | 实现 `outer_loops()` |
 | `kernel/src/validate.cpp` | Outer 数量 `>= 1` |
-| `kernel/include/brep/mesh/cdt.hpp` | CDT 类型 + `triangulate_constrained` |
+| `kernel/include/brep/mesh/Cdt.h` | CDT 类型 + `triangulate_constrained` |
 | `kernel/src/mesh/cdt.cpp` | Bowyer–Watson + 约束恢复 |
-| `kernel/include/brep/mesh/loop_sample.hpp` | 采样环 / 区域类型与 API |
-| `kernel/src/mesh/loop_sample.cpp` | 边采样、缝展开、区域分组 |
+| `kernel/include/brep/mesh/LoopSample.h` | 采样环 / 区域类型与 API |
+| `kernel/src/mesh/LoopSample.cpp` | 边采样、缝展开、区域分组 |
 | `kernel/src/mesh.cpp` | 编排 Plane + Sphere 的 CDT；Task 10 完成后移除耳切路径 |
 | `cmake/BrepCore.cmake` | 将新 `.cpp` 编译进 `brep_core` |
 | `tests/CMakeLists.txt` | 注册新测试可执行文件 |
-| `tests/kernel/test_inner_loop.cpp` | 多 Outer 校验 |
-| `tests/kernel/test_cdt.cpp` | CDT 单元测试 |
-| `tests/kernel/test_loop_sample.cpp` | 采样 + 缝 |
-| `tests/kernel/test_tessellate_inner.cpp` | 贴角孔 |
-| `tests/kernel/test_tessellate_trimmed_sphere.cpp` | 裁剪球面 |
-| `tests/kernel/test_tessellate_untitled_union.cpp` | `untitled.xl` 构型回归 |
+| `tests/kernel/TestInnerLoop.cpp` | 多 Outer 校验 |
+| `tests/kernel/TestCdt.cpp` | CDT 单元测试 |
+| `tests/kernel/TestLoopSample.cpp` | 采样 + 缝 |
+| `tests/kernel/TestTessellateInner.cpp` | 贴角孔 |
+| `tests/kernel/TestTessellateTrimmedSphere.cpp` | 裁剪球面 |
+| `tests/kernel/TestTessellateUntitledUnion.cpp` | `untitled.xl` 构型回归 |
 
 ---
 
 ### 任务 1：多 Outer 拓扑 + 校验
 
 **文件：**
-- 修改：`kernel/include/brep/topology.hpp`
+- 修改：`kernel/include/brep/Topology.h`
 - 修改：`kernel/src/topology.cpp`
 - 修改：`kernel/src/validate.cpp`（Outer 数量检查约第 44–57 行）
-- 修改：`tests/kernel/test_inner_loop.cpp`（`ExactlyOneOuterRequired` → 允许多个）
-- 测试：`tests/kernel/test_inner_loop.cpp`
+- 修改：`tests/kernel/TestInnerLoop.cpp`（`ExactlyOneOuterRequired` → 允许多个）
+- 测试：`tests/kernel/TestInnerLoop.cpp`
 
 **接口：**
 - 消费：现有 `Face::loops`、`LoopType`
@@ -103,7 +103,7 @@ cmake --build cmake-build-mingw-debug --target brep_test_inner_loop -j 8
 
 - [ ] **步骤 3：实现 `outer_loops` + 校验变更**
 
-在 `topology.hpp` 的 `Face` 内：
+在 `Topology.h` 的 `Face` 内：
 
 ```cpp
 [[nodiscard]] std::vector<Loop*> outer_loops() const;
@@ -144,7 +144,7 @@ if (outer_count == 0) {
 - [ ] **步骤 5：提交**
 
 ```powershell
-git add kernel/include/brep/topology.hpp kernel/src/topology.cpp kernel/src/validate.cpp tests/kernel/test_inner_loop.cpp
+git add kernel/include/brep/Topology.h kernel/src/topology.cpp kernel/src/validate.cpp tests/kernel/TestInnerLoop.cpp
 git commit -m "Allow multiple outer loops on a face."
 ```
 
@@ -153,14 +153,14 @@ git commit -m "Allow multiple outer loops on a face."
 ### 任务 2：CDT 网格 + 无约束 Delaunay
 
 **文件：**
-- 新建：`kernel/include/brep/mesh/cdt.hpp`
+- 新建：`kernel/include/brep/mesh/Cdt.h`
 - 新建：`kernel/src/mesh/cdt.cpp`
 - 修改：`cmake/BrepCore.cmake`（添加 `mesh/cdt.cpp`）
-- 新建：`tests/kernel/test_cdt.cpp`
+- 新建：`tests/kernel/TestCdt.cpp`
 - 修改：`tests/CMakeLists.txt`（注册 `brep_test_cdt`）
 
 **接口：**
-- 消费：`brep/math.hpp` 中的 `brep::Point2d`
+- 消费：`brep/Math.h` 中的 `brep::Point2d`
 - 产出：
 
 ```cpp
@@ -185,11 +185,11 @@ struct CdtResult {
 
 - [ ] **步骤 1：编写失败单元测试（正方形 → 2 个三角形）**
 
-`tests/kernel/test_cdt.cpp`：
+`tests/kernel/TestCdt.cpp`：
 
 ```cpp
-#include "brep/mesh/cdt.hpp"
-#include <gtest/gtest.h>
+#include "brep/mesh/Cdt.h"
+#include <gtest/Gtest.h>
 
 using brep::Point2d;
 using brep::mesh::triangulate_constrained;
@@ -214,7 +214,7 @@ TEST(Cdt, UnconstrainedSquareTwoTriangles) {
 在 `tests/CMakeLists.txt` 中注册（参照其他测试）：
 
 ```cmake
-add_executable(brep_test_cdt kernel/test_cdt.cpp)
+add_executable(brep_test_cdt kernel/TestCdt.cpp)
 target_link_libraries(brep_test_cdt PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_cdt
   WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_cdt>
@@ -233,7 +233,7 @@ cmake --build cmake-build-mingw-debug --target brep_test_cdt -j 8
 
 - [ ] **步骤 3：最小 Bowyer–Watson 实现**
 
-用上述 API 创建 `cdt.hpp`。
+用上述 API 创建 `Cdt.h`。
 
 在 `cdt.cpp` 中至少实现：
 1. 覆盖所有点（+ 边距）的包围超级三角形。
@@ -259,7 +259,7 @@ cmake --build cmake-build-mingw-debug --target brep_test_cdt -j 8
 - [ ] **步骤 5：提交**
 
 ```powershell
-git add kernel/include/brep/mesh/cdt.hpp kernel/src/mesh/cdt.cpp cmake/BrepCore.cmake tests/kernel/test_cdt.cpp tests/CMakeLists.txt
+git add kernel/include/brep/mesh/Cdt.h kernel/src/mesh/cdt.cpp cmake/BrepCore.cmake tests/kernel/TestCdt.cpp tests/CMakeLists.txt
 git commit -m "Add parametric CDT scaffold with unconstrained Delaunay."
 ```
 
@@ -269,7 +269,7 @@ git commit -m "Add parametric CDT scaffold with unconstrained Delaunay."
 
 **文件：**
 - 修改：`kernel/src/mesh/cdt.cpp`
-- 修改：`tests/kernel/test_cdt.cpp`
+- 修改：`tests/kernel/TestCdt.cpp`
 
 **接口：**
 - 消费：任务 2 的 `triangulate_constrained`
@@ -310,7 +310,7 @@ TEST(Cdt, SquareWithHoleKeepsBoundaryAndDropsInterior) {
 }
 ```
 
-在测试文件中完整实现重心坐标辅助函数（从 `test_tessellate_inner.cpp` 复制模式）。
+在测试文件中完整实现重心坐标辅助函数（从 `TestTessellateInner.cpp` 复制模式）。
 
 - [ ] **步骤 2：运行 — 预期 FAIL**
 
@@ -326,7 +326,7 @@ TEST(Cdt, SquareWithHoleKeepsBoundaryAndDropsInterior) {
 - 对每条约束 `(i,j)`：当线段不在网格中时，找相交边；若可翻转且翻转使端点更接近连通，则翻转；否则在约束上插入 Steiner 中点，分裂，继续。
 - 标记约束边，恢复后翻转不得破坏它们。
 - 实现 `point_in_polygon`（射线法）用于过滤。
-- 在 `cdt.hpp` 中暴露 `triangulate_polygon_with_holes`。
+- 在 `Cdt.h` 中暴露 `triangulate_polygon_with_holes`。
 
 - [ ] **步骤 4：运行 — 预期 PASS**
 
@@ -340,7 +340,7 @@ cmake --build cmake-build-mingw-debug --target brep_test_cdt -j 8
 - [ ] **步骤 5：提交**
 
 ```powershell
-git add kernel/include/brep/mesh/cdt.hpp kernel/src/mesh/cdt.cpp tests/kernel/test_cdt.cpp
+git add kernel/include/brep/mesh/Cdt.h kernel/src/mesh/cdt.cpp tests/kernel/TestCdt.cpp
 git commit -m "Recover CDT constraints and triangulate polygons with holes."
 ```
 
@@ -349,10 +349,10 @@ git commit -m "Recover CDT constraints and triangulate polygons with holes."
 ### 任务 4：环边采样（直线 + 圆）
 
 **文件：**
-- 新建：`kernel/include/brep/mesh/loop_sample.hpp`
-- 新建：`kernel/src/mesh/loop_sample.cpp`
+- 新建：`kernel/include/brep/mesh/LoopSample.h`
+- 新建：`kernel/src/mesh/LoopSample.cpp`
 - 修改：`cmake/BrepCore.cmake`
-- 新建：`tests/kernel/test_loop_sample.cpp`
+- 新建：`tests/kernel/TestLoopSample.cpp`
 - 修改：`tests/CMakeLists.txt`
 
 **接口：**
@@ -417,9 +417,9 @@ git commit -m "Add deflection-based loop edge sampling for tessellation."
 ### 任务 5：区域分组 + 平面 CDT 细分
 
 **文件：**
-- 修改：`kernel/src/mesh/loop_sample.cpp` / `.hpp`（添加 `group_face_regions`）
+- 修改：`kernel/src/mesh/LoopSample.cpp` / `.hpp`（添加 `group_face_regions`）
 - 修改：`kernel/src/mesh.cpp`（`tessellate_plane_face` → CDT 路径）
-- 测试：`tests/kernel/test_tessellate_inner.cpp`（现有测试须保持通过）
+- 测试：`tests/kernel/TestTessellateInner.cpp`（现有测试须保持通过）
 
 **接口：**
 - 消费：`Face::outer_loops()`、`inner_loops()`、`sample_loop`、`triangulate_polygon_with_holes`
@@ -476,8 +476,8 @@ git commit -m "Tessellate planar faces with parametric CDT."
 ### 任务 6：贴角孔（Sphere∪Box 平面情形）
 
 **文件：**
-- 修改：`tests/kernel/test_tessellate_inner.cpp`
-- 修改：`kernel/src/mesh/cdt.cpp` / `loop_sample.cpp`（若需共享顶点合并）
+- 修改：`tests/kernel/TestTessellateInner.cpp`
+- 修改：`kernel/src/mesh/cdt.cpp` / `LoopSample.cpp`（若需共享顶点合并）
 
 **接口：**
 - 消费：任务 5 的平面细分
@@ -514,9 +514,9 @@ git commit -m "Support corner-touching inner loops in planar CDT tessellation."
 ### 任务 7：球面 UV 缝展开
 
 **文件：**
-- 修改：`kernel/include/brep/mesh/loop_sample.hpp`
-- 修改：`kernel/src/mesh/loop_sample.cpp`
-- 修改：`tests/kernel/test_loop_sample.cpp`
+- 修改：`kernel/include/brep/mesh/LoopSample.h`
+- 修改：`kernel/src/mesh/LoopSample.cpp`
+- 修改：`tests/kernel/TestLoopSample.cpp`
 
 **接口：**
 - 产出：
@@ -564,7 +564,7 @@ git commit -m "Unwrap sphere loop UV across the periodic seam."
 
 **文件：**
 - 修改：`kernel/src/mesh.cpp` — 当存在 `outer_loop()` 时，用 CDT 路径替换 `tessellate_sphere_face` 整网格
-- 新建：`tests/kernel/test_tessellate_trimmed_sphere.cpp`
+- 新建：`tests/kernel/TestTessellateTrimmedSphere.cpp`
 - 修改：`tests/CMakeLists.txt`
 - 保持完整闭合球（`make_sphere` 单面带缝）可用：若唯一 outer 采样覆盖全参数域，CDT 仍填满球面；或在环为标准缝+极点时检测闭合解析球（现有路径）。**本任务规则：** 始终从采样环使用 CDT；若计数变化，更新 `brep_test_tessellate_sphere`，但法向/覆盖必须仍有效。
 
@@ -609,7 +609,7 @@ git commit -m "Tessellate trimmed sphere faces with seam-aware CDT."
 ### 任务 9：`untitled.xl` Sphere∪Box 细分回归
 
 **文件：**
-- 新建：`tests/kernel/test_tessellate_untitled_union.cpp`
+- 新建：`tests/kernel/TestTessellateUntitledUnion.cpp`
 - 修改：`tests/CMakeLists.txt`
 
 **接口：**

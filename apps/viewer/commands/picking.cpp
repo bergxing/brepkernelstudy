@@ -1,16 +1,21 @@
-#include "commands/picking.hpp"
+#include "commands/Picking.h"
 
 #include <Eigen/Dense>
 
 #include <cmath>
 
-namespace brep::viewer::commands {
-namespace {
+namespace brep::viewer::commands
+{
+namespace
+{
 
-Eigen::Matrix4f to_eigen(const float m[16]) {
+Eigen::Matrix4f to_eigen(const float m[16])
+{
   Eigen::Matrix4f M;
-  for (int c = 0; c < 4; ++c) {
-    for (int r = 0; r < 4; ++r) {
+  for (int c = 0; c < 4; ++c)
+  {
+    for (int r = 0; r < 4; ++r)
+  {
       M(r, c) = m[c * 4 + r];
     }
   }
@@ -20,18 +25,22 @@ Eigen::Matrix4f to_eigen(const float m[16]) {
 }  // namespace
 
 bool world_to_screen(const Camera& cam, int viewport_w, int viewport_h,
-                     const Point3d& world, float& out_sx, float& out_sy) {
+                     const Point3d& world, float& out_sx, float& out_sy)
+{
   if (viewport_w <= 0 || viewport_h <= 0) return false;
 
   const float aspect = float(viewport_w) / float(viewport_h);
   float view[16];
   float proj[16];
   cam.view_matrix(view);
-  if (cam.ortho) {
+  if (cam.ortho)
+  {
     const float half_h = cam.ortho_half_h;
     const float half_w = half_h * aspect;
     Camera::ortho_matrix(half_w, half_h, 0.05f, 500.0f, proj);
-  } else {
+  }
+  else
+  {
     Camera::perspective(cam.fov_deg, aspect, 0.05f, 500.0f, proj);
   }
 
@@ -53,18 +62,22 @@ bool world_to_screen(const Camera& cam, int viewport_w, int viewport_h,
 }
 
 bool screen_to_ray(const Camera& cam, int viewport_w, int viewport_h, float sx,
-                   float sy, Point3d& out_origin, Vector3d& out_dir) {
+                   float sy, Point3d& out_origin, Vector3d& out_dir)
+{
   if (viewport_w <= 0 || viewport_h <= 0) return false;
 
   const float aspect = float(viewport_w) / float(viewport_h);
   float view[16];
   float proj[16];
   cam.view_matrix(view);
-  if (cam.ortho) {
+  if (cam.ortho)
+  {
     const float half_h = cam.ortho_half_h;
     const float half_w = half_h * aspect;
     Camera::ortho_matrix(half_w, half_h, 0.05f, 500.0f, proj);
-  } else {
+  }
+  else
+  {
     Camera::perspective(cam.fov_deg, aspect, 0.05f, 500.0f, proj);
   }
 
@@ -96,7 +109,8 @@ bool screen_to_ray(const Camera& cam, int viewport_w, int viewport_h, float sx,
 }
 
 bool intersect_plane_y(const Point3d& origin, const Vector3d& dir, double plane_y,
-                       Point3d& out_hit) {
+                       Point3d& out_hit)
+{
   if (std::abs(dir.y()) < 1e-9) return false;
   const double t = (plane_y - origin.y()) / dir.y();
   if (t < 0.0) return false;
@@ -106,7 +120,8 @@ bool intersect_plane_y(const Point3d& origin, const Vector3d& dir, double plane_
 
 bool intersect_plane(const Point3d& origin, const Vector3d& dir,
                      const Point3d& plane_point, const Vector3d& plane_normal,
-                     Point3d& out_hit) {
+                     Point3d& out_hit)
+                     {
   const double denom = dir.dot(plane_normal);
   if (std::abs(denom) < 1e-9) return false;
   const double t = (plane_point - origin).dot(plane_normal) / denom;
@@ -115,11 +130,13 @@ bool intersect_plane(const Point3d& origin, const Vector3d& dir,
   return true;
 }
 
-namespace {
+namespace
+{
 
 bool intersect_triangle(const Point3d& origin, const Vector3d& dir,
                         const Point3d& v0, const Point3d& v1, const Point3d& v2,
-                        double& out_t) {
+                        double& out_t)
+                        {
   constexpr double kEps = 1e-9;
   const Vector3d e1 = v1 - v0;
   const Vector3d e2 = v2 - v0;
@@ -143,20 +160,23 @@ bool intersect_triangle(const Point3d& origin, const Vector3d& dir,
 
 bool intersect_mesh(const Point3d& origin, const Vector3d& dir,
                     const TriangleMesh& mesh, const Point3d& origin_offset,
-                    double& out_t) {
+                    double& out_t)
+                    {
   bool hit = false;
   double best = 0.0;
-  const auto& idx = mesh.indices;
-  const auto& verts = mesh.vertices;
+  const auto& idx = mesh.Indices;
+  const auto& verts = mesh.Vertices;
   const Vector3d offset{origin_offset.x(), origin_offset.y(),
                         origin_offset.z()};
-  for (std::size_t i = 0; i + 2 < idx.size(); i += 3) {
-    const Point3d v0 = verts[idx[i]].position + offset;
-    const Point3d v1 = verts[idx[i + 1]].position + offset;
-    const Point3d v2 = verts[idx[i + 2]].position + offset;
+  for (std::size_t i = 0; i + 2 < idx.size(); i += 3)
+  {
+    const Point3d v0 = verts[idx[i]].Position + offset;
+    const Point3d v1 = verts[idx[i + 1]].Position + offset;
+    const Point3d v2 = verts[idx[i + 2]].Position + offset;
     double t = 0.0;
     if (!intersect_triangle(origin, dir, v0, v1, v2, t)) continue;
-    if (!hit || t < best) {
+    if (!hit || t < best)
+    {
       best = t;
       hit = true;
     }

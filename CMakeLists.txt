@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ---------------------------------------------------------------------------
 # Thin aggregator (ADR 0004): kernel subproject + optional viewer.
-# IDE: open this folder; preset clion-mingw (Qt MinGW).
+# IDE: open this folder; preset clion-mingw (Qt MinGW)
 # ---------------------------------------------------------------------------
 get_filename_component(BREP_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 include(${BREP_REPO_ROOT}/cmake/BrepLibType.cmake)

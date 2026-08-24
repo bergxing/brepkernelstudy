@@ -1,0 +1,112 @@
+---
+description: 项目 C++ 命名与格式（brep 约定）
+globs: "**/*.{cpp,hpp,h}"
+alwaysApply: false
+---
+
+# 命名与格式
+
+详见 `.cursor/skills/google-cpp-style/project-overrides.md`。
+
+## 命名
+
+| 元素 | 风格 | 示例 |
+|------|------|------|
+| 类 / 结构体 | PascalCase | `BooleanPipeline`, `Body` |
+| 函数 | PascalCase | `Evaluate`, `RegisterBody` |
+| 变量 / 参数 | camelCase | `bodyCount`, `startIndex` |
+| **类成员变量** | **`m_` + camelCase** | `m_evaluator`, `m_bodyGuid` |
+| struct / DTO 成员 | **PascalCase（强制，无 `m_`）** | `Ok`, `Failed`, `EntityGuid` |
+| 接口 | `I` + PascalCase | `IBooleanEvaluator` |
+| 常量 | kPascalCase | `kMaxSize` |
+| **源文件** | **PascalCase + `.cpp`** | `Part.cpp`, `MainWindow.cpp` |
+| **头文件** | **PascalCase + `.h`** | `Model.h`, `BooleanPipeline.h`, `api/Core.h` |
+
+> **禁止**使用 snake_case 文件名或 `.hpp` 后缀作为项目头文件（第三方库如 `<entt/entt.hpp>` 除外）。
+> 迁移方向：`model.hpp` → `Model.h`，`#include "brep/model.hpp"` → `#include "brep/Model.h"`。
+> 脚本：`scripts/migrate_style.py` + `scripts/fix_includes.py`。
+
+```cpp
+class MyClass
+{
+public:
+    void Process();
+
+private:
+    int m_count;
+    Guid m_bodyGuid;
+};
+
+struct Options
+{
+    int MaxRetries;
+    bool Verbose;
+};
+
+struct RegenResult
+{
+    bool Ok{true};
+    FeatureId Failed{};
+    std::string Message;
+};
+
+// ❌ struct 字段不要用 snake_case：ok / failed / message / status / dof
+
+void Foo(int itemCount)
+{
+    int localIndex = 0;
+}
+```
+
+## 格式
+
+- **缩进（强制）**：**4 空格一级**；**禁止 Tab**；**禁止 2 空格缩进**
+- **括号**：Allman — `{` 在声明下一行
+- **行宽**：80 字符
+- **include 顺序**（组间空行）：自身 `.h` → 项目内 → 标准库/第三方 → Qt
+- **工具**：根目录 `.clang-format`（`IndentWidth: 4`、`UseTab: Never`、`BreakBeforeBraces: Allman`）
+
+### 缩进层级（每一级 +4 空格）
+
+| 层级 | 示例 |
+|------|------|
+| 命名空间 / 顶层声明 | `class Foo` 顶格（namespace 内不额外缩进） |
+| 类访问说明符 | `public:` / `private:` 与 `{` 同级 |
+| 类成员 / 函数声明 | 相对 `{` 缩进 **4 空格** |
+| 函数体语句 | 相对函数声明再缩进 **4 空格**（共 8 空格） |
+| 嵌套块（`if`/`for`/`while`） | 每嵌套一层再 **+4 空格** |
+
+```cpp
+namespace brep
+{
+
+class MyClass
+{
+public:
+    void Process(int itemCount)
+    {
+        for (int i = 0; i < itemCount; ++i)
+        {
+            DoWork(i);
+        }
+    }
+
+private:
+    int m_count;
+};
+
+}  // namespace brep
+```
+
+> 存量文件若仍为 2 空格（如部分 `Document.h`），**新改/新文件必须 4 空格**；触及时优先按本规范重排。
+
+## 文件与 include
+
+- 项目头文件：**PascalCase + `.h`**；源文件：**PascalCase + `.cpp`**
+- `#include` 路径与磁盘文件名一致（如 `"brep/Model.h"`、`"MainWindow.h"`）
+- 勿将 include 改指向 `.hpp` 或 snake_case 路径；`scripts/fix_includes_to_hpp.py` 已废弃
+
+## 注释
+
+- 公共 API：说明做什么、前置/后置、非常规所有权
+- 实现：只解释非显然逻辑

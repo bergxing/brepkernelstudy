@@ -1,0 +1,39 @@
+---
+description: Google C++ Style 基本原则（全项目 C++ 工作）
+globs: "**/*.{cpp,hpp,h}"
+alwaysApply: false
+---
+
+# C++ 风格 — 基本原则
+
+以 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) 为参考，**本项目命名与格式以 project-overrides 为准**（见 `.cursor/skills/google-cpp-style/project-overrides.md`）。
+
+## 优先级
+
+1. **项目命名/格式约定**（PascalCase 函数、4 空格、Allman 括号）
+2. **与相邻新代码一致**
+3. **Google Style 其余条文**（IWYU、explicit、override 等）
+
+## 与 Core Guidelines 的分工
+
+| 维度 | 风格规范 | Core Guidelines |
+|------|----------|-----------------|
+| 命名、格式、注释 | ✅ 主规范 | 辅助 |
+| 所有权、RAII、接口 | 辅助 | ✅ 主规范 |
+
+冲突时：**项目 ADR / project-overrides > 仓库惯例 > Core Guidelines > 纯 Google 条文**。
+
+## 必须遵守（摘要）
+
+- 类/函数/类型：**PascalCase**；变量/参数：**camelCase**
+- **类成员变量**：**`m_` + camelCase**（禁止 PascalCase / `foo_`）
+- **struct / DTO 数据成员**：**PascalCase**；**禁止 snake_case**（`ok`/`failed`/`message` 等）
+- **4 空格**缩进（每一级 +4；**禁止 Tab / 2 空格**）；**Allman** 括号（`{` 下一行）
+- Self-contained headers；Include What You Use；`#pragma once`
+- `explicit` 单参构造；`override` / `final`
+- `nullptr`；禁止 C 风格 cast；数据成员 **private**
+- 禁止 `using namespace`
+
+## 审查时
+
+读取 `.cursor/skills/google-cpp-style/SKILL.md`。

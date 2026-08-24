@@ -6,7 +6,7 @@
 
 **Architecture:** Kernel `query_snap_candidates` emits world-space B-Rep candidates; Viewer `AccuSnap::resolve` applies aperture, priority, grid, settings/keys, markers/tip; tools consume a single `PickResult`.
 
-**Tech Stack:** C++20, CMake/Ninja (MinGW), GoogleTest, Qt 6 Widgets, existing `picking.hpp` / `CommandContext` / `ITool`.
+**Tech Stack:** C++20, CMake/Ninja (MinGW), GoogleTest, Qt 6 Widgets, existing `Picking.h` / `CommandContext` / `ITool`.
 
 ## Global Constraints
 
@@ -23,23 +23,23 @@
 
 | File | Responsibility |
 |------|----------------|
-| `kernel/include/brep/snap/snap_types.hpp` | `SnapKind`, `SnapCandidate`, `SnapQuery` |
-| `kernel/include/brep/snap/snap_query.hpp` | `query_snap_candidates` declaration |
-| `kernel/include/api/snap.hpp` | Graded public include |
-| `kernel/src/snap/snap_query.cpp` | Candidate generation |
-| `cmake/BrepCore.cmake` | Compile `snap_query.cpp` into `brep_core` |
-| `tests/kernel/test_snap_query.cpp` | Kernel gtests |
+| `kernel/include/brep/snap/SnapTypes.h` | `SnapKind`, `SnapCandidate`, `SnapQuery` |
+| `kernel/include/brep/snap/SnapQuery.h` | `query_snap_candidates` declaration |
+| `kernel/include/api/Snap.h` | Graded public include |
+| `kernel/src/snap/SnapQuery.cpp` | Candidate generation |
+| `cmake/BrepCore.cmake` | Compile `SnapQuery.cpp` into `brep_core` |
+| `tests/kernel/TestSnapQuery.cpp` | Kernel gtests |
 | `tests/CMakeLists.txt` | Register `brep_test_snap` |
-| `apps/viewer/commands/snap/snap_types.hpp` | Viewer `PickResult`, settings/session wrappers (or include kernel types) |
-| `apps/viewer/commands/snap/snap_settings.hpp/.cpp` | Settings + QSettings load/save |
-| `apps/viewer/commands/snap/accusnap.hpp/.cpp` | `resolve` + scoring + workplane/grid |
-| `apps/viewer/commands/snap/snap_overlay.hpp/.cpp` | Marker `EdgeMesh` glyphs |
-| `apps/viewer/commands/command_types.hpp` | Inject settings/session (+ optional tip/overlay callbacks) |
-| `apps/viewer/ui/commands_bridge.cpp` | Wire ctx fields from MainWindow |
-| `apps/viewer/commands/tools/create_*.cpp`, `copy_tool.cpp` | Use AccuSnap |
-| `apps/viewer/ui/cursor_tip.cpp` (+ callers) | Show snap kind |
-| `apps/viewer/ui/main_window_menus.cpp` | Toolbar toggle + Snap Settings… |
-| `apps/viewer/ui/snap_settings_dialog.hpp/.cpp` | Settings dialog |
+| `apps/viewer/commands/snap/SnapTypes.h` | Viewer `PickResult`, settings/session wrappers (or include kernel types) |
+| `apps/viewer/commands/snap/SnapSettings.h/.cpp` | Settings + QSettings load/save |
+| `apps/viewer/commands/snap/Accusnap.h/.cpp` | `resolve` + scoring + workplane/grid |
+| `apps/viewer/commands/snap/SnapOverlay.h/.cpp` | Marker `EdgeMesh` glyphs |
+| `apps/viewer/commands/CommandTypes.h` | Inject settings/session (+ optional tip/overlay callbacks) |
+| `apps/viewer/ui/CommandsBridge.cpp` | Wire ctx fields from MainWindow |
+| `apps/viewer/commands/tools/create_*.cpp`, `CopyTool.cpp` | Use AccuSnap |
+| `apps/viewer/ui/CursorTip.cpp` (+ callers) | Show snap kind |
+| `apps/viewer/ui/MainWindowMenus.cpp` | Toolbar toggle + Snap Settings… |
+| `apps/viewer/ui/SnapSettingsDialog.h/.cpp` | Settings dialog |
 | `apps/viewer/CMakeLists.txt` | New sources |
 | `apps/viewer/i18n/xcad_zh_CN.ts` | Translations |
 
@@ -48,12 +48,12 @@
 ### Task 1: Kernel snap types + Endpoint/Midpoint/Center
 
 **Files:**
-- Create: `kernel/include/brep/snap/snap_types.hpp`
-- Create: `kernel/include/brep/snap/snap_query.hpp`
-- Create: `kernel/include/api/snap.hpp`
-- Create: `kernel/src/snap/snap_query.cpp`
+- Create: `kernel/include/brep/snap/SnapTypes.h`
+- Create: `kernel/include/brep/snap/SnapQuery.h`
+- Create: `kernel/include/api/Snap.h`
+- Create: `kernel/src/snap/SnapQuery.cpp`
 - Modify: `cmake/BrepCore.cmake`
-- Create: `tests/kernel/test_snap_query.cpp`
+- Create: `tests/kernel/TestSnapQuery.cpp`
 - Modify: `tests/CMakeLists.txt`
 
 **Interfaces:**
@@ -66,14 +66,14 @@
 
 - [ ] **Step 1: Write failing tests**
 
-Create `tests/kernel/test_snap_query.cpp`:
+Create `tests/kernel/TestSnapQuery.cpp`:
 
 ```cpp
-#include "api/core.hpp"
-#include "api/modeling.hpp"
-#include "api/snap.hpp"
+#include "api/Core.h"
+#include "api/Modeling.h"
+#include "api/Snap.h"
 
-#include <gtest/gtest.h>
+#include <gtest/Gtest.h>
 
 #include <algorithm>
 #include <cmath>
@@ -131,7 +131,7 @@ Expected: FAIL (missing headers / target).
 
 - [ ] **Step 3: Implement types + query (Endpoint/Midpoint/Center only)**
 
-`snap_types.hpp` — bitflag enum:
+`SnapTypes.h` — bitflag enum:
 
 ```cpp
 enum class SnapKind : std::uint32_t {
@@ -147,7 +147,7 @@ enum class SnapKind : std::uint32_t {
 };
 ```
 
-`snap_query.cpp` logic:
+`SnapQuery.cpp` logic:
 - Walk `body->shells` → faces → loops → coedges → unique `Edge*` set.
 - Endpoint: emit `v0`/`v1` positions; dedupe points within `tolerance`.
 - Midpoint: `edge->curve->eval(0.5*(t0+t1))` if curve else midpoint of endpoints.
@@ -155,8 +155,8 @@ enum class SnapKind : std::uint32_t {
   - Planar face: average of outer-loop vertex positions (deduped).
   - Sphere heuristic: if face count high and vertices share a common radius to centroid within relative tolerance, emit that centroid once per body (covers `make_sphere`).
 
-Add `snap_query.cpp` to `BrepCore.cmake`.  
-`api/snap.hpp` includes `brep/snap/snap_types.hpp` + `brep/snap/snap_query.hpp`.
+Add `SnapQuery.cpp` to `BrepCore.cmake`.  
+`api/Snap.h` includes `brep/snap/SnapTypes.h` + `brep/snap/SnapQuery.h`.
 
 - [ ] **Step 4: Run tests — expect PASS**
 
@@ -170,7 +170,7 @@ Expected: all SnapQuery tests PASS.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add kernel/include/brep/snap kernel/include/api/snap.hpp kernel/src/snap cmake/BrepCore.cmake tests/kernel/test_snap_query.cpp tests/CMakeLists.txt
+git add kernel/include/brep/snap kernel/include/api/Snap.h kernel/src/snap cmake/BrepCore.cmake tests/kernel/TestSnapQuery.cpp tests/CMakeLists.txt
 git commit -m "Add kernel SnapQuery for endpoint, midpoint, and center candidates."
 ```
 
@@ -179,8 +179,8 @@ git commit -m "Add kernel SnapQuery for endpoint, midpoint, and center candidate
 ### Task 2: Kernel Intersection / Perpendicular / Nearest
 
 **Files:**
-- Modify: `kernel/src/snap/snap_query.cpp`
-- Modify: `tests/kernel/test_snap_query.cpp`
+- Modify: `kernel/src/snap/SnapQuery.cpp`
+- Modify: `tests/kernel/TestSnapQuery.cpp`
 
 **Interfaces:**
 - Consumes: Task 1 API; `SnapQuery::reference_point`
@@ -226,7 +226,7 @@ Implement `LineLineIntersection` with two boxes whose edges actually intersect, 
 
 - [ ] **Step 2: Run — expect FAIL on new asserts**
 
-- [ ] **Step 3: Implement line helpers in `snap_query.cpp`**
+- [ ] **Step 3: Implement line helpers in `SnapQuery.cpp`**
 
 - `segment_closest_points(a0,a1,b0,b1)` → points + distance; if distance ≤ tolerance emit Intersection.
 - Perpendicular: for each line edge, foot from `reference_point` clamped to segment.
@@ -246,13 +246,13 @@ git commit -m "Extend SnapQuery with line intersection, perpendicular, and neare
 ### Task 3: Viewer SnapSettings / SnapSession + AccuSnap::resolve (1a)
 
 **Files:**
-- Create: `apps/viewer/commands/snap/snap_settings.hpp`
-- Create: `apps/viewer/commands/snap/snap_settings.cpp`
-- Create: `apps/viewer/commands/snap/accusnap.hpp`
+- Create: `apps/viewer/commands/snap/SnapSettings.h`
+- Create: `apps/viewer/commands/snap/SnapSettings.cpp`
+- Create: `apps/viewer/commands/snap/Accusnap.h`
 - Create: `apps/viewer/commands/snap/accusnap.cpp`
-- Modify: `apps/viewer/commands/command_types.hpp`
-- Modify: `apps/viewer/ui/commands_bridge.cpp` (`make_command_context`)
-- Modify: `apps/viewer/main_window.hpp` (own settings/session members)
+- Modify: `apps/viewer/commands/CommandTypes.h`
+- Modify: `apps/viewer/ui/CommandsBridge.cpp` (`make_command_context`)
+- Modify: `apps/viewer/MainWindow.h` (own settings/session members)
 - Modify: `apps/viewer/CMakeLists.txt` (`viewer_runtime` sources)
 
 **Interfaces:**
@@ -322,9 +322,9 @@ git commit -m "Add viewer AccuSnap resolve with settings session and workplane f
 ### Task 4: Migrate sphere / box base / copy tools
 
 **Files:**
-- Modify: `apps/viewer/commands/tools/create_sphere_tool.cpp`
-- Modify: `apps/viewer/commands/tools/create_box_tool.cpp`
-- Modify: `apps/viewer/commands/tools/copy_tool.cpp`
+- Modify: `apps/viewer/commands/tools/CreateSphereTool.cpp`
+- Modify: `apps/viewer/commands/tools/CreateBoxTool.cpp`
+- Modify: `apps/viewer/commands/tools/CopyTool.cpp`
 
 **Interfaces:**
 - Consumes: `AccuSnap::resolve`
@@ -353,9 +353,9 @@ git commit -m "Route box, sphere, and copy picks through AccuSnap."
 ### Task 5: Snap marker overlay + cursor tip
 
 **Files:**
-- Create: `apps/viewer/commands/snap/snap_overlay.hpp/.cpp`
-- Modify: `apps/viewer/vulkan_window.hpp/.cpp` and/or renderer — add `set_snap_overlay(EdgeMesh)` drawn after tool preview
-- Modify: `apps/viewer/ui/cursor_tip.cpp` + `input_router.cpp` / `commands_bridge.cpp` to pass last snap label
+- Create: `apps/viewer/commands/snap/SnapOverlay.h/.cpp`
+- Modify: `apps/viewer/VulkanWindow.h/.cpp` and/or renderer — add `set_snap_overlay(EdgeMesh)` drawn after tool preview
+- Modify: `apps/viewer/ui/CursorTip.cpp` + `InputRouter.cpp` / `CommandsBridge.cpp` to pass last snap label
 - Modify: `apps/viewer/i18n/xcad_zh_CN.ts`
 
 **Interfaces:**
@@ -385,10 +385,10 @@ git commit -m "Show AccuSnap markers and localized cursor tip labels."
 ### Task 6: Settings UI, override keys, Grid + QSettings (1b/1c)
 
 **Files:**
-- Create: `apps/viewer/ui/snap_settings_dialog.hpp/.cpp`
-- Modify: `apps/viewer/ui/main_window_menus.cpp` (toggle + dialog action + retranslate)
-- Modify: `apps/viewer/commands/snap/snap_settings.cpp` (QSettings)
-- Modify: `apps/viewer/ui/input_router.cpp` and/or `command_manager` key path for hold overrides + F3
+- Create: `apps/viewer/ui/SnapSettingsDialog.h/.cpp`
+- Modify: `apps/viewer/ui/MainWindowMenus.cpp` (toggle + dialog action + retranslate)
+- Modify: `apps/viewer/commands/snap/SnapSettings.cpp` (QSettings)
+- Modify: `apps/viewer/ui/InputRouter.cpp` and/or `command_manager` key path for hold overrides + F3
 - Modify: `apps/viewer/commands/snap/accusnap.cpp` (grid quantization)
 - Modify: `apps/viewer/CMakeLists.txt` (`viewer_ui` sources)
 - Modify: `apps/viewer/i18n/xcad_zh_CN.ts`

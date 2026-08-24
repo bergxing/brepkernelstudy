@@ -1,4 +1,4 @@
-#include "brep/mesh/cdt.hpp"
+#include "brep/mesh/Cdt.h"
 
 #include <gtest/gtest.h>
 
@@ -7,15 +7,18 @@
 using brep::Point2d;
 using brep::mesh::triangulate_constrained;
 
-namespace {
+namespace
+{
 
 [[nodiscard]] bool point_in_triangle(const Point2d& p, const Point2d& a,
                                      const Point2d& b, const Point2d& c,
-                                     double eps = 1e-12) {
+                                     double eps = 1e-12)
+                                     {
   const double denominator =
       (b.v() - c.v()) * (a.u() - c.u()) +
       (c.u() - b.u()) * (a.v() - c.v());
-  if (std::abs(denominator) <= eps) {
+  if (std::abs(denominator) <= eps)
+  {
     return false;
   }
   const double alpha =
@@ -32,23 +35,27 @@ namespace {
 
 }  // namespace
 
-TEST(Cdt, UnconstrainedSquareTwoTriangles) {
+TEST(Cdt, UnconstrainedSquareTwoTriangles)
+{
   std::vector<Point2d> pts = {
       {0, 0}, {1, 0}, {1, 1}, {0, 1},
   };
   const auto r = triangulate_constrained(pts, {});
-  ASSERT_TRUE(r.ok) << r.diagnostics;
-  EXPECT_EQ(r.triangles.size(), 2u);
+  ASSERT_TRUE(r.Ok) << r.Diagnostics;
+  EXPECT_EQ(r.Triangles.size(), 2u);
   // All vertices referenced in range
-  for (const auto& t : r.triangles) {
-    for (int k = 0; k < 3; ++k) {
+  for (const auto& t : r.Triangles)
+  {
+    for (int k = 0; k < 3; ++k)
+  {
       EXPECT_GE(t.v[k], 0);
-      EXPECT_LT(t.v[k], static_cast<int>(r.vertices.size()));
+      EXPECT_LT(t.v[k], static_cast<int>(r.Vertices.size()));
     }
   }
 }
 
-TEST(Cdt, SquareWithHoleKeepsBoundaryAndDropsInterior) {
+TEST(Cdt, SquareWithHoleKeepsBoundaryAndDropsInterior)
+{
   const std::vector<Point2d> outer = {
       {0, 0}, {4, 0}, {4, 4}, {0, 4},
   };
@@ -57,15 +64,18 @@ TEST(Cdt, SquareWithHoleKeepsBoundaryAndDropsInterior) {
   };
   const auto r =
       brep::mesh::triangulate_polygon_with_holes(outer, {hole});
-  ASSERT_TRUE(r.ok) << r.diagnostics;
-  ASSERT_FALSE(r.triangles.empty());
+  ASSERT_TRUE(r.Ok) << r.Diagnostics;
+  ASSERT_FALSE(r.Triangles.empty());
 
-  const auto tri_contains = [&](const Point2d& point) {
-    for (const auto& triangle : r.triangles) {
-      const Point2d& a = r.vertices[triangle.v[0]].uv;
-      const Point2d& b = r.vertices[triangle.v[1]].uv;
-      const Point2d& c = r.vertices[triangle.v[2]].uv;
-      if (point_in_triangle(point, a, b, c)) {
+  const auto tri_contains = [&](const Point2d& point)
+  {
+    for (const auto& triangle : r.Triangles)
+  {
+      const Point2d& a = r.Vertices[triangle.v[0]].Uv;
+      const Point2d& b = r.Vertices[triangle.v[1]].Uv;
+      const Point2d& c = r.Vertices[triangle.v[2]].Uv;
+      if (point_in_triangle(point, a, b, c))
+      {
         return true;
       }
     }

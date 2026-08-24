@@ -9,7 +9,7 @@
     {
       "name": "clion-mingw",
       "displayName": "CLion / MinGW Debug (no Visual Studio)",
-      "description": "Use Qt 6.8.3 MinGW 13.1 toolchain + mingw_64 Qt. Open in CLion and select this preset.",
+      "description": "Use Qt 6.8.3 MinGW 13.1 toolchain + mingw_64 Qt. Ninja from CLion Nova bundled tools.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/cmake-build-mingw-debug",
       "cacheVariables": {
@@ -21,7 +21,7 @@
         "BREP_BUILD_VIEWER": "ON"
       },
       "environment": {
-        "PATH": "C:/Qt6/Tools/mingw1310_64/bin;C:/Qt6/6.8.3/mingw_64/bin;$penv{PATH}"
+        "PATH": "$penv{LOCALAPPDATA}/Programs/CLion Nova/bin/ninja/win/x64;$penv{LOCALAPPDATA}/Programs/CLion/bin/ninja/win/x64;C:/Qt6/Tools/Ninja;C:/Qt6/Tools/mingw1310_64/bin;C:/Qt6/6.8.3/mingw_64/bin;$penv{PATH}"
       }
     },
     {
@@ -38,7 +38,7 @@
         "BREP_BUILD_VIEWER": "ON"
       },
       "environment": {
-        "PATH": "C:/Qt6/Tools/mingw1310_64/bin;C:/Qt6/6.8.3/mingw_64/bin;$penv{PATH}"
+        "PATH": "$penv{LOCALAPPDATA}/Programs/CLion Nova/bin/ninja/win/x64;$penv{LOCALAPPDATA}/Programs/CLion/bin/ninja/win/x64;C:/Qt6/Tools/Ninja;C:/Qt6/Tools/mingw1310_64/bin;C:/Qt6/6.8.3/mingw_64/bin;$penv{PATH}"
       }
     },
     {
@@ -48,6 +48,7 @@
       "binaryDir": "${sourceDir}/build-mingw",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_MAKE_PROGRAM": "C:/Qt6/Tools/mingw1310_64/bin/mingw32-make.exe",
         "CMAKE_C_COMPILER": "C:/Qt6/Tools/mingw1310_64/bin/gcc.exe",
         "CMAKE_CXX_COMPILER": "C:/Qt6/Tools/mingw1310_64/bin/g++.exe",
         "BREP_QT_ROOT": "C:/Qt6",

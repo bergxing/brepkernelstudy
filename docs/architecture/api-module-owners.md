@@ -4,10 +4,10 @@
 
 | 聚合头 | 稳定级别 | 所有者模块 (CMake) | 主要公开类型 |
 |--------|----------|-------------------|--------------|
-| `api/core.hpp` | 高 | `brep_core` | `Point3d`, `Vector3d`, `Guid`, `IObject`, `ObjectKind`, `Model`, `Body` / 拓扑实体, `Material`, `Plane`, `RigidTransform`, 日志宏 |
-| `api/mesh.hpp` | 中 | `brep_core` | `MeshVertex`, `TriangleMesh`, `EdgeMesh`, `tessellate_body`, `extract_edges` |
-| `api/modeling.hpp` | 中 | `brep_feat`（含 Part/Document 实现） | `Document`, `Part`, `BoxSpec`, `BoxFeature`, `ExtrudeFeature`, `IFeature`, `FeatureId`, `FeatureTree`, `FeatureHistory`, `ParameterStore`, `Sketch`, `ConstraintSolver`, `Profile2d`, `ExtrudeSpec` |
-| `api/persistence.hpp` | 低 | `brep_io` | `XlSaveResult`, `XlLoadResult`, `BodyMeshCache`, `load_xl` / `save_xl`, `load_bks_cache` / `save_bks_cache` |
+| `api/Core.h` | 高 | `brep_core` | `Point3d`, `Vector3d`, `Guid`, `IObject`, `ObjectKind`, `Model`, `Body` / 拓扑实体, `Material`, `Plane`, `RigidTransform`, 日志宏 |
+| `api/Mesh.h` | 中 | `brep_core` | `MeshVertex`, `TriangleMesh`, `EdgeMesh`, `tessellate_body`, `extract_edges` |
+| `api/Modeling.h` | 中 | `brep_feat`（含 Part/Document 实现） | `Document`, `Part`, `BoxSpec`, `BoxFeature`, `ExtrudeFeature`, `IFeature`, `FeatureId`, `FeatureTree`, `FeatureHistory`, `ParameterStore`, `Sketch`, `ConstraintSolver`, `Profile2d`, `ExtrudeSpec` |
+| `api/Persistence.h` | 低 | `brep_io` | `XlSaveResult`, `XlLoadResult`, `BodyMeshCache`, `load_xl` / `save_xl`, `load_bks_cache` / `save_bks_cache` |
 
 ## Viewer 动态库归属
 
@@ -23,11 +23,11 @@
 
 | 头文件 | 模块 | 说明 |
 |--------|------|------|
-| `brep/asm/assembly.hpp` | `brep_asm` | 装配；未来可升入 `api/assembly.hpp` |
-| `brep/dump.hpp` / `validate.hpp` | `brep_core` | 调试 / 校验工具 |
-| `brep/naming/topology_ref.hpp` | `brep_core` | 拓扑命名引用 |
-| `brep/object_registry.hpp` | `brep_core` | 文档级 Guid 注册表 |
-| `brep/brep.hpp` | （umbrella） | **已废弃** |
+| `brep/asm/Assembly.h` | `brep_asm` | 装配；未来可升入 `api/Assembly.h` |
+| `brep/Dump.h` / `Validate.h` | `brep_core` | 调试 / 校验工具 |
+| `brep/naming/TopologyRef.h` | `brep_core` | 拓扑命名引用 |
+| `brep/ObjectRegistry.h` | `brep_core` | 文档级 Guid 注册表 |
+| `brep/Brep.h` | （umbrella） | **已废弃** |
 
 ## 强制手段
 

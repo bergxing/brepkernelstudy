@@ -15,6 +15,13 @@ out/
 *.pdb
 *.log
 *_out.txt
+# Ad-hoc build/debug captures at repo root (migration / agent probes)
+/_*.txt
+/_*.err
+/_*.out
+/_*.bat
+/_*.cpp
+/_*.i
 compile_commands.json
 .superpowers/
 

@@ -6,7 +6,7 @@ Rules:
      (kernel API must come only via "api/...")
   2. apps/viewer/** must not #include "brep/internal/..." (defense in depth)
   3. examples/** and tests/** (non-viewer) must not include brep/internal/
-  4. kernel/include/api/*.hpp may only #include "brep/..." (or api/) — no reverse deps
+  4. kernel/include/api/*.h may only #include "brep/..." (or api/) — no reverse deps
   5. Outside kernel/{src,include} and cmake build trees: forbid brep/internal/
 
 Exit 0 on success; non-zero with a printed report on failure.
@@ -75,7 +75,7 @@ def check_viewer(errors: list[str]) -> None:
             if inc.startswith("brep/"):
                 errors.append(
                     f"{rel(path)}:{line_no}: viewer must not include '{inc}' "
-                    f"(use api/*.hpp)"
+                     f"(use api/*.h)"
                 )
             if "brep/internal/" in inc:
                 errors.append(
