@@ -1,10 +1,15 @@
 #include "MainWindow.h"
 
+#include "bootstrap/ViewerAdapterServices.h"
+#include "commands/snap/Accusnap.h"
 #include "ecs/Components.h"
 #include "ecs/Systems.h"
 #include "ViewMdiSubwindow.h"
 
+#include "api/Modeling.h"
+
 #include <QApplication>
+#include <QCoreApplication>
 #include <QMdiArea>
 #include <QMdiSubWindow>
 #include <QRect>
@@ -62,7 +67,18 @@ void MainWindow::refresh_view_titles()
 
 void MainWindow::wire_vulkan_window(VulkanWindow* window)
 {
-  window->set_selection_callback([this](entt::entity entity)
+  {
+    float clearRgb[3];
+    float wireRgb[3];
+    float hoverRgb[3];
+    float previewRgb[3];
+    m_viewerTheme.Resolve(clearRgb, wireRgb, hoverRgb, previewRgb);
+    window->set_viewport_colors(clearRgb[0], clearRgb[1], clearRgb[2],
+                                wireRgb[0], wireRgb[1], wireRgb[2],
+                                hoverRgb[0], hoverRgb[1], hoverRgb[2],
+                                previewRgb[0], previewRgb[1], previewRgb[2]);
+  }
+    window->set_selection_callback([this](entt::entity entity)
 {
     update_property_panel(entity);
     request_all_views_update();
@@ -105,6 +121,186 @@ void MainWindow::wire_vulkan_window(VulkanWindow* window)
   {
     show_viewport_context_menu(window, x, y);
   });
+  window->set_snap_pick_callback([this, window](float x, float y, Point3d& hit)
+  {
+    auto ctx = make_command_context();
+    ctx.ViewCamera = &window->camera();
+    ctx.ViewportWidth = std::max(1, window->width());
+    ctx.ViewportHeight = std::max(1, window->height());
+    const commands::PickResult result = commands::AccuSnap::Resolve(ctx, x, y);
+    if (result.Kind == SnapKind::None)
+    {
+      return false;
+    }
+    hit = result.Point;
+    return true;
+  });
+  window->set_status_message_callback([this](const QString& msg)
+  {
+    statusBar()->showMessage(msg, 0);
+  });
+  window->set_bezier_edit_commit_callback(
+      [this](Guid featureGuid, Guid bodyGuid, const BezierSpec& /*before*/,
+             const BezierSpec& after)
+      {
+        if (!m_documentScope)
+        {
+          return;
+        }
+        auto& scene = m_documentScope->scene();
+        Part* part = scene.MainPart();
+        if (!part)
+        {
+          return;
+        }
+        BezierSpec spec = after;
+        if (auto* f = part->Features().Find(feat::FeatureId{featureGuid}))
+        {
+                if (auto* bez = dynamic_cast<feat::BezierCurveFeature*>(f))
+          {
+            spec.Name = bez->DisplayName();
+            spec.Tolerance = bez->Tolerance();
+          }
+        }
+        if (!scene.SetPrimitive(feat::FeatureId{featureGuid}, spec))
+        {
+          return;
+        }
+        const std::string wood = wood_albedo_path().toStdString();
+        Material mat = wood.empty() ? Material{} : MakeWoodMaterial(wood);
+        m_world.SyncPartBodies(*part, std::move(mat));
+        m_document.MarkDirty();
+        m_commandManager.history().push(commands::DocumentHistory::Entry{
+            .label = QCoreApplication::translate("BezierEdit", "Edit bezier"),
+            .undo =
+                [this, wood]()
+                {
+                  if (!m_documentScope)
+                  {
+                    return;
+                  }
+                  m_documentScope->scene().UndoFeature();
+                  Part* p = m_documentScope->scene().MainPart();
+                  if (!p)
+                  {
+                    return;
+                  }
+                  Material m =
+                      wood.empty() ? Material{} : MakeWoodMaterial(wood);
+                  m_world.SyncPartBodies(*p, std::move(m));
+                  m_document.MarkDirty();
+                  request_all_views_update();
+                  refresh_edit_actions();
+                },
+            .redo =
+                [this, wood]()
+                {
+                  if (!m_documentScope)
+                  {
+                    return;
+                  }
+                  m_documentScope->scene().RedoFeature();
+                  Part* p = m_documentScope->scene().MainPart();
+                  if (!p)
+                  {
+                    return;
+                  }
+                  Material m =
+                      wood.empty() ? Material{} : MakeWoodMaterial(wood);
+                  m_world.SyncPartBodies(*p, std::move(m));
+                  m_document.MarkDirty();
+                  request_all_views_update();
+                  refresh_edit_actions();
+                },
+        });
+        request_all_views_update();
+        refresh_edit_actions();
+        update_property_panel(ecs::selected_entity(m_world.registry()));
+        statusBar()->showMessage(
+            QCoreApplication::translate("BezierEdit", "Edited bezier"), 4000);
+        (void)bodyGuid;
+      });
+  window->set_nurbs_edit_commit_callback(
+      [this](Guid featureGuid, Guid bodyGuid, const NurbsCurveSpec& /*before*/,
+             const NurbsCurveSpec& after)
+      {
+        if (!m_documentScope)
+        {
+          return;
+        }
+        auto& scene = m_documentScope->scene();
+        Part* part = scene.MainPart();
+        if (!part)
+        {
+          return;
+        }
+        NurbsCurveSpec spec = after;
+        if (auto* f = part->Features().Find(feat::FeatureId{featureGuid}))
+        {
+          if (auto* nurbs = dynamic_cast<feat::NurbsCurveFeature*>(f))
+          {
+            spec.Name = nurbs->DisplayName();
+            spec.Tolerance = nurbs->Tolerance();
+          }
+        }
+        if (!scene.SetPrimitive(feat::FeatureId{featureGuid}, spec))
+        {
+          return;
+        }
+        const std::string wood = wood_albedo_path().toStdString();
+        Material mat = wood.empty() ? Material{} : MakeWoodMaterial(wood);
+        m_world.SyncPartBodies(*part, std::move(mat));
+        m_document.MarkDirty();
+        m_commandManager.history().push(commands::DocumentHistory::Entry{
+            .label = QCoreApplication::translate("NurbsEdit", "Edit NURBS"),
+            .undo =
+                [this, wood]()
+                {
+                  if (!m_documentScope)
+                  {
+                    return;
+                  }
+                  m_documentScope->scene().UndoFeature();
+                  Part* p = m_documentScope->scene().MainPart();
+                  if (!p)
+                  {
+                    return;
+                  }
+                  Material m =
+                      wood.empty() ? Material{} : MakeWoodMaterial(wood);
+                  m_world.SyncPartBodies(*p, std::move(m));
+                  m_document.MarkDirty();
+                  request_all_views_update();
+                  refresh_edit_actions();
+                },
+            .redo =
+                [this, wood]()
+                {
+                  if (!m_documentScope)
+                  {
+                    return;
+                  }
+                  m_documentScope->scene().RedoFeature();
+                  Part* p = m_documentScope->scene().MainPart();
+                  if (!p)
+                  {
+                    return;
+                  }
+                  Material m =
+                      wood.empty() ? Material{} : MakeWoodMaterial(wood);
+                  m_world.SyncPartBodies(*p, std::move(m));
+                  m_document.MarkDirty();
+                  request_all_views_update();
+                  refresh_edit_actions();
+                },
+        });
+        request_all_views_update();
+        refresh_edit_actions();
+        update_property_panel(ecs::selected_entity(m_world.registry()));
+        statusBar()->showMessage(
+            QCoreApplication::translate("NurbsEdit", "Edited NURBS"), 4000);
+        (void)bodyGuid;
+      });
 }
 
 void MainWindow::clear_view_fill_states()
@@ -126,6 +322,15 @@ VulkanWindow* MainWindow::create_view_window(char standard_view,
   vulkan_window->setVulkanInstance(m_vulkanInstance.get());
   vulkan_window->setSampleCount(1);
   vulkan_window->set_world(&m_world);
+  if (m_documentScope)
+  {
+    vulkan_window->set_scene_service(&m_documentScope->scene());
+  }
+  if (m_appContext && m_appContext->container)
+  {
+    vulkan_window->set_scene_factory(
+        &bootstrap::ResolveSceneServiceFactory(m_appContext->container));
+  }
   vulkan_window->camera().set_standard_view(standard_view);
   vulkan_window->setTitle(QString());
   wire_vulkan_window(vulkan_window);

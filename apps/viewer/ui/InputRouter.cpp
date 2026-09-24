@@ -1,17 +1,23 @@
 #include "MainWindow.h"
 
+#include "api/Core.h"
 #include "commands/snap/Accusnap.h"
 #include "ecs/Components.h"
 #include "ecs/Systems.h"
 
+#include <QApplication>
+#include <QCoreApplication>
 #include <QCursor>
+#include <QEvent>
 #include <QHoverEvent>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QMouseEvent>
 #include <QMdiArea>
 #include <QMdiSubWindow>
 #include <QStatusBar>
 #include <QWheelEvent>
+#include <QWidget>
 
 #include <algorithm>
 
@@ -74,6 +80,35 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     event->accept();
     return;
   }
+  if (event->key() == Qt::Key_Escape)
+  {
+    if (QApplication::activePopupWidget())
+    {
+      QMainWindow::keyPressEvent(event);
+      return;
+    }
+    for (auto* window : m_viewWindows)
+    {
+      if (window && window->NurbsCvDragActive())
+      {
+        window->CancelNurbsCvDrag();
+        statusBar()->showMessage(
+            QCoreApplication::translate("NurbsEdit", "Cancelled NURBS edit"),
+            3000);
+        event->accept();
+        return;
+      }
+      if (window && window->BezierCvDragActive())
+      {
+        window->CancelBezierCvDrag();
+        statusBar()->showMessage(
+            QCoreApplication::translate("BezierEdit", "Cancelled bezier edit"),
+            3000);
+        event->accept();
+        return;
+      }
+    }
+  }
   if (m_commandManager.has_active_tool())
   {
     if (event->key() == Qt::Key_Escape)
@@ -81,6 +116,8 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
       auto ctx = make_command_context();
       m_commandManager.cancel_active_tool(ctx);
       sync_tool_ui();
+      refresh_edit_actions();
+      update_property_panel(ecs::selected_entity(m_world.registry()));
       event->accept();
       return;
     }
@@ -146,13 +183,14 @@ bool MainWindow::handle_snap_key(QKeyEvent* event, bool pressed)
         snap_override_for_key(m_heldSnapOverrideKeys.back());
   }
   auto ctx = make_command_context();
-  commands::AccuSnap::clear_feedback(ctx);
+  commands::AccuSnap::ClearFeedback(ctx);
   request_all_views_update();
   return true;
 }
 
 bool MainWindow::handle_tool_mouse(QEvent* event)
 {
+  if (QApplication::activePopupWidget()) return false;
   if (!m_commandManager.has_active_tool()) return false;
   // Selection phase (e.g. Copy): let the viewport handle pick / box / Ctrl.
   if (m_commandManager.active_tool_allows_selection()) return false;
@@ -198,9 +236,13 @@ bool MainWindow::handle_tool_mouse(QEvent* event)
   auto ctx = make_command_context();
   if (type == QEvent::MouseButtonPress)
   {
+    BREP_INFO(
+        "input tool-mouse press button={} viewport=({:.1f},{:.1f}) global=({},{})",
+        static_cast<int>(e->button()), sx, sy, global.x(), global.y());
     if (e->button() != Qt::LeftButton) return false;
     if (m_commandManager.tool_mouse_press(ctx, sx, sy, int(e->button())))
     {
+      BREP_INFO("input tool-mouse press consumed by tool");
       sync_tool_ui();
       refresh_edit_actions();
       update_property_panel(ecs::selected_entity(m_world.registry()));
@@ -212,6 +254,7 @@ bool MainWindow::handle_tool_mouse(QEvent* event)
   if (type == QEvent::MouseButtonRelease)
   {
     if (e->button() != Qt::LeftButton) return false;
+    BREP_INFO("input tool-mouse release Left viewport=({:.1f},{:.1f})", sx, sy);
     sync_tool_ui();
     return true;
   }
@@ -229,7 +272,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
        {
     m_heldSnapOverrideKeys.clear();
     m_snapSession.hold_override.reset();
-    m_snapSession.active_snap.reset();
+    m_snapSession.ActiveSnap.reset();
     for (auto* window : m_viewWindows)
     {
       if (window) window->clear_snap_overlay();
@@ -295,19 +338,74 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
       break;
   }
 
-  if (handle_tool_mouse(event)) return true;
+  if (QWidget* popup = QApplication::activePopupWidget())
+  {
+    if (event->type() == QEvent::MouseButtonPress ||
+        event->type() == QEvent::MouseButtonRelease)
+    {
+      const auto* mouse = static_cast<QMouseEvent*>(event);
+      BREP_INFO(
+          "input skip tool-mouse: popup='{}' type={} button={} "
+          "global=({},{}) watched='{}'",
+          popup->metaObject()->className(), static_cast<int>(event->type()),
+          static_cast<int>(mouse->button()),
+          mouse->globalPosition().x(), mouse->globalPosition().y(),
+          watched ? watched->metaObject()->className() : "null");
+    }
+  }
+  else if (handle_tool_mouse(event))
+  {
+    return true;
+  }
+
+  if (event->type() == QEvent::ShortcutOverride)
+  {
+    auto* ke = static_cast<QKeyEvent*>(event);
+    if (QApplication::activePopupWidget() &&
+        (ke->matches(QKeySequence::Undo) || ke->matches(QKeySequence::Redo)))
+    {
+      event->accept();
+      return false;
+    }
+  }
 
   if (event->type() == QEvent::KeyPress)
   {
     auto* ke = static_cast<QKeyEvent*>(event);
+    if (QWidget* popup = QApplication::activePopupWidget())
+    {
+      const bool undo = ke->matches(QKeySequence::Undo);
+      const bool redo = ke->matches(QKeySequence::Redo);
+      if (undo || redo)
+      {
+        BREP_INFO("input {} while popup '{}': close + {}",
+                  undo ? "Ctrl+Z" : "Ctrl+Y",
+                  popup->metaObject()->className(),
+                  undo ? "undo" : "redo");
+        popup->close();
+        auto ctx = make_command_context();
+        m_commandManager.run(undo ? "edit.undo" : "edit.redo", ctx);
+        sync_tool_ui();
+        refresh_edit_actions();
+        update_property_panel(ecs::selected_entity(m_world.registry()));
+        return true;
+      }
+    }
     if (handle_snap_key(ke, true)) return true;
     if (m_commandManager.has_active_tool())
     {
       if (ke->key() == Qt::Key_Escape)
     {
+        if (QApplication::activePopupWidget())
+        {
+          BREP_INFO("input ESC skipped: popup still open");
+          return false;
+        }
         auto ctx = make_command_context();
         m_commandManager.cancel_active_tool(ctx);
         sync_tool_ui();
+        refresh_edit_actions();
+        update_property_panel(ecs::selected_entity(m_world.registry()));
         return true;
       }
       auto ctx = make_command_context();

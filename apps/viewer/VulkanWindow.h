@@ -3,6 +3,9 @@
 #include "ecs/World.h"
 #include "VulkanRenderer.h"
 
+#include "api/Core.h"
+#include "api/Modeling.h"
+
 #include <QVulkanWindow>
 
 #include <functional>
@@ -11,6 +14,12 @@ class QWidget;
 
 namespace brep::viewer
 {
+
+namespace adapter
+{
+class ISceneService;
+class ISceneServiceFactory;
+}
 
 class SelectRectOverlay;
 
@@ -27,6 +36,23 @@ class VulkanWindow final : public QVulkanWindow
   [[nodiscard]] ecs::World* world() noexcept
   {
       return m_world; 
+  }
+
+  void set_scene_service(adapter::ISceneService* scene) noexcept
+  {
+      m_sceneService = scene; 
+  }
+  void set_scene_factory(adapter::ISceneServiceFactory* factory) noexcept
+  {
+      m_sceneFactory = factory; 
+  }
+  [[nodiscard]] adapter::ISceneService* scene_service() const noexcept
+  {
+      return m_sceneService; 
+  }
+  [[nodiscard]] adapter::ISceneServiceFactory* scene_factory() const noexcept
+  {
+      return m_sceneFactory; 
   }
 
   /// Host widget that owns the box-select overlay (above the Vulkan container).
@@ -69,6 +95,49 @@ class VulkanWindow final : public QVulkanWindow
     m_contextMenuCallback = std::move(cb);
   }
 
+  /// AccuSnap pick for Bezier CV drag (selection mode).
+  using SnapPickCallback = std::function<bool(float x, float y, Point3d& hit)>;
+  void set_snap_pick_callback(SnapPickCallback cb)
+  {
+    m_snapPickCallback = std::move(cb);
+  }
+
+  /// Persist Bezier CV edit (SetPrimitive + history + mesh sync).
+  using BezierEditCommitCallback = std::function<void(
+      Guid featureGuid, Guid bodyGuid, const BezierSpec& before,
+      const BezierSpec& after)>;
+  void set_bezier_edit_commit_callback(BezierEditCommitCallback cb)
+  {
+    m_bezierEditCommitCallback = std::move(cb);
+  }
+
+  /// Persist NurbsCurve CV edit (SetPrimitive + history + mesh sync).
+  using NurbsEditCommitCallback = std::function<void(
+      Guid featureGuid, Guid bodyGuid, const NurbsCurveSpec& before,
+      const NurbsCurveSpec& after)>;
+  void set_nurbs_edit_commit_callback(NurbsEditCommitCallback cb)
+  {
+    m_nurbsEditCommitCallback = std::move(cb);
+  }
+
+  using StatusMessageCallback = std::function<void(const QString& msg)>;
+  void set_status_message_callback(StatusMessageCallback cb)
+  {
+    m_statusMessageCallback = std::move(cb);
+  }
+
+  void CancelBezierCvDrag();
+  [[nodiscard]] bool BezierCvDragActive() const noexcept
+  {
+    return m_bezierDrag.Active;
+  }
+
+  void CancelNurbsCvDrag();
+  [[nodiscard]] bool NurbsCvDragActive() const noexcept
+  {
+    return m_nurbsDrag.Active;
+  }
+
   [[nodiscard]] Camera& camera() noexcept
   {
       return m_camera; 
@@ -92,6 +161,10 @@ class VulkanWindow final : public QVulkanWindow
   void clear_preview();
   void set_snap_overlay(EdgeMesh edges);
   void clear_snap_overlay();
+  void set_viewport_colors(float clearR, float clearG, float clearB,
+                           float wireR, float wireG, float wireB,
+                           float hoverR, float hoverG, float hoverB,
+                           float previewR, float previewG, float previewB);
 
  protected:
   void mousePressEvent(QMouseEvent* event) override;
@@ -122,9 +195,23 @@ class VulkanWindow final : public QVulkanWindow
   void begin_right_press(QPointF pos);
   [[nodiscard]] bool finish_right_release(QPointF pos);
 
+  [[nodiscard]] bool TryBeginBezierCvDrag(float x, float y);
+  void UpdateBezierCvDrag(float x, float y);
+  void FinishBezierCvDrag(bool commit);
+
+  [[nodiscard]] bool TryBeginNurbsCvDrag(float x, float y);
+  void UpdateNurbsCvDrag(float x, float y);
+  void FinishNurbsCvDrag(bool commit);
+
   ecs::World* m_world{nullptr};
+  adapter::ISceneService* m_sceneService{nullptr};
+  adapter::ISceneServiceFactory* m_sceneFactory{nullptr};
   Camera m_camera{};
   VulkanRenderer* m_renderer{nullptr};
+  float m_themeClear[3]{0.12f, 0.13f, 0.15f};
+  float m_themeWire[3]{0.78f, 0.80f, 0.84f};
+  float m_themeHover[3]{0.25f, 0.85f, 1.0f};
+  float m_themePreview[3]{1.0f, 0.92f, 0.15f};
   QWidget* m_rubberHost{nullptr};
   SelectRectOverlay* m_rubberBand{nullptr};  // child of m_rubberHost
   bool m_selectionEnabled{true};
@@ -136,6 +223,34 @@ class VulkanWindow final : public QVulkanWindow
   ToolMotionCallback m_toolMotionCallback;
   ToolPressCallback m_toolPressCallback;
   ContextMenuCallback m_contextMenuCallback;
+  SnapPickCallback m_snapPickCallback;
+  BezierEditCommitCallback m_bezierEditCommitCallback;
+  NurbsEditCommitCallback m_nurbsEditCommitCallback;
+  StatusMessageCallback m_statusMessageCallback;
+
+  struct BezierDragState
+  {
+    bool Active{false};
+    entt::entity Entity{entt::null};
+    int CvIndex{-1};
+    BezierSpec Spec{};
+    BezierSpec SpecAtPress{};
+    Guid FeatureGuid{};
+    Guid BodyGuid{};
+  };
+  BezierDragState m_bezierDrag;
+
+  struct NurbsDragState
+  {
+    bool Active{false};
+    entt::entity Entity{entt::null};
+    int CvIndex{-1};
+    NurbsCurveSpec Spec{};
+    NurbsCurveSpec SpecAtPress{};
+    Guid FeatureGuid{};
+    Guid BodyGuid{};
+  };
+  NurbsDragState m_nurbsDrag;
 };
 
 }  // namespace brep::viewer

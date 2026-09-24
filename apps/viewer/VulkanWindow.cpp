@@ -1,19 +1,41 @@
 #include "VulkanWindow.h"
 
+#include "adapter/ISceneService.h"
+#include "commands/tools/BezierPreview.h"
 #include "ecs/Systems.h"
 #include "SelectRectOverlay.h"
 
 #include "api/Core.h"
+#include "api/Mesh.h"
+#include "api/Modeling.h"
 
+#include <QApplication>
+#include <QCoreApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QWidget>
 
 #include <algorithm>
+#include <cmath>
+#include <variant>
 
 namespace brep::viewer
 {
+namespace
+{
+
+QString TrBezierEdit(const char* source)
+{
+  return QCoreApplication::translate("BezierEdit", source);
+}
+
+QString TrNurbsEdit(const char* source)
+{
+  return QCoreApplication::translate("NurbsEdit", source);
+}
+
+}  // namespace
 
 VulkanWindow::VulkanWindow(QWindow* parent) : QVulkanWindow(parent)
 {
@@ -62,9 +84,41 @@ void VulkanWindow::clear_snap_overlay()
   requestUpdate();
 }
 
+void VulkanWindow::set_viewport_colors(float clearR, float clearG, float clearB,
+                                       float wireR, float wireG, float wireB,
+                                       float hoverR, float hoverG, float hoverB,
+                                       float previewR, float previewG,
+                                       float previewB)
+{
+  m_themeClear[0] = clearR;
+  m_themeClear[1] = clearG;
+  m_themeClear[2] = clearB;
+  m_themeWire[0] = wireR;
+  m_themeWire[1] = wireG;
+  m_themeWire[2] = wireB;
+  m_themeHover[0] = hoverR;
+  m_themeHover[1] = hoverG;
+  m_themeHover[2] = hoverB;
+  m_themePreview[0] = previewR;
+  m_themePreview[1] = previewG;
+  m_themePreview[2] = previewB;
+  if (m_renderer)
+  {
+    m_renderer->set_viewport_colors(clearR, clearG, clearB, wireR, wireG, wireB,
+                                    hoverR, hoverG, hoverB, previewR, previewG,
+                                    previewB);
+  }
+  requestUpdate();
+}
+
 QVulkanWindowRenderer* VulkanWindow::createRenderer()
 {
   m_renderer = new VulkanRenderer(this);
+  m_renderer->set_viewport_colors(
+      m_themeClear[0], m_themeClear[1], m_themeClear[2], m_themeWire[0],
+      m_themeWire[1], m_themeWire[2], m_themeHover[0], m_themeHover[1],
+      m_themeHover[2], m_themePreview[0], m_themePreview[1],
+      m_themePreview[2]);
   sync_renderer();
   return m_renderer;
 }
@@ -187,7 +241,11 @@ bool VulkanWindow::finish_right_release(QPointF pos)
 {
   if (!m_rightPressActive) return false;
   m_rightPressActive = false;
-  if (m_rightMoved || !m_selectionEnabled || !m_contextMenuCallback)
+  if (m_rightMoved || !m_contextMenuCallback)
+  {
+    return true;
+  }
+  if (!m_selectionEnabled && !m_toolPressCallback)
   {
     return true;
   }
@@ -195,15 +253,312 @@ bool VulkanWindow::finish_right_release(QPointF pos)
   const float dx = float(pos.x()) - m_rightPressX;
   const float dy = float(pos.y()) - m_rightPressY;
   if (dx * dx + dy * dy >= kSlop * kSlop) return true;
+  BREP_INFO("viewport RMB context menu at ({:.1f},{:.1f})", m_rightPressX,
+            m_rightPressY);
   m_contextMenuCallback(m_rightPressX, m_rightPressY);
   return true;
+}
+
+void VulkanWindow::CancelBezierCvDrag()
+{
+  FinishBezierCvDrag(false);
+}
+
+bool VulkanWindow::TryBeginBezierCvDrag(float x, float y)
+{
+  if (!m_selectionEnabled || !m_world || m_bezierDrag.Active ||
+      m_nurbsDrag.Active)
+  {
+    return false;
+  }
+  if (ecs::selected_count(m_world->registry()) != 1)
+  {
+    return false;
+  }
+  const entt::entity entity = ecs::selected_entity(m_world->registry());
+  if (entity == entt::null ||
+      !m_world->registry().all_of<ecs::BezierCvComponent, ecs::BodyRef,
+                                  ecs::FeatureRef>(entity))
+  {
+    return false;
+  }
+  const Guid featureGuid =
+      m_world->registry().get<ecs::FeatureRef>(entity).FeatureGuid;
+  const Guid bodyGuid = m_world->registry().get<ecs::BodyRef>(entity).guid;
+  if (m_sceneService)
+  {
+    const auto spec = m_sceneService->SpecFor(featureGuid, bodyGuid);
+    if (spec && std::holds_alternative<NurbsCurveSpec>(*spec))
+    {
+      return false;
+    }
+  }
+  const auto& cv = m_world->registry().get<ecs::BezierCvComponent>(entity);
+  const auto hit = commands::HitTestBezierCvs(m_camera, width(), height(), x, y,
+                                              12, cv.Cvs);
+  if (!hit)
+  {
+    return false;
+  }
+
+  m_bezierDrag.Active = true;
+  m_bezierDrag.Entity = entity;
+  m_bezierDrag.CvIndex = *hit;
+  m_bezierDrag.Spec.Cvs = cv.Cvs;
+  m_bezierDrag.Spec.Weights = cv.Weights;
+  m_bezierDrag.Spec.Degree = cv.Degree;
+  m_bezierDrag.Spec.SegmentCount = cv.SegmentCount;
+  m_bezierDrag.Spec.Corner = cv.Corner;
+  m_bezierDrag.SpecAtPress = m_bezierDrag.Spec;
+  m_bezierDrag.FeatureGuid = featureGuid;
+  m_bezierDrag.BodyGuid = bodyGuid;
+  if (m_statusMessageCallback)
+  {
+    m_statusMessageCallback(TrBezierEdit(
+        "Bezier: drag control point (ESC cancel)"));
+  }
+  return true;
+}
+
+void VulkanWindow::UpdateBezierCvDrag(float x, float y)
+{
+  if (!m_bezierDrag.Active || !m_snapPickCallback)
+  {
+    return;
+  }
+  Point3d hit;
+  if (!m_snapPickCallback(x, y, hit))
+  {
+    return;
+  }
+  if (m_bezierDrag.CvIndex < 0 ||
+      static_cast<std::size_t>(m_bezierDrag.CvIndex) >=
+          m_bezierDrag.Spec.Cvs.size())
+  {
+    return;
+  }
+  m_bezierDrag.Spec.Cvs[static_cast<std::size_t>(m_bezierDrag.CvIndex)] = hit;
+  if (m_bezierDrag.Spec.Degree == 3 && m_bezierDrag.Spec.SegmentCount > 1)
+  {
+    const int idx = m_bezierDrag.CvIndex;
+    if (idx % 3 == 1)
+    {
+      const int joint = idx / 3;
+      if (joint >= 1 && !BezierJointIsCorner(m_bezierDrag.Spec, joint))
+      {
+        EnforceBezierG1(m_bezierDrag.Spec, joint, /*moveIn=*/true);
+      }
+    }
+    else if (idx % 3 == 2)
+    {
+      const int joint = (idx + 1) / 3;
+      if (joint >= 1 && joint < m_bezierDrag.Spec.SegmentCount &&
+          !BezierJointIsCorner(m_bezierDrag.Spec, joint))
+      {
+        EnforceBezierG1(m_bezierDrag.Spec, joint, /*moveIn=*/false);
+      }
+    }
+  }
+
+  EdgeMesh preview;
+  if (m_bezierDrag.Spec.SegmentCount == 1)
+  {
+    BezierCurve curve(m_bezierDrag.Spec.Cvs, m_bezierDrag.Spec.Weights);
+    commands::AppendPolylinePts(preview, SampleBezierPolyline(curve, 32));
+    for (std::size_t i = 1; i < m_bezierDrag.Spec.Cvs.size(); ++i)
+    {
+      commands::PushSegment(preview, m_bezierDrag.Spec.Cvs[i - 1],
+                            m_bezierDrag.Spec.Cvs[i]);
+    }
+    for (const Point3d& p : m_bezierDrag.Spec.Cvs)
+    {
+      EdgeMesh tip = commands::MakePointMarker(p);
+      preview.Positions.insert(preview.Positions.end(), tip.Positions.begin(),
+                               tip.Positions.end());
+    }
+  }
+  else if (m_bezierDrag.Spec.Degree == 3 &&
+           m_bezierDrag.Spec.Cvs.size() >= 4)
+  {
+    for (int s = 0; s < m_bezierDrag.Spec.SegmentCount; ++s)
+    {
+      const std::size_t b = static_cast<std::size_t>(3 * s);
+      commands::AppendBezierPenPreview(
+          preview, m_bezierDrag.Spec.Cvs[b], m_bezierDrag.Spec.Cvs[b + 1],
+          m_bezierDrag.Spec.Cvs[b + 2], m_bezierDrag.Spec.Cvs[b + 3]);
+    }
+  }
+  set_preview_edges(std::move(preview));
+}
+
+void VulkanWindow::FinishBezierCvDrag(bool commit)
+{
+  if (!m_bezierDrag.Active)
+  {
+    return;
+  }
+  const BezierDragState drag = m_bezierDrag;
+  m_bezierDrag = BezierDragState{};
+  clear_preview();
+
+  if (!commit || !m_bezierEditCommitCallback)
+  {
+    requestUpdate();
+    return;
+  }
+
+  const auto cvIndex = static_cast<std::size_t>(drag.CvIndex);
+  if (cvIndex >= drag.Spec.Cvs.size() ||
+      cvIndex >= drag.SpecAtPress.Cvs.size())
+  {
+    requestUpdate();
+    return;
+  }
+  const Vector3d delta =
+      drag.Spec.Cvs[cvIndex] - drag.SpecAtPress.Cvs[cvIndex];
+  if (delta.norm() < 1e-9)
+  {
+    requestUpdate();
+    return;
+  }
+
+  m_bezierEditCommitCallback(drag.FeatureGuid, drag.BodyGuid, drag.SpecAtPress,
+                             drag.Spec);
+  requestUpdate();
+}
+
+void VulkanWindow::CancelNurbsCvDrag()
+{
+  FinishNurbsCvDrag(false);
+}
+
+bool VulkanWindow::TryBeginNurbsCvDrag(float x, float y)
+{
+  if (!m_selectionEnabled || !m_world || !m_sceneService || m_nurbsDrag.Active ||
+      m_bezierDrag.Active)
+  {
+    return false;
+  }
+  if (ecs::selected_count(m_world->registry()) != 1)
+  {
+    return false;
+  }
+  const entt::entity entity = ecs::selected_entity(m_world->registry());
+  if (entity == entt::null ||
+      !m_world->registry().all_of<ecs::BezierCvComponent, ecs::BodyRef,
+                                  ecs::FeatureRef>(entity))
+  {
+    return false;
+  }
+  const Guid featureGuid =
+      m_world->registry().get<ecs::FeatureRef>(entity).FeatureGuid;
+  const Guid bodyGuid = m_world->registry().get<ecs::BodyRef>(entity).guid;
+  const auto prim = m_sceneService->SpecFor(featureGuid, bodyGuid);
+  if (!prim || !std::holds_alternative<NurbsCurveSpec>(*prim))
+  {
+    return false;
+  }
+  const NurbsCurveSpec& nurbs = std::get<NurbsCurveSpec>(*prim);
+  const auto hit = commands::HitTestBezierCvs(m_camera, width(), height(), x, y,
+                                              12, nurbs.Cvs);
+  if (!hit)
+  {
+    return false;
+  }
+
+  m_nurbsDrag.Active = true;
+  m_nurbsDrag.Entity = entity;
+  m_nurbsDrag.CvIndex = *hit;
+  m_nurbsDrag.Spec = nurbs;
+  m_nurbsDrag.SpecAtPress = nurbs;
+  m_nurbsDrag.FeatureGuid = featureGuid;
+  m_nurbsDrag.BodyGuid = bodyGuid;
+  if (m_statusMessageCallback)
+  {
+    m_statusMessageCallback(
+        TrNurbsEdit("NURBS: drag control point (ESC cancel)"));
+  }
+  return true;
+}
+
+void VulkanWindow::UpdateNurbsCvDrag(float x, float y)
+{
+  if (!m_nurbsDrag.Active || !m_snapPickCallback)
+  {
+    return;
+  }
+  Point3d hit;
+  if (!m_snapPickCallback(x, y, hit))
+  {
+    return;
+  }
+  if (m_nurbsDrag.CvIndex < 0 ||
+      static_cast<std::size_t>(m_nurbsDrag.CvIndex) >=
+          m_nurbsDrag.Spec.Cvs.size())
+  {
+    return;
+  }
+  m_nurbsDrag.Spec.Cvs[static_cast<std::size_t>(m_nurbsDrag.CvIndex)] = hit;
+
+  EdgeMesh preview;
+  NurbsCurve curve(m_nurbsDrag.Spec.Cvs, m_nurbsDrag.Spec.Weights,
+                   m_nurbsDrag.Spec.Knots);
+  commands::AppendPolylinePts(preview, SampleNurbsPolyline(curve, 32));
+  for (std::size_t i = 1; i < m_nurbsDrag.Spec.Cvs.size(); ++i)
+  {
+    commands::PushSegment(preview, m_nurbsDrag.Spec.Cvs[i - 1],
+                          m_nurbsDrag.Spec.Cvs[i]);
+  }
+  for (const Point3d& p : m_nurbsDrag.Spec.Cvs)
+  {
+    EdgeMesh tip = commands::MakePointMarker(p);
+    preview.Positions.insert(preview.Positions.end(), tip.Positions.begin(),
+                             tip.Positions.end());
+  }
+  set_preview_edges(std::move(preview));
+}
+
+void VulkanWindow::FinishNurbsCvDrag(bool commit)
+{
+  if (!m_nurbsDrag.Active)
+  {
+    return;
+  }
+  const NurbsDragState drag = m_nurbsDrag;
+  m_nurbsDrag = NurbsDragState{};
+  clear_preview();
+
+  if (!commit || !m_nurbsEditCommitCallback)
+  {
+    requestUpdate();
+    return;
+  }
+
+  const auto cvIndex = static_cast<std::size_t>(drag.CvIndex);
+  if (cvIndex >= drag.Spec.Cvs.size() ||
+      cvIndex >= drag.SpecAtPress.Cvs.size())
+  {
+    requestUpdate();
+    return;
+  }
+  const Vector3d delta =
+      drag.Spec.Cvs[cvIndex] - drag.SpecAtPress.Cvs[cvIndex];
+  if (delta.norm() < 1e-9)
+  {
+    requestUpdate();
+    return;
+  }
+
+  m_nurbsEditCommitCallback(drag.FeatureGuid, drag.BodyGuid, drag.SpecAtPress,
+                            drag.Spec);
+  requestUpdate();
 }
 
 void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button,
                                  Qt::KeyboardModifiers modifiers)
 {
   if (button == Qt::RightButton)
-{
+  {
     begin_right_press(pos);
     return;
   }
@@ -216,6 +571,13 @@ void VulkanWindow::pointer_press(QPointF pos, Qt::MouseButton button,
   if (!m_selectionEnabled && button == Qt::LeftButton)
   {
     BREP_WARN("VulkanWindow left press in tool mode but no tool_press_callback");
+    return;
+  }
+
+  if (button == Qt::LeftButton &&
+      (TryBeginNurbsCvDrag(float(pos.x()), float(pos.y())) ||
+       TryBeginBezierCvDrag(float(pos.x()), float(pos.y()))))
+  {
     return;
   }
 
@@ -243,6 +605,17 @@ void VulkanWindow::restore_idle_cursor()
 
 void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons)
 {
+  if (m_nurbsDrag.Active && (buttons & Qt::LeftButton))
+  {
+    UpdateNurbsCvDrag(float(pos.x()), float(pos.y()));
+    return;
+  }
+  if (m_bezierDrag.Active && (buttons & Qt::LeftButton))
+  {
+    UpdateBezierCvDrag(float(pos.x()), float(pos.y()));
+    return;
+  }
+
   if (m_rightPressActive && (buttons & Qt::RightButton))
 {
     constexpr float kSlop = 5.0f;
@@ -279,8 +652,13 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons)
   if (m_selectionEnabled &&
       state.drag_mode == ecs::InputState::DragMode::None &&
       buttons == Qt::NoButton)
-      {
+  {
     restore_idle_cursor();
+    const entt::entity hit =
+        ecs::pick_renderable(m_world->registry(), m_camera, width(), height(),
+                             float(pos.x()), float(pos.y()));
+    ecs::set_hover(m_world->registry(), hit);
+    requestUpdate();
   }
   if (ecs::consume_camera_dirty(m_world->registry()))
   {
@@ -290,6 +668,17 @@ void VulkanWindow::pointer_move(QPointF pos, Qt::MouseButtons buttons)
 
 void VulkanWindow::pointer_release(QPointF pos)
 {
+  if (m_nurbsDrag.Active)
+  {
+    FinishNurbsCvDrag(true);
+    return;
+  }
+  if (m_bezierDrag.Active)
+  {
+    FinishBezierCvDrag(true);
+    return;
+  }
+
   if (finish_right_release(pos)) return;
 
   if (!m_world) return;
@@ -388,6 +777,29 @@ void VulkanWindow::keyPressEvent(QKeyEvent* event)
 bool VulkanWindow::eventFilter(QObject* watched, QEvent* event)
 {
   Q_UNUSED(watched);
+  if (QApplication::activePopupWidget())
+  {
+    switch (event->type())
+    {
+      case QEvent::MouseButtonPress:
+      case QEvent::MouseButtonRelease:
+      case QEvent::MouseButtonDblClick:
+      case QEvent::MouseMove:
+      case QEvent::Wheel:
+      case QEvent::KeyPress:
+        if (event->type() == QEvent::MouseButtonPress)
+        {
+          const auto* mouse = static_cast<QMouseEvent*>(event);
+          BREP_INFO(
+              "viewport skip mouse: popup open button={} pos=({:.1f},{:.1f})",
+              static_cast<int>(mouse->button()), mouse->position().x(),
+              mouse->position().y());
+        }
+        return false;
+      default:
+        break;
+    }
+  }
   switch (event->type())
   {
     case QEvent::Enter:
