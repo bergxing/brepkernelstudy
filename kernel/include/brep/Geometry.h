@@ -287,6 +287,11 @@ class NurbsCurve final : public Curve
     {
         return m_knots;
     }
+    /// Replace control points only; weights and knots are unchanged.
+    void SetControlPoints(std::vector<Point3d> cvs) noexcept
+    {
+        m_cvs = std::move(cvs);
+    }
 
  private:
     std::vector<Point3d> m_cvs;

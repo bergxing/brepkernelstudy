@@ -79,6 +79,39 @@ TEST(NurbsFeature, UndoRedoRestoresBody)
     EXPECT_EQ(restored->Type, BodyType::Wire);
 }
 
+TEST(NurbsFeature, TransformBodyMovesCvsKeepsKnotsAndWeights)
+{
+    auto doc = Document::Create("nurbs_xf",
+                                boolean::MakeDefaultBooleanEvaluator());
+    Part& part = doc->AddPart("Main");
+
+    NurbsCurveSpec spec;
+    spec.Cvs = {Point3d{0, 0, 0}, Point3d{1, 0, 0}, Point3d{2, 1, 0},
+                Point3d{3, 1, 0}, Point3d{4, 0, 0}};
+    spec.Weights = {1, 1, 2, 1, 1};
+    Body* body = part.AddNurbsCurve(spec);
+    ASSERT_NE(body, nullptr);
+    const Guid guid = body->Guid;
+
+    RigidTransform t{.Translation = Point3d{2, 3, 0}};
+    ASSERT_TRUE(part.TransformBody(guid, t));
+
+    auto* feature = part.Features().FindByBody(guid);
+    ASSERT_NE(feature, nullptr);
+    auto prim = feature->ToPrimitiveSpec(part.Parameters());
+    ASSERT_TRUE(prim.has_value());
+    const auto* nurbs = std::get_if<NurbsCurveSpec>(&*prim);
+    ASSERT_NE(nurbs, nullptr);
+    ASSERT_EQ(nurbs->Cvs.size(), 5u);
+    EXPECT_NEAR(nurbs->Cvs[0].x(), 2.0, 1e-12);
+    EXPECT_NEAR(nurbs->Cvs[0].y(), 3.0, 1e-12);
+    EXPECT_NEAR(nurbs->Cvs[4].x(), 6.0, 1e-12);
+    ASSERT_EQ(nurbs->Weights.size(), 5u);
+    EXPECT_NEAR(nurbs->Weights[2], 2.0, 1e-12);
+    ASSERT_EQ(nurbs->Knots.size(), 9u);
+    EXPECT_DOUBLE_EQ(nurbs->Knots[4], 0.5);
+}
+
 TEST(NurbsFeature, XlRoundTripKeepsKnotsAndWeights)
 {
     namespace fs = std::filesystem;

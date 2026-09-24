@@ -553,6 +553,16 @@ bool Part::TransformBody(brep::Guid bodyGuid, RigidTransform transform,
         }
         bezier->SetFromSpec(spec);
     }
+    else if (feature->TypeName() == "NurbsCurve")
+    {
+        auto* nurbs = static_cast<feat::NurbsCurveFeature*>(feature);
+        NurbsCurveSpec spec = nurbs->ToSpec();
+        for (Point3d& p : spec.Cvs)
+        {
+            p = p + offset;
+        }
+        nurbs->SetFromSpec(spec);
+    }
     else
     {
         return false;

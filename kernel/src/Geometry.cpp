@@ -603,6 +603,21 @@ bool ApplyTransform(Curve& c, const RigidTransform& t)
             bezier.SetControlPoints(std::move(cvs), bezier.Weights());
             return true;
         }
+        case CurveKind::Nurbs:
+        {
+            auto& nurbs = static_cast<NurbsCurve&>(c);
+            std::vector<Point3d> cvs = nurbs.Cvs();
+            if (cvs.empty())
+            {
+                return false;
+            }
+            for (Point3d& p : cvs)
+            {
+                p = t.TransformPoint(p);
+            }
+            nurbs.SetControlPoints(std::move(cvs));
+            return true;
+        }
         default:
             return false;
     }

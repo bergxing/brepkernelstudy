@@ -105,3 +105,24 @@ TEST(NurbsCurve, TangentAtZeroMatchesBezier)
     const Vector3d b = nurbs.Tangent(0.0);
     EXPECT_GT(a.dot(b), 0.99);
 }
+
+TEST(NurbsCurve, ApplyTransformMovesCvsKeepsKnotsAndWeights)
+{
+    const RigidTransform t{.Translation = Point3d{2, 3, 0}};
+    const std::vector<Point3d> cvs{Point3d{0, 0, 0}, Point3d{1, 0, 0},
+                                   Point3d{2, 1, 0}, Point3d{3, 1, 0},
+                                   Point3d{4, 0, 0}};
+    const std::vector<double> weights{1, 1, 2, 1, 1};
+    const std::vector<double> knots = ClampedUniformKnots(5, 3);
+    NurbsCurve curve(cvs, weights, knots);
+    ASSERT_EQ(curve.Knots().size(), 9u);
+
+    ASSERT_TRUE(ApplyTransform(curve, t));
+    EXPECT_NEAR(curve.Cvs()[0].x(), 2.0, 1e-12);
+    EXPECT_NEAR(curve.Cvs()[0].y(), 3.0, 1e-12);
+    EXPECT_NEAR(curve.Cvs()[4].x(), 6.0, 1e-12);
+    ASSERT_EQ(curve.Weights().size(), 5u);
+    EXPECT_NEAR(curve.Weights()[2], 2.0, 1e-12);
+    ASSERT_EQ(curve.Knots().size(), 9u);
+    EXPECT_DOUBLE_EQ(curve.Knots()[4], 0.5);
+}
