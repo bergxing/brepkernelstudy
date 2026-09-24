@@ -1,5 +1,6 @@
-#include "brep/Builder.h"
+#include "brep/build/PrimitiveBuild.h"
 
+#include "brep/Geometry.h"
 #include "brep/Log.h"
 
 #include <array>
@@ -7,6 +8,7 @@
 #include <numbers>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace brep
 {
@@ -259,6 +261,101 @@ Body* MakeSphere(Model& model, const SphereSpec& spec)
   Model::PairPartners(ce_fwd, ce_rev);
 
   BREP_INFO("MakeSphere '{}' done: 2 verts, 1 seam, 1 face", spec.Name);
+  return body;
+}
+
+Body* MakeBezierWire(Model& model, const BezierSpec& spec)
+{
+  if (!BezierSpecValid(spec))
+  {
+    return nullptr;
+  }
+
+  Body* body = model.MakeBody(BodyType::Wire, spec.Name);
+
+  if (spec.SegmentCount == 1)
+  {
+    Vertex* v0 = model.MakeVertex(
+        model.MakePoint(spec.Cvs.front(), spec.Name + "_p0"), spec.Tolerance,
+        spec.Name + "_v0");
+    Vertex* v1 = model.MakeVertex(
+        model.MakePoint(spec.Cvs.back(), spec.Name + "_p1"), spec.Tolerance,
+        spec.Name + "_v1");
+    BezierCurve* curve =
+        model.MakeBezier(spec.Cvs, spec.Weights, spec.Name + "_crv");
+    Edge* edge = model.MakeEdge(curve, v0, v1, 0.0, 1.0, spec.Tolerance,
+                                spec.Name + "_e");
+    body->WireEdges.push_back(edge);
+  }
+  else
+  {
+    std::vector<Vertex*> verts;
+    verts.reserve(static_cast<std::size_t>(spec.SegmentCount) + 1U);
+    for (int s = 0; s <= spec.SegmentCount; ++s)
+    {
+      const Point3d& p = spec.Cvs[static_cast<std::size_t>(3 * s)];
+      verts.push_back(model.MakeVertex(
+          model.MakePoint(p, spec.Name + "_p" + std::to_string(s)),
+          spec.Tolerance, spec.Name + "_v" + std::to_string(s)));
+    }
+    for (int s = 0; s < spec.SegmentCount; ++s)
+    {
+      const std::size_t base = static_cast<std::size_t>(3 * s);
+      std::vector<Point3d> seg = {spec.Cvs[base], spec.Cvs[base + 1],
+                                  spec.Cvs[base + 2], spec.Cvs[base + 3]};
+      std::vector<double> segW;
+      if (!spec.Weights.empty())
+      {
+          segW = {BezierWeightAt(spec, base), BezierWeightAt(spec, base + 1),
+                  BezierWeightAt(spec, base + 2),
+                  BezierWeightAt(spec, base + 3)};
+      }
+      BezierCurve* curve = model.MakeBezier(
+          std::move(seg), std::move(segW),
+          spec.Name + "_crv" + std::to_string(s));
+      Edge* edge = model.MakeEdge(
+          curve, verts[static_cast<std::size_t>(s)],
+          verts[static_cast<std::size_t>(s) + 1], 0.0, 1.0, spec.Tolerance,
+          spec.Name + "_e" + std::to_string(s));
+      body->WireEdges.push_back(edge);
+    }
+  }
+
+  BREP_INFO("MakeBezierWire '{}' done: {} edges (wire)", spec.Name,
+            body->WireEdges.size());
+  return body;
+}
+
+Body* MakeNurbsCurveWire(Model& model, const NurbsCurveSpec& spec)
+{
+  if (!NurbsCurveSpecValid(spec))
+  {
+    return nullptr;
+  }
+
+  Body* body = model.MakeBody(BodyType::Wire, spec.Name);
+
+  Vertex* v0 = model.MakeVertex(
+      model.MakePoint(spec.Cvs.front(), spec.Name + "_p0"), spec.Tolerance,
+      spec.Name + "_v0");
+  Vertex* v1 = model.MakeVertex(
+      model.MakePoint(spec.Cvs.back(), spec.Name + "_p1"), spec.Tolerance,
+      spec.Name + "_v1");
+
+  std::vector<double> knots = spec.Knots;
+  if (knots.empty())
+  {
+    knots = ClampedUniformKnots(static_cast<int>(spec.Cvs.size()), 3);
+  }
+
+  NurbsCurve* curve =
+      model.MakeNurbs(spec.Cvs, spec.Weights, std::move(knots),
+                      spec.Name + "_crv");
+  Edge* edge = model.MakeEdge(curve, v0, v1, 0.0, 1.0, spec.Tolerance,
+                              spec.Name + "_e");
+  body->WireEdges.push_back(edge);
+
+  BREP_INFO("MakeNurbsCurveWire '{}' done: 1 edge (wire)", spec.Name);
   return body;
 }
 
