@@ -1,4 +1,6 @@
 build/
+!kernel/include/brep/build/
+!kernel/include/brep/build/**
 build-mingw/
 build-kernel/
 build-viewer/

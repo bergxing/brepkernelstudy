@@ -171,7 +171,7 @@ Body* Part::MaterializeFeatureBody(feat::IFeature& feature,
           }
           if constexpr (std::is_same_v<T, NurbsCurveSpec>)
           {
-            return nullptr;
+            return MakeNurbsCurveWire(scratch, primitive);
           }
           return nullptr;
         },

@@ -78,6 +78,14 @@ gtest_discover_tests(brep_test_bezier_wire
   TEST_PREFIX "brep_test_bezier_wire."
 )
 
+add_executable(brep_test_nurbs_wire kernel/TestNurbsWire.cpp)
+target_link_libraries(brep_test_nurbs_wire PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_nurbs_wire
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_nurbs_wire>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_nurbs_wire."
+)
+
 add_executable(brep_test_bezier_feature kernel/TestBezierFeature.cpp)
 target_link_libraries(brep_test_bezier_feature PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_bezier_feature
