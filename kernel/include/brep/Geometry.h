@@ -302,6 +302,10 @@ class NurbsCurve final : public Curve
 [[nodiscard]] std::vector<Point3d> SampleBezierPolyline(
     const BezierCurve& curve, int uniformSegments = 32);
 
+/// Uniform sample of a NURBS curve as a polyline (N segments → N+1 points).
+[[nodiscard]] std::vector<Point3d> SampleNurbsPolyline(
+    const NurbsCurve& curve, int uniformSegments = 32);
+
 /// 2D parameter-space curve sitting on a face (pcurve).
 class Curve2d
 {

@@ -417,6 +417,21 @@ std::vector<Point3d> SampleBezierPolyline(const BezierCurve& curve,
     return points;
 }
 
+std::vector<Point3d> SampleNurbsPolyline(const NurbsCurve& curve,
+                                         int uniformSegments)
+{
+    const int segments = std::max(1, uniformSegments);
+    std::vector<Point3d> points;
+    points.reserve(static_cast<std::size_t>(segments) + 1U);
+    for (int i = 0; i <= segments; ++i)
+    {
+        const double t =
+            static_cast<double>(i) / static_cast<double>(segments);
+        points.push_back(curve.Eval(t));
+    }
+    return points;
+}
+
 Point2d PolylineCurve2d::Eval(double t) const
 {
     if (m_points.empty())
