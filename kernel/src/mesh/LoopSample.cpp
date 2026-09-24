@@ -1,6 +1,7 @@
 #include "brep/mesh/LoopSample.h"
 
 #include "brep/Geometry.h"
+#include "brep/internal/Polygon2d.h"
 #include "brep/Log.h"
 
 #include <algorithm>
@@ -14,11 +15,149 @@ namespace
 {
 
 constexpr double kPointTolerance = 1e-12;
+// Only rebuild a circle span when T0/T1 are clearly not the edge vertices
+// (boolean weld). Slight vertex snap must keep the stored arc so octant
+// trim holes stay on the correct side of the sphere.
+constexpr double kParamVertexTol = 1e-3;
+
+[[nodiscard]] double CircleAngle(const CircleCurve& circle, const Point3d& point)
+{
+  const Vector3d radial = point - circle.Center();
+  return std::atan2(radial.dot(circle.YAxis()), radial.dot(circle.XAxis()));
+}
+
+[[nodiscard]] double ShortestSignedSpan(double tStart, double tEnd)
+{
+  constexpr double kPi = std::numbers::pi;
+  constexpr double kTwoPi = 2.0 * kPi;
+  double span = tEnd - tStart;
+  while (span <= -kPi)
+  {
+    span += kTwoPi;
+  }
+  while (span > kPi)
+  {
+    span -= kTwoPi;
+  }
+  return span;
+}
+
+[[nodiscard]] bool CurveParamsMatchVertices(const Edge& edge)
+{
+  if (edge.Curve == nullptr || edge.V0 == nullptr || edge.V1 == nullptr)
+  {
+    return false;
+  }
+  const double tol = std::max(
+      {kParamVertexTol, edge.V0->Tolerance, edge.V1->Tolerance});
+  return edge.Curve->Eval(edge.T0).distance_to(edge.V0->Position()) <= tol &&
+         edge.Curve->Eval(edge.T1).distance_to(edge.V1->Position()) <= tol;
+}
+
+[[nodiscard]] bool UvNear(const Point2d& a, const Point2d& b, bool periodicU)
+{
+  double du = a.u() - b.u();
+  if (periodicU)
+  {
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    du = std::remainder(du, kTwoPi);
+  }
+  const double dv = a.v() - b.v();
+  return du * du + dv * dv <= 1e-8;
+}
+
+[[nodiscard]] std::size_t circle_segment_count(
+    const CircleCurve& circle, double parameter_span,
+    const TessellationOptions& opts);
+
+[[nodiscard]] std::vector<Point3d> SampleOrientedEdge(
+    const Edge& edge, Orientation sense, const TessellationOptions& opts)
+{
+  if (edge.Curve == nullptr)
+  {
+    throw std::invalid_argument("SampleEdgeXyz: edge has no curve");
+  }
+
+  const Vertex* start = edge.Start(sense);
+  const Vertex* end = edge.End(sense);
+  const Point3d* snapStart = start != nullptr ? &start->Position() : nullptr;
+  const Point3d* snapEnd = end != nullptr ? &end->Position() : nullptr;
+  const bool paramsMatch = CurveParamsMatchVertices(edge);
+
+  std::size_t segmentCount = 1;
+  double tStart = edge.ParamAt(sense, 0.0);
+  double tEnd = edge.ParamAt(sense, 1.0);
+
+  switch (edge.Curve->Kind())
+  {
+    case CurveKind::Line:
+      break;
+    case CurveKind::Circle: {
+      const auto* circle = dynamic_cast<const CircleCurve*>(edge.Curve);
+      if (circle == nullptr)
+      {
+        throw std::invalid_argument("SampleEdgeXyz: invalid circle curve");
+      }
+      const auto onCircle = [&](const Point3d* point)
+      {
+        if (point == nullptr)
+        {
+          return false;
+        }
+        const double angle = CircleAngle(*circle, *point);
+        return circle->Eval(angle).distance_to(*point) <= kParamVertexTol;
+      };
+      if (!paramsMatch && onCircle(snapStart) && onCircle(snapEnd))
+      {
+        tStart = CircleAngle(*circle, *snapStart);
+        tEnd = tStart + ShortestSignedSpan(
+            tStart, CircleAngle(*circle, *snapEnd));
+      }
+      segmentCount = circle_segment_count(*circle, tEnd - tStart, opts);
+      break;
+    }
+    case CurveKind::Bezier:
+    case CurveKind::Nurbs:
+      segmentCount = 32;
+      break;
+    default:
+      throw std::invalid_argument("SampleEdgeXyz: unsupported curve kind");
+  }
+
+  std::vector<Point3d> points;
+  points.reserve(segmentCount + 1);
+  if (edge.Curve->Kind() == CurveKind::Line && !paramsMatch &&
+      snapStart != nullptr && snapEnd != nullptr)
+  {
+    points.push_back(*snapStart);
+    points.push_back(*snapEnd);
+    return points;
+  }
+
+  for (std::size_t i = 0; i <= segmentCount; ++i)
+  {
+    const double localT =
+        static_cast<double>(i) / static_cast<double>(segmentCount);
+    points.push_back(edge.Curve->Eval(tStart + (tEnd - tStart) * localT));
+  }
+  constexpr double kSnapTol = 1e-6;
+  if (snapStart != nullptr &&
+      points.front().distance_to(*snapStart) <= kSnapTol)
+  {
+    points.front() = *snapStart;
+  }
+  if (snapEnd != nullptr &&
+      points.back().distance_to(*snapEnd) <= kSnapTol)
+  {
+    points.back() = *snapEnd;
+  }
+  return points;
+}
 
 [[nodiscard]] std::size_t circle_segment_count(
     const CircleCurve& circle, double parameter_span,
     const TessellationOptions& opts)
-    {
+{
   const double radius = circle.Radius();
   if (!(radius > 0.0))
   {
@@ -87,62 +226,31 @@ constexpr double kPointTolerance = 1e-12;
 [[nodiscard]] bool point_in_polygon(const Point2d& point,
                                     const SampledRing& ring)
 {
-  bool inside = false;
-  for (std::size_t i = 0, j = ring.Points.size() - 1;
-       i < ring.Points.size(); j = i++)
-       {
-    const Point2d& a = ring.Points[i].Uv;
-    const Point2d& b = ring.Points[j].Uv;
-    if ((a.v() > point.v()) != (b.v() > point.v()) &&
-        point.u() < (b.u() - a.u()) * (point.v() - a.v()) /
-                            (b.v() - a.v()) +
-                        a.u())
-                            {
-      inside = !inside;
-    }
+  std::vector<Point2d> uv;
+  uv.reserve(ring.Points.size());
+  for (const SampledPoint& sample : ring.Points)
+  {
+    uv.push_back(sample.Uv);
   }
-  return inside;
+  return brep::internal::PointInPolygon2d(point, uv);
 }
 
 }  // namespace
 
+std::vector<Point3d> SampleEdgeXyz(const Edge& edge,
+                                     const TessellationOptions& opts)
+{
+  return SampleOrientedEdge(edge, Orientation::Forward, opts);
+}
+
 std::vector<Point3d> SampleEdgeXyz(const CoEdge& ce,
                                      const TessellationOptions& opts)
 {
-  if (!ce.Edge || !ce.Edge->Curve)
-{
+  if (ce.Edge == nullptr)
+  {
     throw std::invalid_argument("SampleEdgeXyz: coedge has no curve");
   }
-
-  const Edge& edge = *ce.Edge;
-  std::size_t segment_count = 1;
-  switch (edge.Curve->Kind())
-  {
-    case CurveKind::Line:
-      break;
-    case CurveKind::Circle: {
-      const auto* circle = dynamic_cast<const CircleCurve*>(edge.Curve);
-      if (!circle)
-      {
-        throw std::invalid_argument("SampleEdgeXyz: invalid circle curve");
-      }
-      segment_count =
-          circle_segment_count(*circle, edge.T1 - edge.T0, opts);
-      break;
-    }
-    default:
-      throw std::invalid_argument("SampleEdgeXyz: unsupported curve kind");
-  }
-
-  std::vector<Point3d> points;
-  points.reserve(segment_count + 1);
-  for (std::size_t i = 0; i <= segment_count; ++i)
-  {
-    const double local_t =
-        static_cast<double>(i) / static_cast<double>(segment_count);
-    points.push_back(edge.Curve->Eval(edge.ParamAt(ce.Sense, local_t)));
-  }
-  return points;
+  return SampleOrientedEdge(*ce.Edge, ce.Sense, opts);
 }
 
 SampledRing SampleLoop(const Loop& loop, const Surface& surface,
@@ -158,11 +266,25 @@ SampledRing SampleLoop(const Loop& loop, const Surface& surface,
     {
       return;
     }
+    const bool periodicU = surface.Kind() == SurfaceKind::Sphere;
+    bool usePcurve = coedge.Pcurve != nullptr &&
+                     surface.Kind() != SurfaceKind::Plane;
+    if (usePcurve)
+    {
+      const Point2d p0 = coedge.Pcurve->Eval(0.0);
+      const Point2d p1 = coedge.Pcurve->Eval(1.0);
+      const Point2d u0 = project_to_surface(surface, edge_points.front());
+      const Point2d u1 = project_to_surface(surface, edge_points.back());
+      usePcurve = UvNear(p0, u0, periodicU) && UvNear(p1, u1, periodicU);
+    }
     for (std::size_t i = 0; i < edge_points.size(); ++i)
     {
       const Point3d& xyz = edge_points[i];
       Point2d uv;
-      if (coedge.Pcurve)
+      // Split/copied coedges can retain a pcurve whose parameter range still
+      // describes the source edge. Project when the pcurve no longer matches
+      // the welded vertices so CDT sees a closed UV polygon.
+      if (usePcurve)
       {
         const double t = static_cast<double>(i) /
                          static_cast<double>(edge_points.size() - 1);
@@ -312,6 +434,13 @@ std::vector<FaceRegion> GroupFaceRegions(
         });
     if (region == regions.end())
     {
+      // Analytic sphere seam outers live on another UV chart from imprint
+      // circles; attach orphan holes to the sole outer region.
+      if (surface.Kind() == SurfaceKind::Sphere && regions.size() == 1U)
+      {
+        regions.front().Holes.push_back(std::move(hole));
+        continue;
+      }
       BREP_WARN(
           "GroupFaceRegions: inner loop centroid is outside all outer loops "
           "on face '{}'",
