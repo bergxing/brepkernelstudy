@@ -1,87 +1,76 @@
 #include "adapter/SceneAdapter.h"
 
+#include "api/Base.h"
 #include "api/Mesh.h"
 #include "api/Modeling.h"
 
+#include <string>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace brep::viewer::adapter
 {
+namespace
+{
 
-brep::Part* SceneAdapter::main_part() const noexcept
+template <class F>
+decltype(auto) TraceScene(const char* site, const std::string& subject, F&& body)
+{
+    brep::AspectEvent event;
+    event.Site = site;
+    event.Subject = subject;
+    return brep::ProcessAspectChain().Invoke(event, std::forward<F>(body));
+}
+
+std::string PrimitiveName(const PrimitiveSpec& spec)
+{
+    return std::visit([](const auto& arm) { return arm.Name; }, spec);
+}
+
+}  // namespace
+
+brep::Part* SceneAdapter::MainPart() const noexcept
 {
     return m_document ? m_document->MainPart() : nullptr;
 }
 
-const brep::Part* SceneAdapter::main_part_const() const noexcept
+const brep::Part* SceneAdapter::MainPartConst() const noexcept
 {
     return m_document ? m_document->MainPart() : nullptr;
 }
 
-MeshBundle SceneAdapter::mesh_for_body(
-    const Guid& body_guid, const brep::io::BodyMeshCache* cache) const
+MeshBundle SceneAdapter::MeshForBody(
+    const Guid& bodyGuid, const brep::io::BodyMeshCache* cache) const
 {
     MeshBundle out;
-    const Part* part = main_part_const();
+    const Part* part = MainPartConst();
     if (!part)
     {
         return out;
     }
 
-    if (cache && cache->Has(body_guid))
+    if (cache && cache->Has(bodyGuid))
     {
-        out.faces = cache->Triangles.at(body_guid);
-        out.edges = cache->Edges.at(body_guid);
+        out.Faces = cache->Triangles.at(bodyGuid);
+        out.Edges = cache->Edges.at(bodyGuid);
         return out;
     }
 
-    const Body* body = part->FindBody(body_guid);
+    const Body* body = part->FindBody(bodyGuid);
     if (!body)
     {
         return out;
     }
-    out.faces = TessellateBody(*body);
-    out.edges = ExtractEdges(*body);
+    out.Faces = TessellateBody(*body);
+    out.Edges = ExtractEdges(*body);
     return out;
 }
 
-const feat::IFeature* SceneAdapter::find_box_feature(
+std::optional<SceneObject> SceneAdapter::ObjectForFeature(
     feat::FeatureId id) const
 {
-    const Part* part = main_part_const();
-    if (!part || !id.IsValid())
-    {
-        return nullptr;
-    }
-    const auto* f = part->Features().Find(id);
-    if (!f || f->TypeName() != "Box")
-    {
-        return nullptr;
-    }
-    return f;
-}
-
-std::optional<BoxParams> SceneAdapter::box_params_from_feature(
-    const feat::IFeature& feature) const
-{
-    const Part* part = main_part_const();
-    if (!part || feature.TypeName() != "Box")
-    {
-        return std::nullopt;
-    }
-    const auto& box = static_cast<const feat::BoxFeature&>(feature);
-    const auto& params = part->Parameters();
-    return BoxParams{
-        .length = params.Get(box.LengthId()).value_or(0.0),
-        .width = params.Get(box.WidthId()).value_or(0.0),
-        .height = params.Get(box.HeightId()).value_or(0.0),
-    };
-}
-
-std::optional<SceneObject> SceneAdapter::object_for_feature(
-    feat::FeatureId id) const
-{
-    const Part* part = main_part_const();
+    const Part* part = MainPartConst();
     if (!part || !id.IsValid())
     {
         return std::nullopt;
@@ -93,89 +82,54 @@ std::optional<SceneObject> SceneAdapter::object_for_feature(
     }
 
     SceneObject obj;
-    obj.feature_guid = f->Id().Guid;
-    obj.body_guid = f->BodyGuid();
-    obj.name = std::string(f->DisplayName());
-    obj.type_name = std::string(f->TypeName());
-    if (f->TypeName() == "Box")
-    {
-        obj.box = box_params_from_feature(*f);
-    }
-    else if (f->TypeName() == "Sphere")
-    {
-        const auto& sph = static_cast<const feat::SphereFeature&>(*f);
-        obj.sphere = SphereParams{
-            .radius = part->Parameters().Get(sph.RadiusId()).value_or(0.0),
-        };
-    }
-    else if (f->TypeName() == "Boolean")
-    {
-        const auto& bf = static_cast<const feat::BooleanFeature&>(*f);
-        obj.boolean_info = BooleanParams{.op = bf.Op()};
-    }
+    obj.FeatureGuid = f->Id().Guid;
+    obj.BodyGuid = f->BodyGuid();
+    obj.Name = std::string(f->DisplayName());
+    obj.TypeName = std::string(f->TypeName());
     return obj;
 }
 
-std::optional<SceneObject> SceneAdapter::object_for_body(
-    const Guid& body_guid) const
+std::optional<SceneObject> SceneAdapter::ObjectForBody(
+    const Guid& bodyGuid) const
 {
-    const Part* part = main_part_const();
+    const Part* part = MainPartConst();
     if (!part)
     {
         return std::nullopt;
     }
-    const auto* f = part->Features().FindByBody(body_guid);
+    const auto* f = part->Features().FindByBody(bodyGuid);
     if (!f)
     {
-        const Body* body = part->FindBody(body_guid);
+        const Body* body = part->FindBody(bodyGuid);
         if (!body)
         {
             return std::nullopt;
         }
         SceneObject obj;
-        obj.body_guid = body_guid;
-        obj.name = body->Name;
-        obj.type_name = "Body";
+        obj.BodyGuid = bodyGuid;
+        obj.Name = body->Name;
+        obj.TypeName = "Body";
         return obj;
     }
-    return object_for_feature(f->Id());
+    return ObjectForFeature(f->Id());
 }
 
-std::optional<BoxParams> SceneAdapter::box_params(feat::FeatureId id) const
+Body* SceneAdapter::AddPrimitive(const PrimitiveSpec& spec)
 {
-    const auto* f = find_box_feature(id);
-    if (!f)
-    {
-        return std::nullopt;
-    }
-    return box_params_from_feature(*f);
+    const std::string subject = PrimitiveName(spec);
+    return TraceScene("scene.addPrimitive", subject, [&]() -> Body* {
+        Part* part = MainPart();
+        if (!part)
+        {
+            return nullptr;
+        }
+        return part->AddPrimitive(spec);
+    });
 }
 
-bool SceneAdapter::set_box_params(feat::FeatureId id, const BoxParams& params)
+void SceneAdapter::RecordAppendPrimitive(feat::FeatureId id, PrimitiveSpec undo)
 {
-    Part* part = main_part();
-    if (!part || !find_box_feature(id))
-    {
-        return false;
-    }
-    return part->EditFeatureParams(id, {{"Length", params.length},
-                                        {"Width", params.width},
-                                        {"Height", params.height}});
-}
-
-Body* SceneAdapter::add_box(const BoxSpec& spec)
-{
-    Part* part = main_part();
-    if (!part)
-    {
-        return nullptr;
-    }
-    return part->AddBox(spec);
-}
-
-void SceneAdapter::record_append_feature(feat::FeatureId id, BoxSpec undo_spec)
-{
-    Part* part = main_part();
+    Part* part = MainPart();
     if (!part || !id.IsValid())
     {
         return;
@@ -183,88 +137,157 @@ void SceneAdapter::record_append_feature(feat::FeatureId id, BoxSpec undo_spec)
     feat::FeatureTransaction tx;
     tx.Kind = feat::TxKind::AppendFeature;
     tx.Feature = id;
-    tx.FeatureType = "Box";
-    tx.Box = std::move(undo_spec);
+    std::visit(
+        [&](auto&& spec)
+        {
+            using T = std::decay_t<decltype(spec)>;
+            if constexpr (std::is_same_v<T, BoxSpec>)
+            {
+                tx.FeatureType = "Box";
+                tx.Box = std::forward<decltype(spec)>(spec);
+            }
+            else if constexpr (std::is_same_v<T, SphereSpec>)
+            {
+                tx.FeatureType = "Sphere";
+                tx.Sphere = std::forward<decltype(spec)>(spec);
+            }
+            else if constexpr (std::is_same_v<T, BezierSpec>)
+            {
+                tx.FeatureType = "Bezier";
+                tx.Bezier = std::forward<decltype(spec)>(spec);
+            }
+            else
+            {
+                static_assert(std::is_same_v<T, NurbsCurveSpec>,
+                              "RecordAppendPrimitive: add PrimitiveSpec arm");
+                // Nurbs history fields land in Nb3; do not write Bezier.
+            }
+        },
+        undo);
     part->FeatureHistory().Record(std::move(tx));
 }
 
-Body* SceneAdapter::add_sphere(const SphereSpec& spec)
+bool SceneAdapter::SetPrimitive(feat::FeatureId id, const PrimitiveSpec& spec)
 {
-    Part* part = main_part();
-    if (!part)
-    {
-        return nullptr;
-    }
-    return part->AddSphere(spec);
-}
-
-void SceneAdapter::record_append_sphere(feat::FeatureId id,
-                                        SphereSpec undo_spec)
-{
-    Part* part = main_part();
+    Part* part = MainPart();
     if (!part || !id.IsValid())
-    {
-        return;
-    }
-    feat::FeatureTransaction tx;
-    tx.Kind = feat::TxKind::AppendFeature;
-    tx.Feature = id;
-    tx.FeatureType = "Sphere";
-    tx.Sphere = std::move(undo_spec);
-    part->FeatureHistory().Record(std::move(tx));
-}
-
-Body* SceneAdapter::add_boolean(brep::boolean::BooleanOp op,
-                                feat::FeatureId target, feat::FeatureId tool,
-                                std::string name)
-{
-    Part* part = main_part();
-    if (!part)
-    {
-        return nullptr;
-    }
-    return part->AddBoolean(op, target, tool, std::move(name));
-}
-
-std::optional<SphereParams> SceneAdapter::sphere_params(
-    feat::FeatureId id) const
-{
-    const Part* part = main_part_const();
-    if (!part || !id.IsValid())
-    {
-        return std::nullopt;
-    }
-    const auto* f = part->Features().Find(id);
-    if (!f || f->TypeName() != "Sphere")
-    {
-        return std::nullopt;
-    }
-    const auto& sph = static_cast<const feat::SphereFeature&>(*f);
-    return SphereParams{
-        .radius = part->Parameters().Get(sph.RadiusId()).value_or(0.0),
-    };
-}
-
-bool SceneAdapter::set_sphere_params(feat::FeatureId id,
-                                     const SphereParams& params)
-{
-    Part* part = main_part();
-    if (!part)
     {
         return false;
     }
-    const auto* f = part->Features().Find(id);
-    if (!f || f->TypeName() != "Sphere")
+    feat::IFeature* feature = part->Features().Find(id);
+    if (!feature)
     {
         return false;
     }
-    return part->EditFeatureParams(id, {{"Radius", params.radius}});
+
+    return std::visit(
+        [&](const auto& value) -> bool
+        {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, BoxSpec>)
+            {
+                if (feature->TypeName() != "Box")
+                {
+                    return false;
+                }
+                auto* box = static_cast<feat::BoxFeature*>(feature);
+                const double length = value.Max.x() - value.Min.x();
+                const double height = value.Max.y() - value.Min.y();
+                const double width = value.Max.z() - value.Min.z();
+                if (length <= 1e-12 || width <= 1e-12 || height <= 1e-12)
+                {
+                    return false;
+                }
+                box->SetOrigin(value.Min);
+                return part->EditFeatureParams(id, {{"Length", length},
+                                                    {"Width", width},
+                                                    {"Height", height}});
+            }
+            else if constexpr (std::is_same_v<T, SphereSpec>)
+            {
+                if (feature->TypeName() != "Sphere")
+                {
+                    return false;
+                }
+                auto* sphere = static_cast<feat::SphereFeature*>(feature);
+                if (!(value.Radius > 1e-12))
+                {
+                    return false;
+                }
+                sphere->SetCenter(value.Center);
+                return part->EditFeatureParams(id, {{"Radius", value.Radius}});
+            }
+            else if constexpr (std::is_same_v<T, BezierSpec>)
+            {
+                if (feature->TypeName() != "Bezier")
+                {
+                    return false;
+                }
+                auto* bezier = static_cast<feat::BezierCurveFeature*>(feature);
+                feat::FeatureTransaction tx;
+                tx.Kind = feat::TxKind::EditParameters;
+                tx.Feature = id;
+                tx.FeatureType = "Bezier";
+                tx.BezierBefore = bezier->ToSpec();
+                tx.Bezier = value;
+                if (!value.Name.empty())
+                {
+                    tx.Bezier.Name = value.Name;
+                }
+                else
+                {
+                    tx.Bezier.Name = tx.BezierBefore.Name;
+                }
+                part->FeatureHistory().ApplyAndRecord(*part, std::move(tx));
+                return true;
+            }
+            else
+            {
+                static_assert(std::is_same_v<T, NurbsCurveSpec>,
+                              "SetPrimitive: add PrimitiveSpec arm");
+                // Nurbs history fields land in Nb3; do not write Bezier.
+                return false;
+            }
+        },
+        spec);
 }
 
-std::optional<BooleanParams> SceneAdapter::boolean_params(
+Body* SceneAdapter::AddBoolean(brep::boolean::BooleanOp op,
+                               feat::FeatureId target, feat::FeatureId tool,
+                               std::string name)
+{
+    const std::string subject = name;
+    return TraceScene("scene.addBoolean", subject, [&]() -> Body* {
+        Part* part = MainPart();
+        if (!part)
+        {
+            return nullptr;
+        }
+        return part->AddBoolean(op, target, tool, name);
+    });
+}
+
+Body* SceneAdapter::AddExtrudePad(const std::vector<Point2d>& profile,
+                                  double distance, bool symmetric,
+                                  std::string name)
+{
+    const std::string subject = name;
+    return TraceScene("scene.addExtrude", subject, [&]() -> Body* {
+        Part* part = MainPart();
+        if (!part)
+        {
+            return nullptr;
+        }
+        const ExtrudePadResult result =
+            part->AddExtrudePad(profile, distance, symmetric, name);
+        return result.Body;
+    });
+}
+
+std::optional<BooleanParams> SceneAdapter::BooleanParamsFor(
     feat::FeatureId id) const
 {
-    const Part* part = main_part_const();
+    const Part* part = MainPartConst();
     if (!part || !id.IsValid())
     {
         return std::nullopt;
@@ -275,26 +298,13 @@ std::optional<BooleanParams> SceneAdapter::boolean_params(
         return std::nullopt;
     }
     const auto& bf = static_cast<const feat::BooleanFeature&>(*f);
-    return BooleanParams{.op = bf.Op()};
+    return BooleanParams{.Op = bf.Op()};
 }
 
-std::optional<feat::FeatureId> SceneAdapter::feature_id_for(
-    Guid feature_guid, Guid body_guid) const
+std::optional<feat::FeatureId> SceneAdapter::FeatureIdFor(
+    Guid featureGuid, Guid bodyGuid) const
 {
-    const Part* part = main_part_const();
-    if (!part)
-    {
-        return std::nullopt;
-    }
-    const feat::IFeature* f = nullptr;
-    if (feature_guid.IsValid())
-    {
-        f = part->Features().Find(feat::FeatureId{feature_guid});
-    }
-    if (!f && body_guid.IsValid())
-    {
-        f = part->Features().FindByBody(body_guid);
-    }
+    const feat::IFeature* f = FindFeature(featureGuid, bodyGuid);
     if (!f)
     {
         return std::nullopt;
@@ -302,9 +312,11 @@ std::optional<feat::FeatureId> SceneAdapter::feature_id_for(
     return f->Id();
 }
 
-bool SceneAdapter::remove_feature(feat::FeatureId id)
+bool SceneAdapter::RemoveFeature(feat::FeatureId id)
 {
-    Part* part = main_part();
+    const std::string subject = id.Guid.ToString();
+    return TraceScene("scene.removeFeature", subject, [&] {
+    Part* part = MainPart();
     if (!part || !id.IsValid())
     {
         return false;
@@ -346,14 +358,21 @@ bool SceneAdapter::remove_feature(feat::FeatureId id)
         tx.TargetFeatureId = bf.TargetFeatureId();
         tx.ToolFeatureId = bf.ToolFeatureId();
     }
+    else if (tx.FeatureType == "Bezier")
+    {
+        const auto& bez = static_cast<const feat::BezierCurveFeature&>(*f);
+        tx.Bezier = bez.ToSpec();
+    }
 
     part->FeatureHistory().ApplyAndRecord(*part, std::move(tx));
     return true;
+    });
 }
 
-void SceneAdapter::undo_feature(int steps)
+void SceneAdapter::UndoFeature(int steps)
 {
-    Part* part = main_part();
+    TraceScene("scene.undo", std::to_string(steps), [&] {
+    Part* part = MainPart();
     if (!part)
     {
         return;
@@ -365,11 +384,13 @@ void SceneAdapter::undo_feature(int steps)
             break;
         }
     }
+    });
 }
 
-void SceneAdapter::redo_feature(int steps)
+void SceneAdapter::RedoFeature(int steps)
 {
-    Part* part = main_part();
+    TraceScene("scene.redo", std::to_string(steps), [&] {
+    Part* part = MainPart();
     if (!part)
     {
         return;
@@ -381,38 +402,77 @@ void SceneAdapter::redo_feature(int steps)
             break;
         }
     }
+    });
 }
 
-std::optional<BoxSpec> SceneAdapter::box_spec_for(Guid feature_guid,
-                                                  Guid body_guid) const
+std::optional<PrimitiveSpec> SceneAdapter::SpecFor(Guid featureGuid,
+                                                   Guid bodyGuid) const
 {
-    const Part* part = main_part_const();
+    const Part* part = MainPartConst();
+    const feat::IFeature* f = FindFeature(featureGuid, bodyGuid);
+    if (!part || !f)
+    {
+        return std::nullopt;
+    }
+    return f->ToPrimitiveSpec(part->Parameters());
+}
+
+Body* SceneAdapter::DuplicateBody(Guid bodyGuid, RigidTransform transform)
+{
+    const std::string subject = bodyGuid.ToString();
+    return TraceScene("scene.duplicate", subject, [&]() -> Body* {
+        Part* part = MainPart();
+        if (!part)
+        {
+            return nullptr;
+        }
+        return part->DuplicateBody(bodyGuid, transform);
+    });
+}
+
+bool SceneAdapter::TransformBody(Guid bodyGuid, RigidTransform transform)
+{
+    const std::string subject = bodyGuid.ToString();
+    return TraceScene("scene.transform", subject, [&] {
+        Part* part = MainPart();
+        if (!part)
+        {
+            return false;
+        }
+        return part->TransformBody(bodyGuid, transform);
+    });
+}
+
+const feat::IFeature* SceneAdapter::FindFeature(Guid featureGuid,
+                                               Guid bodyGuid) const
+{
+    const Part* part = MainPartConst();
     if (!part)
     {
-        return std::nullopt;
+        return nullptr;
     }
-
     const feat::IFeature* f = nullptr;
-    if (feature_guid.IsValid())
+    if (featureGuid.IsValid())
     {
-        f = part->Features().Find(feat::FeatureId{feature_guid});
+        f = part->Features().Find(feat::FeatureId{featureGuid});
+        if (f && bodyGuid.IsValid() && f->BodyGuid().IsValid() &&
+            f->BodyGuid() != bodyGuid)
+        {
+            f = nullptr;
+        }
     }
-    if (!f && body_guid.IsValid())
+    if (!f && bodyGuid.IsValid())
     {
-        f = part->Features().FindByBody(body_guid);
+        f = part->Features().FindByBody(bodyGuid);
     }
-    if (!f || f->TypeName() != "Box")
-    {
-        return std::nullopt;
-    }
-    const auto& box = static_cast<const feat::BoxFeature&>(*f);
-    return box.ToSpec(part->Parameters());
+    return f;
 }
 
-std::unique_ptr<brep::Document> SceneAdapter::create_blank(
-    const std::string& name)
+std::unique_ptr<brep::Document> SceneAdapter::CreateBlank(
+    const std::string& name,
+    std::shared_ptr<brep::boolean::IBooleanEvaluator> evaluator)
 {
-    auto doc = Document::Create(name);
+    auto doc = brep::Document::Create(name, std::move(evaluator));
     doc->AddPart("MainPart");
     return doc;
 }
