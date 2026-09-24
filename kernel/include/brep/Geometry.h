@@ -295,6 +295,9 @@ class NurbsCurve final : public Curve
     int m_degree{3};
 };
 
+/// Clamped open uniform knot vector on [0, 1] for degree `degree`.
+[[nodiscard]] std::vector<double> ClampedUniformKnots(int cvCount, int degree);
+
 /// Uniform sample of a cubic Bézier as a polyline (N segments → N+1 points).
 [[nodiscard]] std::vector<Point3d> SampleBezierPolyline(
     const BezierCurve& curve, int uniformSegments = 32);

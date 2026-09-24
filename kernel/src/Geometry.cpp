@@ -1,7 +1,5 @@
 #include "brep/Geometry.h"
 
-#include "brep/feat/PrimitiveSpecs.h"
-
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -211,6 +209,24 @@ void BasisFuns(int span, double t, int p, const std::vector<double>& u,
 }
 
 }  // namespace
+
+std::vector<double> ClampedUniformKnots(int cvCount, int degree)
+{
+    const int n = cvCount - 1;
+    const int knotCount = cvCount + degree + 1;
+    std::vector<double> u(static_cast<std::size_t>(knotCount), 0.0);
+    const int interior = n - degree;
+    for (int j = 1; j <= interior; ++j)
+    {
+        u[static_cast<std::size_t>(degree + j)] =
+            static_cast<double>(j) / static_cast<double>(interior + 1);
+    }
+    for (int i = n + 1; i < knotCount; ++i)
+    {
+        u[static_cast<std::size_t>(i)] = 1.0;
+    }
+    return u;
+}
 
 NurbsCurve::NurbsCurve(std::vector<Point3d> cvs, std::vector<double> weights,
                        std::vector<double> knots)

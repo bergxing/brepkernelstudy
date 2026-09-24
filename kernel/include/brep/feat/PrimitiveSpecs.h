@@ -1,5 +1,6 @@
 #pragma once
 
+#include "brep/Geometry.h"
 #include "brep/Math.h"
 #include "brep/Plane.h"
 
@@ -173,24 +174,7 @@ struct NurbsCurveSpec
     return 1.0;
 }
 
-[[nodiscard]] inline std::vector<double> ClampedUniformKnots(int cvCount,
-                                                             int degree)
-{
-    const int n = cvCount - 1;
-    const int knotCount = cvCount + degree + 1;
-    std::vector<double> u(static_cast<std::size_t>(knotCount), 0.0);
-    const int interior = n - degree;
-    for (int j = 1; j <= interior; ++j)
-    {
-        u[static_cast<std::size_t>(degree + j)] =
-            static_cast<double>(j) / static_cast<double>(interior + 1);
-    }
-    for (int i = n + 1; i < knotCount; ++i)
-    {
-        u[static_cast<std::size_t>(i)] = 1.0;
-    }
-    return u;
-}
+// ClampedUniformKnots: defined in Geometry.h / Geometry.cpp (brep_core).
 
 [[nodiscard]] inline bool NurbsCurveSpecValid(
     const NurbsCurveSpec& spec) noexcept
