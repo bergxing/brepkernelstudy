@@ -3,6 +3,7 @@
 #include "brep/Geometry.h"
 #include "brep/Topology.h"
 
+#include <cstddef>
 #include <memory>
 #include <span>
 #include <string>
@@ -11,6 +12,21 @@
 
 namespace brep
 {
+
+struct ModelPoolStats
+{
+    std::size_t Points{0};
+    std::size_t Curves{0};
+    std::size_t Curves2d{0};
+    std::size_t Surfaces{0};
+    std::size_t Vertices{0};
+    std::size_t Edges{0};
+    std::size_t Coedges{0};
+    std::size_t Loops{0};
+    std::size_t Faces{0};
+    std::size_t Shells{0};
+    std::size_t Bodies{0};
+};
 
 /// Owns all geometry and topology. Cross-entity pointers are non-owning and
 /// remain valid for the lifetime of this Model.
@@ -28,7 +44,15 @@ class Model
   LineCurve* MakeLine(Point3d a, Point3d b, std::string name = {});
   CircleCurve* MakeCircle(Point3d center, Vector3d normal, double radius,
                           std::string name = {});
+  BezierCurve* MakeBezier(Point3d p0, Point3d p1, Point3d p2, Point3d p3,
+                          std::string name = {});
+  BezierCurve* MakeBezier(std::vector<Point3d> cvs, std::string name = {});
+  BezierCurve* MakeBezier(std::vector<Point3d> cvs, std::vector<double> weights,
+                          std::string name);
+  NurbsCurve* MakeNurbs(std::vector<Point3d> cvs, std::vector<double> weights,
+                        std::vector<double> knots, std::string name = {});
   LineCurve2d* MakeLine2d(Point2d a, Point2d b);
+  PolylineCurve2d* MakePolyline2d(std::vector<Point2d> points);
   PlaneSurface* MakePlane(Point3d origin, Vector3d normal, std::string name = {});
   PlaneSurface* MakePlane(Point3d origin, Vector3d u_axis, Vector3d v_axis,
                           std::string name = {});
@@ -59,8 +83,11 @@ class Model
     return m_bodies;
   }
 
-  /// Remove a Body from the ownership pool (geometry/topology orphans remain).
+  /// Remove a Body and purge topology/geometry no longer reachable from any
+  /// remaining Body in this Model.
   bool RemoveBody(const Guid& guid);
+
+  [[nodiscard]] ModelPoolStats PoolStats() const noexcept;
 
   [[nodiscard]] Id NextId() noexcept
   {
@@ -77,6 +104,9 @@ class Model
     store.push_back(std::move(obj));
     return raw;
   }
+
+  void PurgeUnreferencedTopologyAndGeometry();
+  void ScrubTopologyBackReferences();
 
   Id m_idCounter{0};
 

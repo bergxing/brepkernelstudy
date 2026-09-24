@@ -1,11 +1,13 @@
 #pragma once
 
 #include "brep/Math.h"
+#include "brep/Plane.h"
 #include "brep/Types.h"
 
 #include <cmath>
 #include <numbers>
 #include <utility>
+#include <vector>
 
 namespace brep
 {
@@ -88,6 +90,14 @@ class LineCurve final : public Curve
   {
     return m_direction;
   }
+  void SetOrigin(Point3d origin) noexcept
+  {
+    m_origin = origin;
+  }
+  void SetDirection(Vector3d direction) noexcept
+  {
+    m_direction = direction.normalized();
+  }
 
  private:
   Point3d m_origin;
@@ -122,9 +132,31 @@ class CircleCurve final : public Curve
   {
     return m_center;
   }
+  [[nodiscard]] const Vector3d& Normal() const noexcept
+  {
+    return m_normal;
+  }
   [[nodiscard]] double Radius() const noexcept
   {
     return m_radius;
+  }
+  [[nodiscard]] const Vector3d& XAxis() const noexcept
+  {
+    return m_xAxis;
+  }
+  [[nodiscard]] const Vector3d& YAxis() const noexcept
+  {
+    return m_yAxis;
+  }
+  void SetCenter(Point3d center) noexcept
+  {
+    m_center = center;
+  }
+  void SetAxes(Vector3d normal, Vector3d xAxis, Vector3d yAxis) noexcept
+  {
+    m_normal = normal.normalized();
+    m_xAxis = xAxis.normalized();
+    m_yAxis = yAxis.normalized();
   }
 
  private:
@@ -134,6 +166,138 @@ class CircleCurve final : public Curve
   Vector3d m_yAxis;
   double m_radius;
 };
+
+/// Rational Bézier on [0, 1] (de Casteljau). Empty weights → all 1.
+class BezierCurve final : public Curve
+{
+ public:
+    BezierCurve(Point3d p0, Point3d p1, Point3d p2, Point3d p3)
+        : m_cvs{p0, p1, p2, p3}
+    {
+    }
+    explicit BezierCurve(std::vector<Point3d> cvs,
+                         std::vector<double> weights = {})
+        : m_cvs(std::move(cvs)), m_weights(std::move(weights))
+    {
+    }
+
+    [[nodiscard]] CurveKind Kind() const noexcept override
+    {
+        return CurveKind::Bezier;
+    }
+    [[nodiscard]] Point3d Eval(double t) const override;
+    [[nodiscard]] Vector3d Tangent(double t) const override;
+    [[nodiscard]] std::pair<double, double> Domain() const noexcept override
+    {
+        return {0.0, 1.0};
+    }
+
+    [[nodiscard]] int Degree() const noexcept
+    {
+        return std::max(0, static_cast<int>(m_cvs.size()) - 1);
+    }
+    [[nodiscard]] const std::vector<Point3d>& Cvs() const noexcept
+    {
+        return m_cvs;
+    }
+    [[nodiscard]] const std::vector<double>& Weights() const noexcept
+    {
+        return m_weights;
+    }
+    [[nodiscard]] double WeightAt(std::size_t i) const noexcept
+    {
+        if (i < m_weights.size() && m_weights[i] > 0.0)
+        {
+            return m_weights[i];
+        }
+        return 1.0;
+    }
+    [[nodiscard]] const Point3d& P0() const noexcept
+    {
+        static const Point3d kOrigin{};
+        return m_cvs.empty() ? kOrigin : m_cvs.front();
+    }
+    [[nodiscard]] const Point3d& P1() const noexcept
+    {
+        return m_cvs.size() > 1 ? m_cvs[1] : P0();
+    }
+    [[nodiscard]] const Point3d& P2() const noexcept
+    {
+        static const Point3d kOrigin{};
+        if (m_cvs.size() > 2)
+        {
+            return m_cvs[2];
+        }
+        return m_cvs.empty() ? kOrigin : m_cvs.back();
+    }
+    [[nodiscard]] const Point3d& P3() const noexcept
+    {
+        static const Point3d kOrigin{};
+        return m_cvs.empty() ? kOrigin : m_cvs.back();
+    }
+    void SetControlPoints(Point3d p0, Point3d p1, Point3d p2,
+                          Point3d p3) noexcept
+    {
+        m_cvs = {p0, p1, p2, p3};
+        m_weights.clear();
+    }
+    void SetControlPoints(std::vector<Point3d> cvs,
+                          std::vector<double> weights = {}) noexcept
+    {
+        m_cvs = std::move(cvs);
+        m_weights = std::move(weights);
+    }
+
+ private:
+    std::vector<Point3d> m_cvs;
+    std::vector<double> m_weights;
+};
+
+/// Rational B-spline (Cox–de Boor) on [0, 1]. Empty weights → all 1;
+/// empty knots → clamped uniform of degree 3.
+class NurbsCurve final : public Curve
+{
+ public:
+    NurbsCurve(std::vector<Point3d> cvs, std::vector<double> weights,
+               std::vector<double> knots);
+
+    [[nodiscard]] CurveKind Kind() const noexcept override
+    {
+        return CurveKind::Nurbs;
+    }
+    [[nodiscard]] Point3d Eval(double t) const override;
+    [[nodiscard]] Vector3d Tangent(double t) const override;
+    [[nodiscard]] std::pair<double, double> Domain() const noexcept override
+    {
+        return {0.0, 1.0};
+    }
+    [[nodiscard]] int Degree() const noexcept
+    {
+        return m_degree;
+    }
+    [[nodiscard]] const std::vector<Point3d>& Cvs() const noexcept
+    {
+        return m_cvs;
+    }
+    [[nodiscard]] const std::vector<double>& Weights() const noexcept
+    {
+        return m_weights;
+    }
+    [[nodiscard]] const std::vector<double>& Knots() const noexcept
+    {
+        return m_knots;
+    }
+
+ private:
+    std::vector<Point3d> m_cvs;
+    std::vector<double> m_weights;
+    std::vector<double> m_knots;
+    int m_degree{3};
+};
+
+/// Uniform sample of a cubic Bézier as a polyline (N segments → N+1 points).
+[[nodiscard]] std::vector<Point3d> SampleBezierPolyline(
+    const BezierCurve& curve, int uniformSegments = 32);
 
 /// 2D parameter-space curve sitting on a face (pcurve).
 class Curve2d
@@ -164,6 +328,28 @@ class LineCurve2d final : public Curve2d
  private:
   Point2d m_a;
   Point2d m_b;
+};
+
+class PolylineCurve2d final : public Curve2d
+{
+ public:
+    explicit PolylineCurve2d(std::vector<Point2d> points)
+        : m_points(std::move(points))
+    {
+    }
+
+    [[nodiscard]] Point2d Eval(double t) const override;
+    [[nodiscard]] std::pair<double, double> Domain() const noexcept override
+    {
+        return {0.0, 1.0};
+    }
+    [[nodiscard]] const std::vector<Point2d>& Points() const noexcept
+    {
+        return m_points;
+    }
+
+ private:
+    std::vector<Point2d> m_points;
 };
 
 class Surface
@@ -223,6 +409,16 @@ class PlaneSurface final : public Surface
   {
     return m_vAxis;
   }
+  void SetOrigin(Point3d origin) noexcept
+  {
+    m_origin = origin;
+  }
+  void SetAxes(Vector3d uAxis, Vector3d vAxis) noexcept
+  {
+    m_uAxis = uAxis.normalized();
+    m_vAxis = vAxis.normalized();
+    m_normal = m_uAxis.cross(m_vAxis).normalized();
+  }
 
   /// Project a 3D point into the plane's UV parameter space.
   [[nodiscard]] Point2d ParamOf(const Point3d& p) const
@@ -263,6 +459,10 @@ class SphereSurface final : public Surface
   [[nodiscard]] double Radius() const noexcept
   {
     return m_radius;
+  }
+  void SetCenter(Point3d center) noexcept
+  {
+    m_center = center;
   }
 
  private:
@@ -309,6 +509,16 @@ class CylinderSurface final : public Surface
   {
     return m_radius;
   }
+  void SetOrigin(Point3d origin) noexcept
+  {
+    m_origin = origin;
+  }
+  void SetFrame(Vector3d axis, Vector3d xAxis, Vector3d yAxis) noexcept
+  {
+    m_axis = axis.normalized();
+    m_xAxis = xAxis.normalized();
+    m_yAxis = yAxis.normalized();
+  }
 
  private:
   Point3d m_origin;
@@ -317,5 +527,9 @@ class CylinderSurface final : public Surface
   Vector3d m_yAxis;
   double m_radius{1.0};
 };
+
+void ApplyTransform(Point& p, const RigidTransform& t);
+[[nodiscard]] bool ApplyTransform(Curve& c, const RigidTransform& t);
+[[nodiscard]] bool ApplyTransform(Surface& s, const RigidTransform& t);
 
 }  // namespace brep
