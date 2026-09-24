@@ -1,18 +1,24 @@
 #include "commands/CommandRegistry.h"
 #include "commands/DocumentHistory.h"
 #include "commands/ITool.h"
+#include "commands/tools/BooleanExecute.h"
+#include "commands/tools/BooleanTwoBodyTool.h"
 #include "commands/tools/CopyTool.h"
+#include "commands/tools/CreateBezierTool.h"
 #include "commands/tools/CreateBoxTool.h"
+#include "commands/tools/CreateNurbsCurveTool.h"
 #include "commands/tools/CreateSphereTool.h"
+#include "commands/tools/ExtrudePadTool.h"
+#include "commands/tools/MoveTool.h"
 #include "ecs/Systems.h"
 
-#include "adapter/DocumentService.h"
-#include "adapter/SceneAdapter.h"
+#include "adapter/ISceneServiceFactory.h"
 #include "api/Core.h"
 #include "api/Modeling.h"
 #include "ecs/Components.h"
 #include "io/DxfExport.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -20,12 +26,18 @@
 
 #include <array>
 #include <optional>
+#include <variant>
 #include <vector>
 
 namespace brep::viewer::commands
 {
 namespace
 {
+
+QString TrCmd(const char* source)
+{
+  return QCoreApplication::translate("BuiltinCommands", source);
+}
 
 class NewDocumentCommand final : public ICommand
 {
@@ -55,7 +67,7 @@ class NewDocumentCommand final : public ICommand
     if (ctx.AfterDocumentReset) ctx.AfterDocumentReset();
     if (ctx.RequestRedraw) ctx.RequestRedraw();
     if (ctx.RefreshUi) ctx.RefreshUi();
-    const QString msg = QStringLiteral("???????");
+    const QString msg = TrCmd("Created blank document");
     if (ctx.ReportStatus) ctx.ReportStatus(msg);
     return CommandResult::Ok(msg);
   }
@@ -75,7 +87,7 @@ class SaveXlCommand final : public ICommand
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
   {
-    return ctx.World != nullptr && ctx.World->document() != nullptr &&
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
            ctx.Session != nullptr;
   }
 
@@ -97,11 +109,11 @@ class SaveXlCommand final : public ICommand
                 QStringLiteral(".xl");
       }
       path = QFileDialog::getSaveFileName(
-          ctx.ParentWidget, QStringLiteral("????"), start,
+          ctx.ParentWidget, TrCmd("Save Document"), start,
           QStringLiteral("XCAD Document (*.xl);;All Files (*)"));
       if (path.isEmpty())
       {
-        return CommandResult::Cancelled(QStringLiteral("?????"));
+        return CommandResult::Cancelled(TrCmd("Save cancelled"));
       }
       if (!path.endsWith(QStringLiteral(".xl"), Qt::CaseInsensitive))
       {
@@ -109,24 +121,29 @@ class SaveXlCommand final : public ICommand
       }
     }
 
-    auto result =
-        adapter::DocumentService{}.save(*ctx.World->document(), path.toStdString());
+    if (!ctx.DocumentService)
+    {
+      return CommandResult::Failed(TrCmd("Document service unavailable"));
+    }
+
+    auto result = ctx.DocumentService->save(*ctx.World->Document(),
+                                            path.toStdString());
     if (!result.ok)
     {
       const QString err = QString::fromStdString(result.error);
       if (ctx.ParentWidget)
       {
-        QMessageBox::critical(ctx.ParentWidget, QStringLiteral("????"),
+        QMessageBox::critical(ctx.ParentWidget, TrCmd("Save failed"),
                               err);
       }
       return CommandResult::Failed(err);
     }
 
-    ctx.World->document()->SetPath(path.toStdString());
-    ctx.World->document()->MarkClean();
+    ctx.World->Document()->SetPath(path.toStdString());
+    ctx.World->Document()->MarkClean();
     ctx.Session->set_document_path(path);
     if (ctx.RefreshUi) ctx.RefreshUi();
-    const QString msg = QStringLiteral("???: %1").arg(path);
+    const QString msg = TrCmd("Saved: %1").arg(path);
     if (ctx.ReportStatus) ctx.ReportStatus(msg);
     return CommandResult::Ok(msg);
   }
@@ -154,11 +171,11 @@ class OpenXlCommand final : public ICommand
     QString start = ctx.Session->path();
     if (start.isEmpty()) start = QDir::homePath();
     const QString path = QFileDialog::getOpenFileName(
-        ctx.ParentWidget, QStringLiteral("????"), start,
+        ctx.ParentWidget, TrCmd("Open Document"), start,
         QStringLiteral("XCAD Document (*.xl);;All Files (*)"));
     if (path.isEmpty())
     {
-      return CommandResult::Cancelled(QStringLiteral("?????"));
+      return CommandResult::Cancelled(TrCmd("Open cancelled"));
     }
     return open_xl_file(ctx, path);
   }
@@ -190,11 +207,11 @@ class ExportDxfCommand final : public ICommand
     }
 
     QString path = QFileDialog::getSaveFileName(
-        ctx.ParentWidget, QStringLiteral("?? DWG/DXF"), start,
+        ctx.ParentWidget, TrCmd("Export DWG/DXF"), start,
         QStringLiteral("CAD Drawing (*.dxf);;All Files (*)"));
     if (path.isEmpty())
     {
-      return CommandResult::Cancelled(QStringLiteral("?????"));
+      return CommandResult::Cancelled(TrCmd("Export cancelled"));
     }
     if (!path.endsWith(QStringLiteral(".dxf"), Qt::CaseInsensitive))
     {
@@ -216,7 +233,7 @@ class ExportDxfCommand final : public ICommand
       const QString err = QString::fromStdString(io::last_dxf_error());
       if (ctx.ParentWidget)
       {
-        QMessageBox::critical(ctx.ParentWidget, QStringLiteral("????"),
+        QMessageBox::critical(ctx.ParentWidget, TrCmd("Export failed"),
                               err);
       }
       return CommandResult::Failed(err);
@@ -224,7 +241,7 @@ class ExportDxfCommand final : public ICommand
 
     ctx.Session->set_export_path(path);
     if (ctx.RefreshUi) ctx.RefreshUi();
-    const QString msg = QStringLiteral("??? DXF ???%1 ??: %2")
+    const QString msg = TrCmd("Exported DXF (%1 segments): %2")
                             .arg(segments.size())
                             .arg(path);
     if (ctx.ReportStatus) ctx.ReportStatus(msg);
@@ -250,14 +267,43 @@ class CopyCommand final : public ICommand
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
   {
-    return ctx.World != nullptr && ctx.World->document() != nullptr &&
-           ctx.World->document()->MainPart() != nullptr;
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
   }
 
   [[nodiscard]] std::unique_ptr<ITool> make_tool(
       CommandContext& /*ctx*/) const override
   {
     return std::make_unique<CopyTool>();
+  }
+};
+
+class MoveCommand final : public ICommand
+{
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override
+  {
+    return "edit.move";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override
+  {
+    return "Move";
+  }
+  [[nodiscard]] CommandKind kind() const noexcept override
+  {
+    return CommandKind::Interactive;
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
+  {
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
+  }
+
+  [[nodiscard]] std::unique_ptr<ITool> make_tool(
+      CommandContext& /*ctx*/) const override
+  {
+    return std::make_unique<MoveTool>();
   }
 };
 
@@ -280,8 +326,8 @@ class CreateBoxCommand final : public ICommand
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
   {
-    return ctx.World != nullptr && ctx.World->document() != nullptr &&
-           ctx.World->document()->MainPart() != nullptr;
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
   }
 
   [[nodiscard]] std::unique_ptr<ITool> make_tool(
@@ -309,14 +355,224 @@ class CreateSphereCommand final : public ICommand
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
   {
-    return ctx.World != nullptr && ctx.World->document() != nullptr &&
-           ctx.World->document()->MainPart() != nullptr;
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
   }
 
   [[nodiscard]] std::unique_ptr<ITool> make_tool(
       CommandContext& /*ctx*/) const override
   {
     return std::make_unique<CreateSphereTool>();
+  }
+};
+
+class CreateBezierCommand final : public ICommand
+{
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override
+  {
+    return "part.create_bezier";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override
+  {
+    return "Create Bezier Curve (interactive)";
+  }
+  [[nodiscard]] CommandKind kind() const noexcept override
+  {
+    return CommandKind::Interactive;
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
+  {
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
+  }
+
+  [[nodiscard]] std::unique_ptr<ITool> make_tool(
+      CommandContext& /*ctx*/) const override
+  {
+    return std::make_unique<CreateBezierTool>();
+  }
+};
+
+class CreateNurbsCurveCommand final : public ICommand
+{
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override
+  {
+    return "part.create_nurbs_curve";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override
+  {
+    return "Create NURBS Curve (interactive)";
+  }
+  [[nodiscard]] CommandKind kind() const noexcept override
+  {
+    return CommandKind::Interactive;
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
+  {
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
+  }
+
+  [[nodiscard]] std::unique_ptr<ITool> make_tool(
+      CommandContext& /*ctx*/) const override
+  {
+    return std::make_unique<CreateNurbsCurveTool>();
+  }
+};
+
+class ExtrudePadCommand final : public ICommand
+{
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override
+  {
+    return "part.extrude_pad";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override
+  {
+    return "Extrude (Pad)";
+  }
+  [[nodiscard]] CommandKind kind() const noexcept override
+  {
+    return CommandKind::Interactive;
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
+  {
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
+  }
+
+  [[nodiscard]] std::unique_ptr<ITool> make_tool(
+      CommandContext& /*ctx*/) const override
+  {
+    return std::make_unique<ExtrudePadTool>();
+  }
+};
+
+class ElevateBezierCommand final : public ICommand
+{
+ public:
+  [[nodiscard]] std::string_view id() const noexcept override
+  {
+    return "part.elevate_bezier";
+  }
+  [[nodiscard]] std::string_view title() const noexcept override
+  {
+    return "Elevate Bezier Degree";
+  }
+  [[nodiscard]] CommandKind kind() const noexcept override
+  {
+    return CommandKind::Instant;
+  }
+
+  [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
+  {
+    return ctx.World && ctx.World->Document() && ctx.Scene &&
+           ecs::selected_count(ctx.World->registry()) == 1;
+  }
+
+  [[nodiscard]] CommandResult execute(CommandContext& ctx) override
+  {
+    const entt::entity e = ecs::selected_entity(ctx.World->registry());
+    if (e == entt::null ||
+        !ctx.World->registry().all_of<ecs::FeatureRef, ecs::BodyRef>(e))
+    {
+      return CommandResult::Failed(QCoreApplication::translate(
+          "BezierEdit", "Select one bezier curve"));
+    }
+    const Guid featureGuid =
+        ctx.World->registry().get<ecs::FeatureRef>(e).FeatureGuid;
+    auto specOpt = ctx.Scene->SpecFor(featureGuid, Guid{});
+    if (!specOpt || !std::holds_alternative<BezierSpec>(*specOpt))
+    {
+      return CommandResult::Failed(QCoreApplication::translate(
+          "BezierEdit", "Selection is not a bezier"));
+    }
+    BezierSpec before = std::get<BezierSpec>(*specOpt);
+    if (before.SegmentCount != 1)
+    {
+      return CommandResult::Failed(QCoreApplication::translate(
+          "BezierEdit", "Elevate supports single-segment only"));
+    }
+    BezierSpec after = ElevateBezierDegree(before);
+    if (!ctx.Scene->SetPrimitive(feat::FeatureId{featureGuid}, after))
+    {
+      return CommandResult::Failed(QCoreApplication::translate(
+          "BezierEdit", "Failed to elevate bezier"));
+    }
+    Part* part = ctx.Scene->MainPart();
+    if (part)
+    {
+      Material mat = ctx.WoodAlbedoPath.empty()
+                         ? Material{}
+                         : MakeWoodMaterial(ctx.WoodAlbedoPath);
+      ctx.World->SyncPartBodies(*part, std::move(mat));
+    }
+    if (ctx.History)
+    {
+      const std::string wood = ctx.WoodAlbedoPath;
+      ctx.History->push(DocumentHistory::Entry{
+          .label = QCoreApplication::translate("BezierEdit", "Elevate bezier"),
+          .undo =
+              [world = ctx.World, wood, factory = ctx.SceneFactory,
+               redraw = ctx.RequestRedraw]()
+              {
+                if (!world)
+                {
+                  return;
+                }
+                adapter::WithScene(factory, world->Document(),
+                                   [](adapter::ISceneService& s)
+                                   { s.UndoFeature(); });
+                if (Part* p = world->Document()
+                                  ? world->Document()->MainPart()
+                                  : nullptr)
+                {
+                  Material m =
+                      wood.empty() ? Material{} : MakeWoodMaterial(wood);
+                  world->SyncPartBodies(*p, std::move(m));
+                }
+                if (redraw)
+                {
+                  redraw();
+                }
+              },
+          .redo =
+              [world = ctx.World, wood, factory = ctx.SceneFactory,
+               redraw = ctx.RequestRedraw]()
+              {
+                if (!world)
+                {
+                  return;
+                }
+                adapter::WithScene(factory, world->Document(),
+                                   [](adapter::ISceneService& s)
+                                   { s.RedoFeature(); });
+                if (Part* p = world->Document()
+                                  ? world->Document()->MainPart()
+                                  : nullptr)
+                {
+                  Material m =
+                      wood.empty() ? Material{} : MakeWoodMaterial(wood);
+                  world->SyncPartBodies(*p, std::move(m));
+                }
+                if (redraw)
+                {
+                  redraw();
+                }
+              },
+      });
+    }
+    if (ctx.RequestRedraw)
+    {
+      ctx.RequestRedraw();
+    }
+    return CommandResult::Ok(QCoreApplication::translate(
+        "BezierEdit", "Elevated bezier degree"));
   }
 };
 
@@ -335,46 +591,50 @@ class CreateBoxInstantCommand final : public ICommand
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
   {
-    return ctx.World != nullptr && ctx.World->document() != nullptr &&
-           ctx.World->document()->MainPart() != nullptr;
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
   }
 
   CommandResult execute(CommandContext& ctx) override
   {
     using namespace brep;
-    adapter::SceneAdapter scene(ctx.World->document());
-    Part* part = scene.main_part();
+    if (!ctx.Scene)
+    {
+      return CommandResult::Failed(TrCmd("Invalid context"));
+    }
+    adapter::ISceneService& scene = *ctx.Scene;
+    Part* part = scene.MainPart();
     if (!part)
     {
-      return CommandResult::Failed(QStringLiteral("???? Part"));
+      return CommandResult::Failed(TrCmd("No active Part"));
     }
     BoxSpec spec{
         .Min = Point3d{0, 0, 0},
         .Max = Point3d{2, 1, 3},
         .Name = "box",
     };
-    Body* body = scene.add_box(spec);
+    Body* body = scene.AddPrimitive(spec);
     if (!body)
     {
-      return CommandResult::Failed(QStringLiteral("??????"));
+      return CommandResult::Failed(TrCmd("Create box failed"));
     }
 
     Guid feature_guid{};
-    if (auto obj = scene.object_for_body(body->Guid))
+    if (auto obj = scene.ObjectForBody(body->Guid))
     {
-      feature_guid = obj->feature_guid;
-      scene.record_append_feature(feat::FeatureId{feature_guid}, spec);
+      feature_guid = obj->FeatureGuid;
+      scene.RecordAppendPrimitive(feat::FeatureId{feature_guid}, spec);
     }
 
     Material material = ctx.WoodAlbedoPath.empty()
                             ? Material{}
                             : MakeWoodMaterial(ctx.WoodAlbedoPath);
-    auto mesh = scene.mesh_for_body(body->Guid);
-    ctx.World->create_body_renderable(body->Name, body->Guid,
-                                      std::move(mesh.faces),
-                                      std::move(mesh.edges), material,
+    auto mesh = scene.MeshForBody(body->Guid);
+    ctx.World->CreateBodyRenderable(body->Name, body->Guid,
+                                      std::move(mesh.Faces),
+                                      std::move(mesh.Edges), material,
                                       Point3d{}, feature_guid);
-    if (ctx.Session) ctx.Session->mark_dirty();
+    if (ctx.Session) ctx.Session->MarkDirty();
     if (ctx.RequestRedraw) ctx.RequestRedraw();
 
     const std::string wood = ctx.WoodAlbedoPath;
@@ -383,30 +643,34 @@ class CreateBoxInstantCommand final : public ICommand
     if (ctx.History)
     {
       ctx.History->push({
-          .label = QStringLiteral("????"),
+          .label = TrCmd("Create box"),
           .undo =
-              [world, part_ptr, wood, session = ctx.Session,
-               redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
+              [world, part_ptr, wood, factory = ctx.SceneFactory,
+               session = ctx.Session, redraw = ctx.RequestRedraw,
+               refresh = ctx.RefreshUi] {
                 if (!world || !part_ptr) return;
-                adapter::SceneAdapter scene_u(world->document());
-                scene_u.undo_feature();
+                adapter::WithScene(
+                    factory, world->Document(),
+                    [](adapter::ISceneService& scene) { scene.UndoFeature(); });
                 Material mat =
                     wood.empty() ? Material{} : MakeWoodMaterial(wood);
-                world->sync_part_bodies(*part_ptr, std::move(mat));
-                if (session) session->mark_dirty();
+                world->SyncPartBodies(*part_ptr, std::move(mat));
+                if (session) session->MarkDirty();
                 if (redraw) redraw();
                 if (refresh) refresh();
               },
           .redo =
-              [world, part_ptr, wood, session = ctx.Session,
-               redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
+              [world, part_ptr, wood, factory = ctx.SceneFactory,
+               session = ctx.Session, redraw = ctx.RequestRedraw,
+               refresh = ctx.RefreshUi] {
                 if (!world || !part_ptr) return;
-                adapter::SceneAdapter scene_r(world->document());
-                scene_r.redo_feature();
+                adapter::WithScene(
+                    factory, world->Document(),
+                    [](adapter::ISceneService& scene) { scene.RedoFeature(); });
                 Material mat =
                     wood.empty() ? Material{} : MakeWoodMaterial(wood);
-                world->sync_part_bodies(*part_ptr, std::move(mat));
-                if (session) session->mark_dirty();
+                world->SyncPartBodies(*part_ptr, std::move(mat));
+                if (session) session->MarkDirty();
                 if (redraw) redraw();
                 if (refresh) refresh();
               },
@@ -415,7 +679,7 @@ class CreateBoxInstantCommand final : public ICommand
 
     if (ctx.RefreshUi) ctx.RefreshUi();
     const QString msg =
-        QStringLiteral("??? Body '%1'")
+        TrCmd("Created Body '%1'")
             .arg(QString::fromStdString(body->Guid.ToString()));
     if (ctx.ReportStatus) ctx.ReportStatus(msg);
     return CommandResult::Ok(msg);
@@ -436,18 +700,22 @@ class DeleteSelectionCommand final : public ICommand
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
   {
-    return ctx.World != nullptr && ctx.World->document() != nullptr &&
-           ctx.World->document()->MainPart() != nullptr &&
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr &&
            ecs::selected_count(ctx.World->registry()) > 0;
   }
 
   CommandResult execute(CommandContext& ctx) override
   {
-    adapter::SceneAdapter scene(ctx.World->document());
-    Part* part = scene.main_part();
+    if (!ctx.Scene)
+    {
+      return CommandResult::Failed(TrCmd("Invalid context"));
+    }
+    adapter::ISceneService& scene = *ctx.Scene;
+    Part* part = scene.MainPart();
     if (!part)
     {
-      return CommandResult::Failed(QStringLiteral("???? Part"));
+      return CommandResult::Failed(TrCmd("No active Part"));
     }
 
     auto& registry = ctx.World->registry();
@@ -459,13 +727,13 @@ class DeleteSelectionCommand final : public ICommand
       Guid body_guid{};
       if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity))
       {
-        feature_guid = fref->feature_guid;
+        feature_guid = fref->FeatureGuid;
       }
       if (const auto* body = registry.try_get<ecs::BodyRef>(entity))
       {
         body_guid = body->guid;
       }
-      if (auto fid = scene.feature_id_for(feature_guid, body_guid))
+      if (auto fid = scene.FeatureIdFor(feature_guid, body_guid))
       {
         to_remove.push_back(*fid);
       }
@@ -482,24 +750,24 @@ class DeleteSelectionCommand final : public ICommand
 
     if (to_remove.empty())
     {
-      return CommandResult::Failed(QStringLiteral("????????"));
+      return CommandResult::Failed(TrCmd("Invalid context"));
     }
 
     int removed = 0;
     for (const auto& fid : to_remove)
     {
-      if (scene.remove_feature(fid)) ++removed;
+      if (scene.RemoveFeature(fid)) ++removed;
     }
     if (removed == 0)
     {
-      return CommandResult::Failed(QStringLiteral("????"));
+      return CommandResult::Failed(TrCmd("Delete failed"));
     }
 
     Material material = ctx.WoodAlbedoPath.empty()
                             ? Material{}
                             : MakeWoodMaterial(ctx.WoodAlbedoPath);
-    ctx.World->sync_part_bodies(*part, std::move(material));
-    if (ctx.Session) ctx.Session->mark_dirty();
+    ctx.World->SyncPartBodies(*part, std::move(material));
+    if (ctx.Session) ctx.Session->MarkDirty();
     if (ctx.RequestRedraw) ctx.RequestRedraw();
 
     const std::string wood = ctx.WoodAlbedoPath;
@@ -509,30 +777,38 @@ class DeleteSelectionCommand final : public ICommand
     if (ctx.History)
     {
       ctx.History->push({
-          .label = QStringLiteral("?? %1 ???").arg(removed),
+          .label = TrCmd("Delete %1 object(s)").arg(removed),
           .undo =
-              [world, part_ptr, wood, undo_steps, session = ctx.Session,
-               redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
+              [world, part_ptr, wood, undo_steps, factory = ctx.SceneFactory,
+               session = ctx.Session, redraw = ctx.RequestRedraw,
+               refresh = ctx.RefreshUi] {
                 if (!world || !part_ptr) return;
-                adapter::SceneAdapter scene_u(world->document());
-                scene_u.undo_feature(undo_steps);
+                adapter::WithScene(
+                    factory, world->Document(),
+                    [undo_steps](adapter::ISceneService& scene) {
+                      scene.UndoFeature(undo_steps);
+                    });
                 Material mat =
                     wood.empty() ? Material{} : MakeWoodMaterial(wood);
-                world->sync_part_bodies(*part_ptr, std::move(mat));
-                if (session) session->mark_dirty();
+                world->SyncPartBodies(*part_ptr, std::move(mat));
+                if (session) session->MarkDirty();
                 if (redraw) redraw();
                 if (refresh) refresh();
               },
           .redo =
-              [world, part_ptr, wood, undo_steps, session = ctx.Session,
-               redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
+              [world, part_ptr, wood, undo_steps, factory = ctx.SceneFactory,
+               session = ctx.Session, redraw = ctx.RequestRedraw,
+               refresh = ctx.RefreshUi] {
                 if (!world || !part_ptr) return;
-                adapter::SceneAdapter scene_r(world->document());
-                scene_r.redo_feature(undo_steps);
+                adapter::WithScene(
+                    factory, world->Document(),
+                    [undo_steps](adapter::ISceneService& scene) {
+                      scene.RedoFeature(undo_steps);
+                    });
                 Material mat =
                     wood.empty() ? Material{} : MakeWoodMaterial(wood);
-                world->sync_part_bodies(*part_ptr, std::move(mat));
-                if (session) session->mark_dirty();
+                world->SyncPartBodies(*part_ptr, std::move(mat));
+                if (session) session->MarkDirty();
                 if (redraw) redraw();
                 if (refresh) refresh();
               },
@@ -540,7 +816,7 @@ class DeleteSelectionCommand final : public ICommand
     }
 
     if (ctx.RefreshUi) ctx.RefreshUi();
-    const QString msg = QStringLiteral("??? %1 ???").arg(removed);
+    const QString msg = TrCmd("Deleted %1 object(s)").arg(removed);
     if (ctx.ReportStatus) ctx.ReportStatus(msg);
     return CommandResult::Ok(msg);
   }
@@ -568,10 +844,25 @@ class UndoCommand final : public ICommand
     const QString label = ctx.History->undo_label();
     if (!ctx.History->undo())
     {
-      return CommandResult::Failed(QStringLiteral("????????"));
+      return CommandResult::Failed(TrCmd("Nothing to undo"));
     }
-    if (ctx.RefreshUi) ctx.RefreshUi();
-    const QString msg = QStringLiteral("???: %1").arg(label);
+    if (ctx.World && ctx.World->Document() && ctx.World->Document()->MainPart())
+    {
+      Material material = ctx.WoodAlbedoPath.empty()
+                              ? Material{}
+                              : MakeWoodMaterial(ctx.WoodAlbedoPath);
+      ctx.World->SyncPartBodies(*ctx.World->Document()->MainPart(),
+                                std::move(material));
+    }
+    if (ctx.RequestRedraw)
+    {
+      ctx.RequestRedraw();
+    }
+    if (ctx.RefreshUi)
+    {
+      ctx.RefreshUi();
+    }
+    const QString msg = TrCmd("Undone: %1").arg(label);
     if (ctx.ReportStatus) ctx.ReportStatus(msg);
     return CommandResult::Ok(msg);
   }
@@ -599,85 +890,29 @@ class RedoCommand final : public ICommand
     const QString label = ctx.History->redo_label();
     if (!ctx.History->redo())
     {
-      return CommandResult::Failed(QStringLiteral("????????"));
+      return CommandResult::Failed(TrCmd("Nothing to redo"));
     }
-    if (ctx.RefreshUi) ctx.RefreshUi();
-    const QString msg = QStringLiteral("???: %1").arg(label);
+    if (ctx.World && ctx.World->Document() && ctx.World->Document()->MainPart())
+    {
+      Material material = ctx.WoodAlbedoPath.empty()
+                              ? Material{}
+                              : MakeWoodMaterial(ctx.WoodAlbedoPath);
+      ctx.World->SyncPartBodies(*ctx.World->Document()->MainPart(),
+                                std::move(material));
+    }
+    if (ctx.RequestRedraw)
+    {
+      ctx.RequestRedraw();
+    }
+    if (ctx.RefreshUi)
+    {
+      ctx.RefreshUi();
+    }
+    const QString msg = TrCmd("Redone: %1").arg(label);
     if (ctx.ReportStatus) ctx.ReportStatus(msg);
     return CommandResult::Ok(msg);
   }
 };
-
-struct BooleanOperands
-{
-  feat::FeatureId target{};
-  feat::FeatureId tool{};
-};
-
-[[nodiscard]] std::optional<BooleanOperands> resolve_boolean_operands(
-    entt::registry& registry, adapter::SceneAdapter& scene)
-{
-  if (ecs::selected_count(registry) != 2) return std::nullopt;
-
-  const entt::entity primary_ent = ecs::selected_entity(registry);
-  std::array<std::optional<feat::FeatureId>, 2> ids{};
-  int n = 0;
-  for (auto entity : registry.view<ecs::SelectedTag>())
-  {
-    Guid feature_guid{};
-    Guid body_guid{};
-    if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity))
-    {
-      feature_guid = fref->feature_guid;
-    }
-    if (const auto* body = registry.try_get<ecs::BodyRef>(entity))
-    {
-      body_guid = body->guid;
-    }
-    auto fid = scene.feature_id_for(feature_guid, body_guid);
-    if (!fid || n >= 2) return std::nullopt;
-    ids[static_cast<std::size_t>(n++)] = *fid;
-  }
-  if (n != 2 || !ids[0] || !ids[1] || *ids[0] == *ids[1]) return std::nullopt;
-
-  Guid primary_fg{};
-  Guid primary_bg{};
-  if (primary_ent != entt::null)
-  {
-    if (const auto* fref = registry.try_get<ecs::FeatureRef>(primary_ent))
-  {
-      primary_fg = fref->feature_guid;
-    }
-    if (const auto* body = registry.try_get<ecs::BodyRef>(primary_ent))
-    {
-      primary_bg = body->guid;
-    }
-  }
-  auto target = scene.feature_id_for(primary_fg, primary_bg);
-  if (!target)
-  {
-    // Fallback: first selected as target.
-    target = ids[0];
-  }
-  const feat::FeatureId tool =
-      (*ids[0] == *target) ? *ids[1] : *ids[0];
-  if (tool == *target) return std::nullopt;
-  return BooleanOperands{*target, tool};
-}
-
-[[nodiscard]] const char* boolean_result_name(boolean::BooleanOp op) noexcept
-{
-  switch (op)
-{
-    case boolean::BooleanOp::Union:
-      return "Fuse";
-    case boolean::BooleanOp::Subtract:
-      return "Cut";
-    case boolean::BooleanOp::Intersect:
-      return "Common";
-  }
-  return "Boolean";
-}
 
 template <boolean::BooleanOp Op>
 class BooleanOpCommand final : public ICommand
@@ -686,121 +921,63 @@ class BooleanOpCommand final : public ICommand
   [[nodiscard]] std::string_view id() const noexcept override
   {
     if constexpr (Op == boolean::BooleanOp::Union)
-  {
+    {
       return "boolean.union";
-    } else if constexpr (Op == boolean::BooleanOp::Subtract)
+    }
+    if constexpr (Op == boolean::BooleanOp::Subtract)
     {
       return "boolean.subtract";
     }
-    else
-    {
-      return "boolean.intersect";
-    }
+    return "boolean.intersect";
   }
 
   [[nodiscard]] std::string_view title() const noexcept override
   {
     if constexpr (Op == boolean::BooleanOp::Union)
-  {
+    {
       return "Boolean Union";
-    } else if constexpr (Op == boolean::BooleanOp::Subtract)
+    }
+    if constexpr (Op == boolean::BooleanOp::Subtract)
     {
       return "Boolean Subtract";
     }
-    else
-    {
-      return "Boolean Intersect";
-    }
+    return "Boolean Intersect";
+  }
+
+  [[nodiscard]] CommandKind kind() const noexcept override
+  {
+    return CommandKind::Interactive;
   }
 
   [[nodiscard]] bool can_execute(const CommandContext& ctx) const override
   {
-    return ctx.World != nullptr && ctx.World->document() != nullptr &&
-           ctx.World->document()->MainPart() != nullptr &&
-           ecs::selected_count(ctx.World->registry()) == 2;
+    return ctx.World != nullptr && ctx.World->Document() != nullptr &&
+           ctx.World->Document()->MainPart() != nullptr;
+  }
+
+  [[nodiscard]] std::unique_ptr<ITool> make_tool(
+      CommandContext& /*ctx*/) const override
+  {
+    return std::make_unique<BooleanTwoBodyTool>(Op);
   }
 
   CommandResult execute(CommandContext& ctx) override
   {
-    adapter::SceneAdapter scene(ctx.World->document());
-    Part* part = scene.main_part();
-    if (!part)
+    if (!ctx.Scene || !ctx.World)
     {
-      return CommandResult::Failed(QStringLiteral("???? Part"));
+      return CommandResult::Failed(TrCmd("Invalid context"));
     }
-
     auto& registry = ctx.World->registry();
-    if (ecs::selected_count(registry) != 2)
-    {
-      return CommandResult::Failed(
-          QStringLiteral("????? 2 ??????????"));
-    }
-
-    auto operands = resolve_boolean_operands(registry, scene);
+    auto operands = ResolveBooleanOperands(registry, *ctx.Scene);
     if (!operands)
     {
       return CommandResult::Failed(
-          QStringLiteral("???????????????????"));
+          TrCmd("Cannot resolve boolean operands (need two distinct features)"));
     }
-
-    Body* result = scene.add_boolean(Op, operands->target, operands->tool,
-                                     boolean_result_name(Op));
-    if (!result)
-    {
-      return CommandResult::Failed(QStringLiteral("??????"));
-    }
-
-    Material material = ctx.WoodAlbedoPath.empty()
-                            ? Material{}
-                            : MakeWoodMaterial(ctx.WoodAlbedoPath);
-    ctx.World->sync_part_bodies(*part, std::move(material));
-    ecs::clear_selection(registry);
-    if (ctx.Session) ctx.Session->mark_dirty();
-    if (ctx.RequestRedraw) ctx.RequestRedraw();
-
-    const std::string wood = ctx.WoodAlbedoPath;
-    ecs::World* world = ctx.World;
-    Part* part_ptr = part;
-    const QString hist_label = QString::fromUtf8(title().data(),
-                                                 static_cast<int>(title().size()));
-    if (ctx.History)
-    {
-      ctx.History->push({
-          .label = hist_label,
-          .undo =
-              [world, part_ptr, wood, session = ctx.Session,
-               redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
-                if (!world || !part_ptr) return;
-                adapter::SceneAdapter scene_u(world->document());
-                scene_u.undo_feature();
-                Material mat =
-                    wood.empty() ? Material{} : MakeWoodMaterial(wood);
-                world->sync_part_bodies(*part_ptr, std::move(mat));
-                if (session) session->mark_dirty();
-                if (redraw) redraw();
-                if (refresh) refresh();
-              },
-          .redo =
-              [world, part_ptr, wood, session = ctx.Session,
-               redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
-                if (!world || !part_ptr) return;
-                adapter::SceneAdapter scene_r(world->document());
-                scene_r.redo_feature();
-                Material mat =
-                    wood.empty() ? Material{} : MakeWoodMaterial(wood);
-                world->sync_part_bodies(*part_ptr, std::move(mat));
-                if (session) session->mark_dirty();
-                if (redraw) redraw();
-                if (refresh) refresh();
-              },
-      });
-    }
-
-    if (ctx.RefreshUi) ctx.RefreshUi();
-    const QString msg =
-        QStringLiteral("????: %1").arg(QString::fromStdString(result->Name));
-    if (ctx.ReportStatus) ctx.ReportStatus(msg);
-    return CommandResult::Ok(msg);
+    const QString histLabel = QString::fromUtf8(
+        title().data(), static_cast<int>(title().size()));
+    return ExecuteBoolean(ctx, Op, operands->Target, operands->Tool,
+                          histLabel);
   }
 };
 
@@ -821,8 +998,13 @@ void register_builtin_commands(CommandRegistry& registry)
   add<ExportDxfCommand>(registry);
   add<CreateBoxCommand>(registry);
   add<CreateSphereCommand>(registry);
+  add<CreateBezierCommand>(registry);
+  add<CreateNurbsCurveCommand>(registry);
+  add<ExtrudePadCommand>(registry);
+  add<ElevateBezierCommand>(registry);
   add<CreateBoxInstantCommand>(registry);
   add<CopyCommand>(registry);
+  add<MoveCommand>(registry);
   add<DeleteSelectionCommand>(registry);
   add<BooleanOpCommand<boolean::BooleanOp::Union>>(registry);
   add<BooleanOpCommand<boolean::BooleanOp::Subtract>>(registry);
@@ -836,21 +1018,25 @@ CommandResult open_xl_file(CommandContext& ctx, const QString& path)
 {
   if (!ctx.World || !ctx.Session)
 {
-    return CommandResult::Failed(QStringLiteral("??????????"));
+    return CommandResult::Failed(TrCmd("Cannot open: invalid context"));
   }
   if (path.isEmpty())
   {
-    return CommandResult::Failed(QStringLiteral("????"));
+    return CommandResult::Failed(TrCmd("Path is empty"));
   }
 
-  adapter::DocumentService docs;
-  auto loaded = docs.load(path.toStdString());
+  if (!ctx.DocumentService)
+  {
+    return CommandResult::Failed(TrCmd("Invalid context"));
+  }
+
+  auto loaded = ctx.DocumentService->load(path.toStdString());
   if (!loaded.ok)
   {
     const QString err = QString::fromStdString(loaded.error);
     if (ctx.ParentWidget)
     {
-      QMessageBox::critical(ctx.ParentWidget, QStringLiteral("????"), err);
+      QMessageBox::critical(ctx.ParentWidget, TrCmd("Open failed"), err);
     }
     return CommandResult::Failed(err);
   }
@@ -862,21 +1048,21 @@ CommandResult open_xl_file(CommandContext& ctx, const QString& path)
 
   brep::io::BodyMeshCache mesh_cache;
   const brep::io::BodyMeshCache* cache_ptr = nullptr;
-  auto cache_loaded =
-      docs.load_mesh_cache(path.toStdString(), loaded.document->Guid);
+  auto cache_loaded = ctx.DocumentService->load_mesh_cache(
+      path.toStdString(), loaded.document->Guid);
   if (cache_loaded.ok)
   {
     mesh_cache = std::move(cache_loaded.cache);
     cache_ptr = &mesh_cache;
   }
 
-  ctx.World->adopt_document(std::move(loaded.document), std::move(material),
+  ctx.World->AdoptDocument(std::move(loaded.document), std::move(material),
                             cache_ptr);
   ctx.Session->set_document_path(path);
   if (ctx.AfterDocumentReset) ctx.AfterDocumentReset();
   if (ctx.RequestRedraw) ctx.RequestRedraw();
   if (ctx.RefreshUi) ctx.RefreshUi();
-  const QString msg = QStringLiteral("???: %1").arg(path);
+  const QString msg = TrCmd("Opened: %1").arg(path);
   if (ctx.ReportStatus) ctx.ReportStatus(msg);
   return CommandResult::Ok(msg);
 }

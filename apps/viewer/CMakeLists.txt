@@ -43,7 +43,7 @@ endif()
 
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Svg)
 
 # Prefer checked-in SPIR-V (apps/viewer/spv). Optional glslc rebuild:
 #   cmake -DBREP_COMPILE_SHADERS=ON ...
@@ -117,17 +117,20 @@ endfunction()
 # Viewer libraries (SHARED when BREP_BUILD_SHARED=ON)
 #
 # DAG (top → bottom):
-#   brep_viewer.exe → viewer_ui → viewer_runtime → viewer_adapter → brep_*
+#   brep_viewer.exe → viewer_ui → viewer_bootstrap (STATIC) + viewer_runtime → …
 #
 # scene / commands / render historically had mutual includes; they ship as one
 # shared library `viewer_runtime` so DLL linking stays acyclic.
+# IoC (Hypodermic) lives in viewer_bootstrap only (ADR 0007).
 # ---------------------------------------------------------------------------
 
 include(${BREP_CMAKE_DIR}/BrepLibType.cmake)
+include(${BREP_CMAKE_DIR}/Hypodermic.cmake)
 
 add_library(viewer_adapter ${BREP_LIB_TYPE}
   adapter/SceneAdapter.cpp
   adapter/DocumentService.cpp
+  adapter/SceneServiceFactory.cpp
 )
 brep_viewer_configure_lib(viewer_adapter)
 set_target_properties(viewer_adapter PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
@@ -139,17 +142,26 @@ add_library(viewer_runtime ${BREP_LIB_TYPE}
   ecs/systems.cpp
   # former viewer_commands
   commands/CommandRegistry.cpp
+  commands/CommandContextFactory.cpp
   commands/BuiltinCommands.cpp
   commands/CommandManager.cpp
+  commands/StatusAspect.cpp
   commands/DocumentHistory.cpp
   commands/picking.cpp
   commands/snap/SnapSettings.cpp
   commands/snap/accusnap.cpp
   commands/snap/SnapOverlay.cpp
   commands/CommandPalette.cpp
+  commands/tools/SelectedBodies.cpp
+  commands/tools/BooleanExecute.cpp
+  commands/tools/BooleanTwoBodyTool.cpp
   commands/tools/CreateBoxTool.cpp
   commands/tools/CreateSphereTool.cpp
+  commands/tools/CreateBezierTool.cpp
+  commands/tools/CreateNurbsCurveTool.cpp
+  commands/tools/ExtrudePadTool.cpp
   commands/tools/CopyTool.cpp
+  commands/tools/MoveTool.cpp
   io/DxfExport.cpp
   document.cpp
   # former viewer_render
@@ -178,6 +190,30 @@ add_library(viewer_scene ALIAS viewer_runtime)
 add_library(viewer_commands ALIAS viewer_runtime)
 add_library(viewer_render ALIAS viewer_runtime)
 
+add_library(viewer_bootstrap STATIC
+  bootstrap/ApplicationContainer.cpp
+  bootstrap/AppConfigLoader.cpp
+  bootstrap/KernelServicesModule.cpp
+  bootstrap/KernelServices.cpp
+  bootstrap/ModuleRegistrar.cpp
+  bootstrap/ModulePluginLoader.cpp
+  bootstrap/TestContainer.cpp
+  bootstrap/DocumentScopeModule.cpp
+  bootstrap/DocumentScope.cpp
+  bootstrap/ViewerAdapterModule.cpp
+  bootstrap/ViewerAdapterServices.cpp
+  bootstrap/ViewerRuntimeServices.cpp
+  bootstrap/ViewerRuntimeModule.cpp
+  bootstrap/ViewerUiModule.cpp
+)
+brep_viewer_configure_lib(viewer_bootstrap)
+set_target_properties(viewer_bootstrap PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+target_link_libraries(viewer_bootstrap PUBLIC
+  Hypodermic::Hypodermic
+  brep
+  viewer_runtime
+)
+
 add_library(viewer_ui ${BREP_LIB_TYPE}
   app/ViewerApp.cpp
   assets/AssetCatalog.cpp
@@ -193,6 +229,10 @@ add_library(viewer_ui ${BREP_LIB_TYPE}
   ui/ViewCubeLayout.cpp
   ui/InputRouter.cpp
   ui/SnapSettingsDialog.cpp
+  ui/ThemeSettingsDialog.cpp
+  ui/ViewerTheme.cpp
+  ui/ActionCatalog.cpp
+  ui/RibbonSetup.cpp
   HomeWindow.cpp
   SplashScreen.cpp
   ViewCube.cpp
@@ -205,17 +245,25 @@ set_target_properties(viewer_ui PROPERTIES
   AUTORCC ON
 )
 target_link_libraries(viewer_ui PUBLIC
+  viewer_bootstrap
   viewer_adapter
   viewer_runtime
   brep
   EnTT::EnTT
   Qt6::Widgets
   Qt6::Gui
+  Qt6::Svg
+  SARibbonBar
 )
 
 # Phase 3 adapter unit tests (GoogleTest from root FetchContent).
 if(TARGET GTest::gtest_main)
   add_subdirectory(tests)
+endif()
+
+option(BREP_BUILD_VIEWER_PLUGINS "Build sample viewer IoC plugin DLL" OFF)
+if(BREP_BUILD_VIEWER_PLUGINS)
+  add_subdirectory(plugins/sample)
 endif()
 
 # ---------------------------------------------------------------------------
