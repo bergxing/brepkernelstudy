@@ -21,6 +21,7 @@ namespace brep::feat
 class BoxFeature;
 class SphereFeature;
 class BezierCurveFeature;
+class NurbsCurveFeature;
 }
 
 namespace brep
@@ -105,7 +106,7 @@ public:
     /// Build Bezier wire via BezierCurveFeature + regenerate. Returns the Body.
     Body* AddBezier(const BezierSpec& spec = {});
 
-    /// Build NURBS wire (stub until MakeNurbsCurveWire lands). May return nullptr.
+    /// Build NURBS wire via NurbsCurveFeature + regenerate. Returns the Body.
     Body* AddNurbsCurve(const NurbsCurveSpec& spec = {});
 
     /// Box / Sphere / Bezier / Nurbs from a single spec.
@@ -183,10 +184,12 @@ private:
     friend class feat::BoxFeature;
     friend class feat::SphereFeature;
     friend class feat::BezierCurveFeature;
+    friend class feat::NurbsCurveFeature;
 
     Body* RebuildBoxBody(brep::Guid keepGuid, const BoxSpec& spec);
     Body* RebuildSphereBody(brep::Guid keepGuid, const SphereSpec& spec);
     Body* RebuildBezierBody(brep::Guid keepGuid, const BezierSpec& spec);
+    Body* RebuildNurbsCurveBody(brep::Guid keepGuid, const NurbsCurveSpec& spec);
 
     friend class Document;
     void SetDocument(brep::Document* doc) noexcept

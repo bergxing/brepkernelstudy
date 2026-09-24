@@ -13,6 +13,7 @@ add_library(brep_feat ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/feat/Regenerator.cpp
   ${BREP_KERNEL_DIR}/src/feat/BoxFeature.cpp
   ${BREP_KERNEL_DIR}/src/feat/SphereFeature.cpp
+  ${BREP_KERNEL_DIR}/src/feat/NurbsCurveFeature.cpp
   ${BREP_KERNEL_DIR}/src/feat/BooleanFeature.cpp
   ${BREP_KERNEL_DIR}/src/feat/FeatureHistory.cpp
   ${BREP_KERNEL_DIR}/src/feat/Context.cpp

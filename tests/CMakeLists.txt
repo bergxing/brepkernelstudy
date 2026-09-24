@@ -94,6 +94,14 @@ gtest_discover_tests(brep_test_bezier_feature
   TEST_PREFIX "brep_test_bezier_feature."
 )
 
+add_executable(brep_test_nurbs_feature kernel/TestNurbsFeature.cpp)
+target_link_libraries(brep_test_nurbs_feature PRIVATE brep GTest::gtest_main)
+gtest_discover_tests(brep_test_nurbs_feature
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:brep_test_nurbs_feature>
+  DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "brep_test_nurbs_feature."
+)
+
 add_executable(brep_test_model_remove_body kernel/TestModelRemoveBody.cpp)
 target_link_libraries(brep_test_model_remove_body PRIVATE brep GTest::gtest_main)
 gtest_discover_tests(brep_test_model_remove_body

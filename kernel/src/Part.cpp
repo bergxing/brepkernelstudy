@@ -11,6 +11,7 @@
 #include "brep/feat/SketchFeature.h"
 #include "brep/feat/SphereFeature.h"
 #include "brep/feat/BezierCurveFeature.h"
+#include "brep/feat/NurbsCurveFeature.h"
 #include "brep/Log.h"
 #include "brep/ops/Profile.h"
 
@@ -104,6 +105,20 @@ Body* Part::RebuildBezierBody(brep::Guid keepGuid, const BezierSpec& spec)
         m_model.RemoveBody(keepGuid);
     }
     Body* body = MakeBezierWire(m_model, spec);
+    if (!body) return nullptr;
+    if (keepGuid.IsValid()) body->Guid = keepGuid;
+    RegisterBody(*body);
+    return body;
+}
+
+Body* Part::RebuildNurbsCurveBody(brep::Guid keepGuid, const NurbsCurveSpec& spec)
+{
+    if (keepGuid.IsValid())
+    {
+        UnregisterBody(keepGuid);
+        m_model.RemoveBody(keepGuid);
+    }
+    Body* body = MakeNurbsCurveWire(m_model, spec);
     if (!body) return nullptr;
     if (keepGuid.IsValid()) body->Guid = keepGuid;
     RegisterBody(*body);
@@ -296,9 +311,11 @@ Body* Part::AddBezier(const BezierSpec& spec)
   return BodyForFeature(fid);
 }
 
-Body* Part::AddNurbsCurve(const NurbsCurveSpec& /*spec*/)
+Body* Part::AddNurbsCurve(const NurbsCurveSpec& spec)
 {
-  return nullptr;
+  const feat::FeatureId fid =
+      AppendFeature(feat::NurbsCurveFeature::Create(m_params, spec));
+  return BodyForFeature(fid);
 }
 
 Body* Part::AddPrimitive(const PrimitiveSpec& spec)

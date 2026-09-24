@@ -12,6 +12,7 @@
 #include "brep/feat/Regenerator.h"
 #include "brep/feat/SketchFeature.h"
 #include "brep/feat/SphereFeature.h"
+#include "brep/feat/NurbsCurveFeature.h"
 #include "brep/feat/BooleanFeature.h"
 #include "brep/ops/Profile.h"
 #include "brep/param/Parameter.h"
