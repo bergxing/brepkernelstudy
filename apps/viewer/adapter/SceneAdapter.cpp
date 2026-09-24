@@ -249,8 +249,27 @@ bool SceneAdapter::SetPrimitive(feat::FeatureId id, const PrimitiveSpec& spec)
             {
                 static_assert(std::is_same_v<T, NurbsCurveSpec>,
                               "SetPrimitive: add PrimitiveSpec arm");
-                // Nurbs history fields land in Nb3; do not write Bezier.
-                return false;
+                if (feature->TypeName() != "NurbsCurve")
+                {
+                    return false;
+                }
+                auto* nurbs = static_cast<feat::NurbsCurveFeature*>(feature);
+                feat::FeatureTransaction tx;
+                tx.Kind = feat::TxKind::EditParameters;
+                tx.Feature = id;
+                tx.FeatureType = "NurbsCurve";
+                tx.NurbsBefore = nurbs->ToSpec();
+                tx.Nurbs = value;
+                if (!value.Name.empty())
+                {
+                    tx.Nurbs.Name = value.Name;
+                }
+                else
+                {
+                    tx.Nurbs.Name = tx.NurbsBefore.Name;
+                }
+                part->FeatureHistory().ApplyAndRecord(*part, std::move(tx));
+                return true;
             }
         },
         spec);

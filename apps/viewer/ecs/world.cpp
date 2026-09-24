@@ -6,10 +6,63 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
 
+#include <variant>
 #include <vector>
 
 namespace brep::viewer::ecs
 {
+namespace
+{
+
+void SyncBezierCvComponent(entt::registry& registry, entt::entity entity,
+                           adapter::SceneAdapter& scene, Guid featureGuid,
+                           Guid bodyGuid)
+{
+    auto spec = scene.SpecFor(featureGuid, bodyGuid);
+    if (!spec)
+    {
+        if (registry.all_of<BezierCvComponent>(entity))
+        {
+            registry.remove<BezierCvComponent>(entity);
+        }
+        return;
+    }
+    BezierCvComponent cv;
+    if (const auto* bezier = std::get_if<BezierSpec>(&*spec))
+    {
+        cv.Cvs = bezier->Cvs;
+        cv.Weights = bezier->Weights;
+        cv.Degree = bezier->Degree;
+        cv.SegmentCount = bezier->SegmentCount;
+        cv.Corner = bezier->Corner;
+    }
+    else if (const auto* nurbs = std::get_if<NurbsCurveSpec>(&*spec))
+    {
+        // Preview / drag reuse BezierCvComponent; knots stay on the feature.
+        cv.Cvs = nurbs->Cvs;
+        cv.Weights = nurbs->Weights;
+        cv.Degree = nurbs->Degree;
+        cv.SegmentCount = 1;
+    }
+    else
+    {
+        if (registry.all_of<BezierCvComponent>(entity))
+        {
+            registry.remove<BezierCvComponent>(entity);
+        }
+        return;
+    }
+    if (registry.all_of<BezierCvComponent>(entity))
+    {
+        registry.get<BezierCvComponent>(entity) = std::move(cv);
+    }
+    else
+    {
+        registry.emplace<BezierCvComponent>(entity, std::move(cv));
+    }
+}
+
+}  // namespace
 
 World::World()
 {
@@ -32,7 +85,7 @@ const brep::Model* World::model() const noexcept
   return nullptr;
 }
 
-void World::clear_scene()
+void World::ClearScene()
 {
   m_registry.clear();
   if (!m_registry.ctx().contains<InputState>())
@@ -62,16 +115,16 @@ void World::clear_scene()
   m_document.reset();
 }
 
-entt::entity World::create_camera(Camera camera)
+entt::entity World::CreateCamera(Camera camera)
 {
   const entt::entity e = m_registry.create();
-  m_registry.emplace<Name>(e, Name{"main_camera"});
+  m_registry.emplace<Name>(e, Name{"MainCamera"});
   m_registry.emplace<CameraComponent>(e, CameraComponent{std::move(camera)});
   m_registry.emplace<MainCameraTag>(e);
   return e;
 }
 
-entt::entity World::create_renderable(std::string name, TriangleMesh triangles,
+entt::entity World::CreateRenderable(std::string name, TriangleMesh triangles,
                                       EdgeMesh edges, Material material,
                                       Point3d position)
                                       {
@@ -86,14 +139,14 @@ entt::entity World::create_renderable(std::string name, TriangleMesh triangles,
   return e;
 }
 
-entt::entity World::create_body_renderable(std::string name,
+entt::entity World::CreateBodyRenderable(std::string name,
                                            brep::Guid body_guid,
                                            TriangleMesh triangles,
                                            EdgeMesh edges, Material material,
                                            Point3d position,
                                            brep::Guid feature_guid)
                                            {
-  const entt::entity e = create_renderable(
+  const entt::entity e = CreateRenderable(
       std::move(name), std::move(triangles), std::move(edges),
       std::move(material), position);
   m_registry.emplace<BodyRef>(e, BodyRef{body_guid});
@@ -101,13 +154,17 @@ entt::entity World::create_body_renderable(std::string name,
   {
     m_registry.emplace<FeatureRef>(e, FeatureRef{feature_guid});
   }
+  if (auto* cache = m_registry.ctx().find<RenderCache>())
+  {
+    cache->force_rebuild = true;
+  }
   return e;
 }
 
-bool World::update_body_renderable(const brep::Guid& body_guid,
+bool World::UpdateBodyRenderable(const brep::Guid& body_guid,
                                    TriangleMesh triangles, EdgeMesh edges)
 {
-  const entt::entity e = find_body_renderable(body_guid);
+  const entt::entity e = FindBodyRenderable(body_guid);
   if (e == entt::null) return false;
   auto& mesh = m_registry.get<MeshComponent>(e);
   mesh.triangles = std::move(triangles);
@@ -120,7 +177,7 @@ bool World::update_body_renderable(const brep::Guid& body_guid,
   return true;
 }
 
-void World::sync_part_bodies(brep::Part& part, Material material,
+void World::SyncPartBodies(brep::Part& part, Material material,
                              const brep::io::BodyMeshCache* cache)
 {
   adapter::SceneAdapter scene(m_document.get());
@@ -135,30 +192,40 @@ void World::sync_part_bodies(brep::Part& part, Material material,
       feature_guid = f->Id().Guid;
     }
 
-    auto mesh = scene.mesh_for_body(body->Guid, cache);
+    auto mesh = scene.MeshForBody(body->Guid, cache);
+    // Face-less bodies (Bézier / wires) are drawn as theme-colored lines.
+    const Material bodyMaterial =
+        mesh.Faces.Indices.empty() ? Material{} : material;
 
-    const entt::entity existing = find_body_renderable(body->Guid);
+    const entt::entity existing = FindBodyRenderable(body->Guid);
     if (existing == entt::null)
     {
-      create_body_renderable(body->Name, body->Guid, std::move(mesh.faces),
-                             std::move(mesh.edges), material, Point3d{},
-                             feature_guid);
+      const entt::entity created = CreateBodyRenderable(
+          body->Name, body->Guid, std::move(mesh.Faces), std::move(mesh.Edges),
+          bodyMaterial, Point3d{}, feature_guid);
+      SyncBezierCvComponent(m_registry, created, scene, feature_guid,
+                            body->Guid);
     }
     else
     {
-      update_body_renderable(body->Guid, std::move(mesh.faces),
-                             std::move(mesh.edges));
+      UpdateBodyRenderable(body->Guid, std::move(mesh.Faces),
+                             std::move(mesh.Edges));
+      auto& mat_comp = m_registry.get<MaterialComponent>(existing);
+      mat_comp.material = bodyMaterial;
+      mat_comp.dirty = true;
       if (feature_guid.IsValid())
       {
         if (m_registry.all_of<FeatureRef>(existing))
-      {
-          m_registry.get<FeatureRef>(existing).feature_guid = feature_guid;
+        {
+          m_registry.get<FeatureRef>(existing).FeatureGuid = feature_guid;
         }
         else
-      {
+        {
           m_registry.emplace<FeatureRef>(existing, FeatureRef{feature_guid});
         }
       }
+      SyncBezierCvComponent(m_registry, existing, scene, feature_guid,
+                            body->Guid);
     }
   }
 
@@ -188,7 +255,7 @@ void World::sync_part_bodies(brep::Part& part, Material material,
   }
 }
 
-entt::entity World::find_body_renderable(const brep::Guid& body_guid) const
+entt::entity World::FindBodyRenderable(const brep::Guid& body_guid) const
 {
   auto view = m_registry.view<BodyRef, RenderableTag>();
   for (auto entity : view)
@@ -198,9 +265,9 @@ entt::entity World::find_body_renderable(const brep::Guid& body_guid) const
   return entt::null;
 }
 
-bool World::destroy_body_renderable(const brep::Guid& body_guid)
+bool World::DestroyBodyRenderable(const brep::Guid& body_guid)
 {
-  const entt::entity e = find_body_renderable(body_guid);
+  const entt::entity e = FindBodyRenderable(body_guid);
   if (e == entt::null) return false;
   if (m_registry.all_of<SelectedTag>(e))
   {
@@ -210,30 +277,33 @@ bool World::destroy_body_renderable(const brep::Guid& body_guid)
   return true;
 }
 
-void World::create_blank_scene()
+void World::CreateBlankScene(
+    std::shared_ptr<boolean::IBooleanEvaluator> evaluator)
 {
-  clear_scene();
+  ClearScene();
 
-  m_document = adapter::SceneAdapter::create_blank("Untitled");
+  m_document = adapter::SceneAdapter::CreateBlank("Untitled", std::move(evaluator));
   Part* part = m_document->MainPart();
 
   Camera cam;
   cam.target = Point3d{0.0, 0.0, 0.0};
   cam.distance = 6.0f;
-  create_camera(cam);
+  CreateCamera(cam);
 
   BREP_INFO("blank scene: Document={} Part={} (no bodies)",
             m_document->Guid.ToString(),
             part ? part->Guid.ToString() : std::string{});
 }
 
-void World::create_demo_box_scene(const std::string& wood_albedo_path)
+void World::CreateDemoBoxScene(
+    const std::string& wood_albedo_path,
+    std::shared_ptr<boolean::IBooleanEvaluator> evaluator)
 {
-  clear_scene();
+  ClearScene();
 
-  m_document = adapter::SceneAdapter::create_blank("Untitled");
+  m_document = adapter::SceneAdapter::CreateBlank("Untitled", std::move(evaluator));
   adapter::SceneAdapter scene(m_document.get());
-  Body* body = scene.add_box(BoxSpec{
+  Body* body = scene.AddPrimitive(BoxSpec{
       .Min = Point3d{0, 0, 0},
       .Max = Point3d{2, 1, 3},
       .Name = "demo_box",
@@ -241,18 +311,18 @@ void World::create_demo_box_scene(const std::string& wood_albedo_path)
 
   Camera cam;
   cam.target = Point3d{1.0, 0.5, 1.5};
-  create_camera(cam);
+  CreateCamera(cam);
 
   Guid feature_guid{};
   if (body)
   {
-    if (auto obj = scene.object_for_body(body->Guid))
+    if (auto obj = scene.ObjectForBody(body->Guid))
     {
-      feature_guid = obj->feature_guid;
+      feature_guid = obj->FeatureGuid;
     }
-    auto mesh = scene.mesh_for_body(body->Guid);
-    create_body_renderable("demo_box", body->Guid, std::move(mesh.faces),
-                           std::move(mesh.edges),
+    auto mesh = scene.MeshForBody(body->Guid);
+    CreateBodyRenderable("demo_box", body->Guid, std::move(mesh.Faces),
+                           std::move(mesh.Edges),
                            MakeWoodMaterial(wood_albedo_path), Point3d{},
                            feature_guid);
   }
@@ -266,7 +336,7 @@ void World::create_demo_box_scene(const std::string& wood_albedo_path)
       body ? body->Guid.ToString() : std::string{});
 }
 
-void World::adopt_document(std::unique_ptr<brep::Document> document,
+void World::AdoptDocument(std::unique_ptr<brep::Document> document,
                            Material material,
                            const brep::io::BodyMeshCache* cache)
                            {
@@ -311,12 +381,12 @@ void World::adopt_document(std::unique_ptr<brep::Document> document,
     {
       cam.target = Point3d{1.0, 0.5, 1.5};
     }
-    create_camera(cam);
-    sync_part_bodies(*part, std::move(material), cache);
+    CreateCamera(cam);
+    SyncPartBodies(*part, std::move(material), cache);
   }
   else
     {
-    create_camera(cam);
+    CreateCamera(cam);
   }
 
   BREP_INFO("adopted Document={} parts={} occurrences={}",
@@ -324,7 +394,7 @@ void World::adopt_document(std::unique_ptr<brep::Document> document,
             m_document->Assembly().Occurrences().size());
 }
 
-Camera* World::main_camera() noexcept
+Camera* World::MainCamera() noexcept
 {
   auto view = m_registry.view<CameraComponent, MainCameraTag>();
   for (auto entity : view)
@@ -334,7 +404,7 @@ Camera* World::main_camera() noexcept
   return nullptr;
 }
 
-const Camera* World::main_camera() const noexcept
+const Camera* World::MainCamera() const noexcept
   {
   auto view = m_registry.view<CameraComponent, MainCameraTag>();
   for (auto entity : view)
