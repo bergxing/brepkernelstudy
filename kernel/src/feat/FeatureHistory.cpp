@@ -2,9 +2,12 @@
 
 #include "brep/feat/BooleanFeature.h"
 #include "brep/feat/BoxFeature.h"
+#include "brep/feat/CopiedBodyFeature.h"
 #include "brep/feat/ExtrudeFeature.h"
 #include "brep/feat/SketchFeature.h"
 #include "brep/feat/SphereFeature.h"
+#include "brep/feat/BezierCurveFeature.h"
+#include "brep/feat/NurbsCurveFeature.h"
 #include "brep/Part.h"
 
 namespace brep::feat
@@ -15,6 +18,14 @@ namespace
 void Regen(Part& part)
 {
     part.Regenerate();
+}
+
+RigidTransform InverseTranslation(const RigidTransform& t)
+{
+    RigidTransform inv = t;
+    inv.Translation = Point3d{-t.Translation.x(), -t.Translation.y(),
+                              -t.Translation.z()};
+    return inv;
 }
 
 }  // namespace
@@ -87,6 +98,22 @@ bool FeatureHistory::ApplyForward(Part& part, FeatureTransaction& tx)
                 Regen(part);
                 return true;
             }
+            if (tx.FeatureType == "Bezier")
+            {
+                auto feature =
+                    BezierCurveFeature::Create(part.Parameters(), tx.Bezier);
+                tx.Feature = part.Features().Append(std::move(feature));
+                Regen(part);
+                return true;
+            }
+            if (tx.FeatureType == "NurbsCurve")
+            {
+                auto feature =
+                    NurbsCurveFeature::Create(part.Parameters(), tx.Nurbs);
+                tx.Feature = part.Features().Append(std::move(feature));
+                Regen(part);
+                return true;
+            }
             if (tx.FeatureType == "Sketch")
             {
                 Point2d min{tx.Box.Min.x(), tx.Box.Min.z()};
@@ -97,11 +124,34 @@ bool FeatureHistory::ApplyForward(Part& part, FeatureTransaction& tx)
                 Regen(part);
                 return true;
             }
+            if (tx.FeatureType == "ExtrudePad")
+            {
+                if (part.Features().Find(tx.Feature))
+                {
+                    Regen(part);
+                    return true;
+                }
+                auto sketch = SketchFeature::CreatePolyline(
+                    tx.SketchName.empty() ? "Sketch" : tx.SketchName + "_Sketch",
+                    tx.SketchPolyline, tx.SketchFrame);
+                if (!sketch)
+                {
+                    return false;
+                }
+                tx.ExtrudePadSketchId = part.Features().Append(std::move(sketch));
+                auto feature = ExtrudeFeature::Create(
+                    part.Parameters(),
+                    tx.SketchName.empty() ? "Pad" : tx.SketchName,
+                    tx.ExtrudePadSketchId, tx.ExtrudeDistance, tx.ExtrudeSymmetric);
+                tx.Feature = part.Features().Append(std::move(feature));
+                Regen(part);
+                return true;
+            }
             if (tx.FeatureType == "Extrude")
             {
                 auto feature = ExtrudeFeature::Create(
                     part.Parameters(), tx.SketchName.empty() ? "Extrude" : tx.SketchName,
-                    tx.SketchFeatureId, tx.ExtrudeDistance);
+                    tx.SketchFeatureId, tx.ExtrudeDistance, tx.ExtrudeSymmetric);
                 tx.Feature = part.Features().Append(std::move(feature));
                 Regen(part);
                 return true;
@@ -114,14 +164,49 @@ bool FeatureHistory::ApplyForward(Part& part, FeatureTransaction& tx)
                 Regen(part);
                 return true;
             }
+            if (tx.FeatureType == "CopiedBody")
+            {
+                auto feature = CopiedBodyFeature::Create(
+                    tx.CopiedSource, tx.CopiedTransform,
+                    tx.SketchName.empty() ? "Copy" : tx.SketchName);
+                tx.Feature = part.Features().Append(std::move(feature));
+                Regen(part);
+                return true;
+            }
             return false;
         }
         case TxKind::RemoveFeature:
             part.RemoveFeature(tx.Feature);
             return true;
         case TxKind::EditParameters:
+            if (tx.FeatureType == "Bezier")
+            {
+                auto* feature = part.Features().Find(tx.Feature);
+                if (!feature || feature->TypeName() != "Bezier")
+                {
+                    return false;
+                }
+                auto* bezier = static_cast<BezierCurveFeature*>(feature);
+                bezier->SetFromSpec(tx.Bezier);
+                part.Features().MarkDirtyFrom(tx.Feature);
+                Regen(part);
+                return true;
+            }
+            if (tx.FeatureType == "NurbsCurve")
+            {
+                auto* feature = part.Features().Find(tx.Feature);
+                if (!feature || feature->TypeName() != "NurbsCurve")
+                {
+                    return false;
+                }
+                auto* nurbs = static_cast<NurbsCurveFeature*>(feature);
+                nurbs->SetFromSpec(tx.Nurbs);
+                part.Features().MarkDirtyFrom(tx.Feature);
+                Regen(part);
+                return true;
+            }
             for (const auto& [id, value] : tx.ParamAfter)
-        {
+            {
                 part.Parameters().Set(id, value);
             }
             if (auto* f = part.Features().Find(tx.Feature))
@@ -143,6 +228,16 @@ bool FeatureHistory::ApplyForward(Part& part, FeatureTransaction& tx)
                 return true;
             }
             return false;
+        case TxKind::TransformBody:
+        {
+            auto* f = part.Features().Find(tx.Feature);
+            if (!f)
+            {
+                return false;
+            }
+            return part.TransformBody(f->BodyGuid(), tx.CopiedTransform,
+                                      /*recordHistory=*/false);
+        }
         case TxKind::UnsuppressFeature:
             if (auto* f = part.Features().Find(tx.Feature))
         {
@@ -162,6 +257,12 @@ bool FeatureHistory::ApplyReverse(Part& part, FeatureTransaction& tx)
     switch (tx.Kind)
 {
         case TxKind::AppendFeature:
+            if (tx.FeatureType == "ExtrudePad")
+            {
+                const bool ok_ext = part.RemoveFeature(tx.Feature);
+                const bool ok_sk = part.RemoveFeature(tx.ExtrudePadSketchId);
+                return ok_ext && ok_sk;
+            }
             return part.RemoveFeature(tx.Feature);
         case TxKind::RemoveFeature:
 {
@@ -172,8 +273,34 @@ bool FeatureHistory::ApplyReverse(Part& part, FeatureTransaction& tx)
             return ok;
         }
         case TxKind::EditParameters:
+            if (tx.FeatureType == "Bezier")
+            {
+                auto* feature = part.Features().Find(tx.Feature);
+                if (!feature || feature->TypeName() != "Bezier")
+                {
+                    return false;
+                }
+                auto* bezier = static_cast<BezierCurveFeature*>(feature);
+                bezier->SetFromSpec(tx.BezierBefore);
+                part.Features().MarkDirtyFrom(tx.Feature);
+                Regen(part);
+                return true;
+            }
+            if (tx.FeatureType == "NurbsCurve")
+            {
+                auto* feature = part.Features().Find(tx.Feature);
+                if (!feature || feature->TypeName() != "NurbsCurve")
+                {
+                    return false;
+                }
+                auto* nurbs = static_cast<NurbsCurveFeature*>(feature);
+                nurbs->SetFromSpec(tx.NurbsBefore);
+                part.Features().MarkDirtyFrom(tx.Feature);
+                Regen(part);
+                return true;
+            }
             for (const auto& [id, value] : tx.ParamBefore)
-        {
+            {
                 part.Parameters().Set(id, value);
             }
             if (auto* f = part.Features().Find(tx.Feature))
@@ -197,6 +324,17 @@ bool FeatureHistory::ApplyReverse(Part& part, FeatureTransaction& tx)
             FeatureTransaction s = tx;
             s.Kind = TxKind::SuppressFeature;
             return ApplyForward(part, s);
+        }
+        case TxKind::TransformBody:
+        {
+            auto* f = part.Features().Find(tx.Feature);
+            if (!f)
+            {
+                return false;
+            }
+            return part.TransformBody(f->BodyGuid(),
+                                      InverseTranslation(tx.CopiedTransform),
+                                      /*recordHistory=*/false);
         }
     }
     return false;

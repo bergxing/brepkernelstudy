@@ -1,10 +1,14 @@
 #include "brep/io/XlDocument.h"
 
+#include "brep/Aspect.h"
 #include "brep/feat/BooleanFeature.h"
 #include "brep/feat/BoxFeature.h"
+#include "brep/feat/CopiedBodyFeature.h"
 #include "brep/feat/ExtrudeFeature.h"
 #include "brep/feat/SketchFeature.h"
 #include "brep/feat/SphereFeature.h"
+#include "brep/feat/BezierCurveFeature.h"
+#include "brep/feat/NurbsCurveFeature.h"
 #include "brep/io/BksCache.h"
 #include "brep/Log.h"
 
@@ -199,7 +203,12 @@ enum class FeatType : std::uint8_t
   Sketch = 2,
   Extrude = 3,
   Sphere = 4,
-  Boolean = 5
+  Boolean = 5,
+  CopiedBody = 6,
+  Bezier = 7,      // legacy: 4 cubic CVs only
+  BezierEx = 8,    // Cvs + Degree + SegmentCount + Corner
+  BezierRational = 9,  // BezierEx + Weights
+  NurbsCurve = 10,
 };
 
 void write_plane(BinWriter& w, const Plane& p)
@@ -227,6 +236,9 @@ Plane read_plane(BinReader& r)
   p.VAxis = Vector3d{r.f64(), r.f64(), r.f64()};
   return p;
 }
+
+void write_xform(BinWriter& w, const RigidTransform& t);
+RigidTransform read_xform(BinReader& r);
 
 void write_feature(BinWriter& w, const feat::IFeature& f)
 {
@@ -312,6 +324,7 @@ void write_feature(BinWriter& w, const feat::IFeature& f)
     w.WriteGuid(ex.SketchFeatureId().Guid);
     w.WriteGuid(ex.DistanceId().Guid);
     w.WriteGuid(ex.BodyGuid());
+    w.u8(ex.Symmetric() ? 1 : 0);
     return;
   }
   if (f.TypeName() == "Boolean")
@@ -327,10 +340,88 @@ void write_feature(BinWriter& w, const feat::IFeature& f)
     w.WriteGuid(b.BodyGuid());
     return;
   }
+  if (f.TypeName() == "CopiedBody")
+  {
+    const auto& c = static_cast<const feat::CopiedBodyFeature&>(f);
+    w.u8(static_cast<std::uint8_t>(FeatType::CopiedBody));
+    w.WriteGuid(c.Id().Guid);
+    w.str(c.DisplayName());
+    w.u8(c.Suppressed() ? 1 : 0);
+    w.WriteGuid(c.SourceFeatureId().Guid);
+    write_xform(w, c.Transform());
+    w.WriteGuid(c.BodyGuid());
+    return;
+  }
+  if (f.TypeName() == "Bezier")
+  {
+    const auto& bez = static_cast<const feat::BezierCurveFeature&>(f);
+    const BezierSpec spec = bez.ToSpec();
+    const auto type = BezierWeightsAreUnit(spec) ? FeatType::BezierEx
+                                                : FeatType::BezierRational;
+    w.u8(static_cast<std::uint8_t>(type));
+    w.WriteGuid(bez.Id().Guid);
+    w.str(bez.DisplayName());
+    w.u8(bez.Suppressed() ? 1 : 0);
+    w.u32(static_cast<std::uint32_t>(spec.Cvs.size()));
+    for (const Point3d& p : spec.Cvs)
+    {
+      w.f64(p.x());
+      w.f64(p.y());
+      w.f64(p.z());
+    }
+    w.u32(static_cast<std::uint32_t>(spec.Degree));
+    w.u32(static_cast<std::uint32_t>(spec.SegmentCount));
+    w.u32(static_cast<std::uint32_t>(spec.Corner.size()));
+    for (std::uint8_t c : spec.Corner)
+    {
+      w.u8(c);
+    }
+    w.WriteGuid(bez.BodyGuid());
+    w.f64(bez.Tolerance());
+    if (type == FeatType::BezierRational)
+    {
+      w.u32(static_cast<std::uint32_t>(spec.Cvs.size()));
+      for (std::size_t i = 0; i < spec.Cvs.size(); ++i)
+      {
+        w.f64(BezierWeightAt(spec, i));
+      }
+    }
+    return;
+  }
+  if (f.TypeName() == "NurbsCurve")
+  {
+    const auto& nurbs = static_cast<const feat::NurbsCurveFeature&>(f);
+    const NurbsCurveSpec spec = nurbs.ToSpec();
+    w.u8(static_cast<std::uint8_t>(FeatType::NurbsCurve));
+    w.WriteGuid(nurbs.Id().Guid);
+    w.u32(static_cast<std::uint32_t>(spec.Cvs.size()));
+    for (const Point3d& p : spec.Cvs)
+    {
+      w.f64(p.x());
+      w.f64(p.y());
+      w.f64(p.z());
+    }
+    w.u32(static_cast<std::uint32_t>(spec.Weights.size()));
+    for (double wt : spec.Weights)
+    {
+      w.f64(wt);
+    }
+    w.u32(static_cast<std::uint32_t>(spec.Knots.size()));
+    for (double k : spec.Knots)
+    {
+      w.f64(k);
+    }
+    w.u32(static_cast<std::uint32_t>(spec.Degree));
+    w.f64(spec.Tolerance);
+    w.str(spec.Name.empty() ? nurbs.DisplayName() : spec.Name);
+    w.u8(nurbs.Suppressed() ? 1 : 0);
+    w.WriteGuid(nurbs.BodyGuid());
+    return;
+  }
   BREP_WARN("xl save: skipping unknown feature type '{}'", f.TypeName());
 }
 
-bool read_feature(BinReader& r, Part& part)
+bool read_feature(BinReader& r, Part& part, std::uint32_t schema)
 {
   const auto type = static_cast<FeatType>(r.u8());
   if (!r.Ok()) return false;
@@ -441,9 +532,11 @@ bool read_feature(BinReader& r, Part& part)
     const feat::FeatureId sketch_id{r.ReadGuid()};
     const param::ParameterId dist{r.ReadGuid()};
     const Guid body = r.ReadGuid();
+    const bool symmetric =
+        schema >= 3 ? (r.u8() != 0) : false;
     if (!r.Ok()) return false;
     auto feature = std::make_unique<feat::ExtrudeFeature>(
-        feat::FeatureId{fid}, name, sketch_id, dist);
+        feat::FeatureId{fid}, name, sketch_id, dist, symmetric);
     feature->SetBodyGuid(body);
     feature->SetSuppressed(suppressed);
     feature->SetStatus(feat::FeatureStatus::Dirty);
@@ -463,6 +556,153 @@ bool read_feature(BinReader& r, Part& part)
     if (!r.Ok()) return false;
     auto feature = std::make_unique<feat::BooleanFeature>(
         feat::FeatureId{fid}, name, op, target, tool);
+    feature->SetBodyGuid(body);
+    feature->SetSuppressed(suppressed);
+    feature->SetStatus(feat::FeatureStatus::Dirty);
+    part.Features().Append(std::move(feature));
+    return true;
+  }
+
+  if (type == FeatType::CopiedBody)
+  {
+    const Guid fid = r.ReadGuid();
+    const std::string name = r.str();
+    const bool suppressed = r.u8() != 0;
+    const feat::FeatureId source{r.ReadGuid()};
+    const RigidTransform xform = read_xform(r);
+    const Guid body = r.ReadGuid();
+    if (!r.Ok()) return false;
+    auto feature = std::make_unique<feat::CopiedBodyFeature>(
+        feat::FeatureId{fid}, name, source, xform);
+    feature->SetBodyGuid(body);
+    feature->SetSuppressed(suppressed);
+    feature->SetStatus(feat::FeatureStatus::Dirty);
+    part.Features().Append(std::move(feature));
+    return true;
+  }
+
+  if (type == FeatType::Bezier)
+  {
+    const Guid fid = r.ReadGuid();
+    const std::string name = r.str();
+    const bool suppressed = r.u8() != 0;
+    const Point3d p0{r.f64(), r.f64(), r.f64()};
+    const Point3d p1{r.f64(), r.f64(), r.f64()};
+    const Point3d p2{r.f64(), r.f64(), r.f64()};
+    const Point3d p3{r.f64(), r.f64(), r.f64()};
+    const Guid body = r.ReadGuid();
+    const double tolerance = r.f64();
+    if (!r.Ok()) return false;
+    auto feature = std::make_unique<feat::BezierCurveFeature>(
+        feat::FeatureId{fid}, name,
+        BezierSpec{.Cvs = {p0, p1, p2, p3}, .Tolerance = tolerance, .Name = name});
+    feature->SetBodyGuid(body);
+    feature->SetSuppressed(suppressed);
+    feature->SetStatus(feat::FeatureStatus::Dirty);
+    part.Features().Append(std::move(feature));
+    return true;
+  }
+
+  if (type == FeatType::BezierEx || type == FeatType::BezierRational)
+  {
+    const Guid fid = r.ReadGuid();
+    const std::string name = r.str();
+    const bool suppressed = r.u8() != 0;
+    const std::uint32_t cvCount = r.u32();
+    std::vector<Point3d> cvs;
+    cvs.reserve(cvCount);
+    for (std::uint32_t i = 0; i < cvCount; ++i)
+    {
+      cvs.push_back(Point3d{r.f64(), r.f64(), r.f64()});
+    }
+    const int degree = static_cast<int>(r.u32());
+    const int segmentCount = static_cast<int>(r.u32());
+    const std::uint32_t cornerCount = r.u32();
+    std::vector<std::uint8_t> corner;
+    corner.reserve(cornerCount);
+    for (std::uint32_t i = 0; i < cornerCount; ++i)
+    {
+      corner.push_back(r.u8());
+    }
+    const Guid body = r.ReadGuid();
+    const double tolerance = r.f64();
+    std::vector<double> weights;
+    if (type == FeatType::BezierRational)
+    {
+      const std::uint32_t wCount = r.u32();
+      weights.reserve(wCount);
+      for (std::uint32_t i = 0; i < wCount; ++i)
+      {
+        weights.push_back(r.f64());
+      }
+    }
+    if (!r.Ok()) return false;
+    BezierSpec spec;
+    spec.Cvs = std::move(cvs);
+    spec.Weights = std::move(weights);
+    spec.Degree = degree;
+    spec.SegmentCount = segmentCount;
+    spec.Corner = std::move(corner);
+    spec.Tolerance = tolerance;
+    spec.Name = name;
+    if (!BezierSpecValid(spec))
+    {
+      set_error("invalid BezierEx payload in .xl file");
+      return false;
+    }
+    auto feature = std::make_unique<feat::BezierCurveFeature>(
+        feat::FeatureId{fid}, name, spec);
+    feature->SetBodyGuid(body);
+    feature->SetSuppressed(suppressed);
+    feature->SetStatus(feat::FeatureStatus::Dirty);
+    part.Features().Append(std::move(feature));
+    return true;
+  }
+
+  if (type == FeatType::NurbsCurve)
+  {
+    const Guid fid = r.ReadGuid();
+    const std::uint32_t cvCount = r.u32();
+    std::vector<Point3d> cvs;
+    cvs.reserve(cvCount);
+    for (std::uint32_t i = 0; i < cvCount; ++i)
+    {
+      cvs.push_back(Point3d{r.f64(), r.f64(), r.f64()});
+    }
+    const std::uint32_t wCount = r.u32();
+    std::vector<double> weights;
+    weights.reserve(wCount);
+    for (std::uint32_t i = 0; i < wCount; ++i)
+    {
+      weights.push_back(r.f64());
+    }
+    const std::uint32_t knotCount = r.u32();
+    std::vector<double> knots;
+    knots.reserve(knotCount);
+    for (std::uint32_t i = 0; i < knotCount; ++i)
+    {
+      knots.push_back(r.f64());
+    }
+    const int degree = static_cast<int>(r.u32());
+    const double tolerance = r.f64();
+    const std::string name = r.str();
+    const bool suppressed = r.u8() != 0;
+    const Guid body = r.ReadGuid();
+    if (!r.Ok()) return false;
+    NurbsCurveSpec spec;
+    spec.Cvs = std::move(cvs);
+    spec.Weights = std::move(weights);
+    spec.Knots = std::move(knots);
+    spec.Degree = degree;
+    spec.Tolerance = tolerance;
+    spec.Name = name;
+    if (!NurbsCurveSpecValid(spec))
+    {
+      set_error("invalid NurbsCurve payload in .xl file");
+      return false;
+    }
+    auto feature = std::make_unique<feat::NurbsCurveFeature>(
+        feat::FeatureId{fid}, name, spec);
     feature->SetBodyGuid(body);
     feature->SetSuppressed(suppressed);
     feature->SetStatus(feat::FeatureStatus::Dirty);
@@ -664,7 +904,7 @@ std::unique_ptr<Document> decode_payload(const std::vector<std::uint8_t>& payloa
     const std::uint32_t fc = r.u32();
     for (std::uint32_t i = 0; i < fc; ++i)
     {
-      if (!read_feature(r, part))
+      if (!read_feature(r, part, schema))
     {
         err = g_last_error.empty() ? r.Error() : g_last_error;
         return nullptr;
@@ -713,6 +953,13 @@ const std::string& LastXlError()
 
 XlSaveResult SaveXl(const Document& doc, const std::filesystem::path& path)
 {
+  const std::string fileName = path.filename().string();
+  AspectEvent event;
+  event.Site = "io.xl.save";
+  event.Subject = fileName;
+  std::string detail;
+  return ProcessAspectChain().Invoke(event, [&] {
+  XlSaveResult result = [&] {
   XlSaveResult result;
   try {
     const auto payload = encode_payload(doc);
@@ -760,10 +1007,23 @@ XlSaveResult SaveXl(const Document& doc, const std::filesystem::path& path)
     set_error(result.Error);
     return result;
   }
+  }();
+  detail = result.Error;
+  event.Failed = !result.Ok;
+  event.Detail = detail;
+  return result;
+  });
 }
 
 XlLoadResult LoadXl(const std::filesystem::path& path)
 {
+  const std::string fileName = path.filename().string();
+  AspectEvent event;
+  event.Site = "io.xl.load";
+  event.Subject = fileName;
+  std::string detail;
+  return ProcessAspectChain().Invoke(event, [&] {
+  XlLoadResult result = [&] {
   XlLoadResult result;
   try {
     std::ifstream in(path, std::ios::binary);
@@ -855,6 +1115,12 @@ XlLoadResult LoadXl(const std::filesystem::path& path)
     set_error(result.Error);
     return result;
   }
+  }();
+  detail = result.Error;
+  event.Failed = !result.Ok();
+  event.Detail = detail;
+  return result;
+  });
 }
 
 }  // namespace brep::io
