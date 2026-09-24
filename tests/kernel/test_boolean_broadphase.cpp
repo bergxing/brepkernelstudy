@@ -1,5 +1,6 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include "brep/bool/Boolean.h"
 #include "brep/bool/Broadphase.h"
@@ -56,7 +57,7 @@ TEST(BooleanBroadphase, OverlappingBoxesProbePlanePlaneHits)
 TEST(BooleanBroadphase, UnsupportedEvaluatorMentionsBroadphase)
 {
   Model model;
-  // L-prism âˆª sphere: no specialized path â†’ soft-fail with broadphase note.
+  // L-prism âˆ?sphere: no specialized path â†?soft-fail with broadphase note.
   ops::ExtrudeSpec spec;
   spec.Name = "L";
   spec.distance = 1.0;

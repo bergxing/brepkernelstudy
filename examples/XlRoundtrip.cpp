@@ -1,4 +1,8 @@
-#include "brep/Brep.h"
+#include "api/Core.h"
+#include "api/Modeling.h"
+#include "api/Persistence.h"
+#include "brep/asm/Assembly.h"
+#include "brep/naming/TopologyRef.h"
 
 #include <cmath>
 #include <filesystem>

@@ -65,7 +65,7 @@ std::shared_ptr<IBooleanEvaluator> MakeDefaultBooleanEvaluator()
   {
     return EvaluatorFactory()();
   }
-  return MakeCompositeBooleanEvaluator();
+  return MakePipelineBooleanEvaluator();
 }
 
 }  // namespace brep::boolean

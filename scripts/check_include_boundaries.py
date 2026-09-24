@@ -3,7 +3,7 @@
 
 Rules:
   1. apps/viewer/** must not #include "brep/..." or <brep/...>
-     (kernel API must come only via "api/...")
+     (kernel API must come only via "api/..." — except apps/viewer/bootstrap/)
   2. apps/viewer/** must not #include "brep/internal/..." (defense in depth)
   3. examples/** and tests/** (non-viewer) must not include brep/internal/
   4. kernel/include/api/*.h may only #include "brep/..." (or api/) — no reverse deps
@@ -68,9 +68,31 @@ def rel(path: Path) -> str:
         return str(path)
 
 
+def check_viewer_hypodermic(errors: list[str]) -> None:
+    viewer = ROOT / "apps" / "viewer"
+    bootstrap = viewer / "bootstrap"
+    for path in iter_sources(viewer):
+        rel_path = path.relative_to(viewer)
+        if rel_path.parts and rel_path.parts[0] == "bootstrap":
+            continue
+        if rel_path.parts[:2] == ("tests",):
+            continue
+        for line_no, inc, _delim in includes_in(path):
+            if inc.startswith("Hypodermic/") or inc == "Hypodermic.h":
+                errors.append(
+                    f"{rel(path)}:{line_no}: viewer may not include '{inc}' "
+                    f"(Hypodermic only in bootstrap/ and tests/)"
+                )
+
+
 def check_viewer(errors: list[str]) -> None:
     viewer = ROOT / "apps" / "viewer"
     for path in iter_sources(viewer):
+        rel_path = path.relative_to(viewer)
+        if rel_path.parts and rel_path.parts[0] == "bootstrap":
+            continue
+        if rel_path.parts[:1] == ("tests",):
+            continue
         for line_no, inc, _delim in includes_in(path):
             if inc.startswith("brep/"):
                 errors.append(
@@ -81,6 +103,31 @@ def check_viewer(errors: list[str]) -> None:
                 errors.append(
                     f"{rel(path)}:{line_no}: forbidden internal header '{inc}'"
                 )
+            if inc.startswith("brep/build/"):
+                errors.append(
+                    f"{rel(path)}:{line_no}: viewer must not include '{inc}' "
+                    f"(use Part + Feature via api/Modeling.h)"
+                )
+
+
+def check_no_build_outside_kernel(errors: list[str]) -> None:
+    """brep/build/ is kernel-internal; product code uses Feature + Part."""
+    roots = [
+        ROOT / "apps",
+        ROOT / "examples",
+        ROOT / "kernel" / "include" / "api",
+    ]
+    for base in roots:
+        for path in iter_sources(base):
+            rel_path = rel(path)
+            if rel_path.startswith("apps/viewer/tests/"):
+                continue
+            for line_no, inc, _delim in includes_in(path):
+                if inc.startswith("brep/build/"):
+                    errors.append(
+                        f"{rel(path)}:{line_no}: '{inc}' is kernel-internal "
+                        f"(use Part + Feature / api/Modeling.h)"
+                    )
 
 
 def check_no_internal_outside_kernel(errors: list[str]) -> None:
@@ -112,7 +159,7 @@ def check_api_headers(errors: list[str]) -> None:
             if inc.startswith("api/"):
                 continue
             if inc.startswith("brep/"):
-                if "brep/internal/" in inc:
+                if "brep/internal/" in inc or inc.startswith("brep/build/"):
                     errors.append(
                         f"{rel(path)}:{line_no}: api headers must not expose "
                         f"internal '{inc}'"
@@ -155,6 +202,8 @@ def main() -> int:
     errors: list[str] = []
     check_internal_not_on_public_layout(errors)
     check_viewer(errors)
+    check_viewer_hypodermic(errors)
+    check_no_build_outside_kernel(errors)
     check_no_internal_outside_kernel(errors)
     check_api_headers(errors)
 

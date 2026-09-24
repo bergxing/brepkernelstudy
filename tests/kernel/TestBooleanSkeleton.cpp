@@ -1,6 +1,6 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
-
+#include "brep/build/PrimitiveBuild.h"
 #include "brep/bool/Boolean.h"
 
 #include <gtest/gtest.h>
@@ -34,17 +34,17 @@ TEST(BooleanSkeleton, StubRejectsUnsupportedCombinations)
   ASSERT_NE(b, nullptr);
 
   std::unique_ptr<boolean::IBooleanEvaluator> eval =
-      boolean::make_stub_boolean_evaluator();
+      boolean::MakeStubBooleanEvaluator();
   ASSERT_NE(eval, nullptr);
 
   const boolean::BooleanContext ctx;
   for (const auto op : {boolean::BooleanOp::Union, boolean::BooleanOp::Subtract,
                         boolean::BooleanOp::Intersect})
   {
-    const boolean::BooleanResult result = eval->evaluate(op, model, *a, *b, ctx);
-    EXPECT_FALSE(result.ok());
-    EXPECT_EQ(result.body, nullptr);
-    EXPECT_FALSE(result.diagnostics.empty()) << "op=" << static_cast<int>(op);
+    const boolean::BooleanResult result = eval->Evaluate(op, model, *a, *b, ctx);
+    EXPECT_FALSE(result.Ok());
+    EXPECT_EQ(result.OutputBody, nullptr);
+    EXPECT_FALSE(result.Diagnostics.empty()) << "op=" << static_cast<int>(op);
   }
 }
 
@@ -57,11 +57,11 @@ TEST(BooleanSkeleton, StubRejectsSphereBoxPair)
   ASSERT_NE(box, nullptr);
   ASSERT_NE(sphere, nullptr);
 
-  auto eval = boolean::make_stub_boolean_evaluator();
+  auto eval = boolean::MakeStubBooleanEvaluator();
   const auto result =
-      eval->evaluate(boolean::BooleanOp::Subtract, model, *box, *sphere, {});
-  EXPECT_FALSE(result.ok());
-  EXPECT_NE(result.diagnostics.find("unsupported"), std::string::npos);
+      eval->Evaluate(boolean::BooleanOp::Subtract, model, *box, *sphere, {});
+  EXPECT_FALSE(result.Ok());
+  EXPECT_NE(result.Diagnostics.find("unsupported"), std::string::npos);
 }
 
 }  // namespace

@@ -1,5 +1,6 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 #include "api/Persistence.h"
 
 #include "brep/bool/Boolean.h"
@@ -26,7 +27,7 @@ class FakeUnionEvaluator final : public boolean::IBooleanEvaluator
                                   {
     last_op = op;
     boolean::BooleanResult result;
-    result.mode = boolean::BooleanEvalMode::AnalyticPair;
+    result.mode = boolean::BooleanEvalMode::General;
     BoxSpec spec;
     spec.Min = Point3d{0, 0, 0};
     spec.Max = Point3d{1, 1, 1};

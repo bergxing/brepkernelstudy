@@ -2,6 +2,7 @@
 
 **状态**：已接受  
 **日期**：2026-08-09  
+**修订**：2026-08-26 — Viewer 三库边界不变。`brep_core` 内部再拆见 [ADR 0010](0010-kernel-library-split.md)；整仓总图见 [layering.md](../layering.md)。`viewer_bootstrap` STATIC 见 ADR 0007，不改变本 ADR 的 SHARED 产品层。  
 
 ## 背景
 

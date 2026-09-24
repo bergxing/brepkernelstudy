@@ -5,323 +5,520 @@
 #include <QEvent>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSlider>
+#include <QTimer>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
 #include <optional>
+#include <string>
 
 namespace brep::viewer
 {
 namespace
 {
 
-QDoubleSpinBox* make_dim_spin(QWidget* parent, bool editable)
+[[nodiscard]] QString TrSource(const std::string& source)
 {
-  auto* spin = new QDoubleSpinBox(parent);
-  spin->setDecimals(4);
-  spin->setRange(1.0e-4, 1.0e9);
-  spin->setSingleStep(0.1);
-  spin->setAlignment(Qt::AlignRight);
-  if (!editable)
-  {
-    spin->setReadOnly(true);
-    spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
-  }
-  return spin;
+    return PropertyPanel::tr(source.c_str());
+}
+
+constexpr double kSliderScale = 100.0;
+
+// Keep lupdate source strings aligned with PropertySheet English labels.
+[[maybe_unused]] const char* const kPropertySheetSources[] = {
+    QT_TR_NOOP("Dimensions (parameters)"),
+    QT_TR_NOOP("Length (X)"),
+    QT_TR_NOOP("Height (Y)"),
+    QT_TR_NOOP("Width (Z)"),
+    QT_TR_NOOP("Radius"),
+    QT_TR_NOOP("Weights"),
+    QT_TR_NOOP("w0"),
+    QT_TR_NOOP("w1"),
+    QT_TR_NOOP("w2"),
+    QT_TR_NOOP("w3"),
+    QT_TR_NOOP("Parameter-driven · edits regenerate the model"),
+    QT_TR_NOOP("No editable parameters"),
+    QT_TR_NOOP("Operation: Union (Fuse)"),
+    QT_TR_NOOP("Operation: Subtract (Cut)"),
+    QT_TR_NOOP("Operation: Intersect (Common)"),
+};
+
+[[nodiscard]] int SliderFromValue(double value)
+{
+    return static_cast<int>(std::lround(value * kSliderScale));
+}
+
+[[nodiscard]] double ValueFromSlider(int slider)
+{
+    return static_cast<double>(slider) / kSliderScale;
+}
+
+[[nodiscard]] bool SameFieldSchema(const PropertySheet& a, const PropertySheet& b)
+{
+    if (a.Editable != b.Editable || a.Fields.size() != b.Fields.size())
+    {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.Fields.size(); ++i)
+    {
+        if (a.Fields[i].Id != b.Fields[i].Id ||
+            a.Fields[i].Widget != b.Fields[i].Widget)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
 
 PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent)
 {
-  auto* root = new QVBoxLayout(this);
-  root->setContentsMargins(8, 8, 8, 8);
-  root->setSpacing(8);
+    auto* root = new QVBoxLayout(this);
+    root->setContentsMargins(8, 8, 8, 8);
+    root->setSpacing(8);
 
-  m_emptyLabel = new QLabel(tr("No selection"), this);
-  m_emptyLabel->setAlignment(Qt::AlignCenter);
-  m_emptyLabel->setStyleSheet(QStringLiteral("color: #888; padding: 16px;"));
-  root->addWidget(m_emptyLabel);
+    m_emptyLabel = new QLabel(tr("No selection"), this);
+    m_emptyLabel->setAlignment(Qt::AlignCenter);
+    m_emptyLabel->setStyleSheet(QStringLiteral("color: #888; padding: 16px;"));
+    root->addWidget(m_emptyLabel);
 
-  m_formHost = new QWidget(this);
-  auto* form_layout = new QVBoxLayout(m_formHost);
-  form_layout->setContentsMargins(0, 0, 0, 0);
+    m_formHost = new QWidget(this);
+    auto* formLayout = new QVBoxLayout(m_formHost);
+    formLayout->setContentsMargins(0, 0, 0, 0);
 
-  m_identityGroup = new QGroupBox(tr("Object"), m_formHost);
-  auto* id_form = new QFormLayout(m_identityGroup);
-  m_nameEdit = new QLineEdit(m_identityGroup);
-  m_nameEdit->setReadOnly(true);
-  m_typeEdit = new QLineEdit(m_identityGroup);
-  m_typeEdit->setReadOnly(true);
-  m_guidEdit = new QLineEdit(m_identityGroup);
-  m_guidEdit->setReadOnly(true);
-  m_nameRowLabel = new QLabel(tr("Name"), m_identityGroup);
-  m_typeRowLabel = new QLabel(tr("Type"), m_identityGroup);
-  id_form->addRow(m_nameRowLabel, m_nameEdit);
-  id_form->addRow(m_typeRowLabel, m_typeEdit);
-  id_form->addRow(QStringLiteral("GUID"), m_guidEdit);
-  form_layout->addWidget(m_identityGroup);
+    m_identityGroup = new QGroupBox(tr("Object"), m_formHost);
+    auto* idForm = new QFormLayout(m_identityGroup);
+    m_nameEdit = new QLineEdit(m_identityGroup);
+    m_nameEdit->setReadOnly(true);
+    m_typeEdit = new QLineEdit(m_identityGroup);
+    m_typeEdit->setReadOnly(true);
+    m_guidEdit = new QLineEdit(m_identityGroup);
+    m_guidEdit->setReadOnly(true);
+    m_nameRowLabel = new QLabel(tr("Name"), m_identityGroup);
+    m_typeRowLabel = new QLabel(tr("Type"), m_identityGroup);
+    idForm->addRow(m_nameRowLabel, m_nameEdit);
+    idForm->addRow(m_typeRowLabel, m_typeEdit);
+    idForm->addRow(QStringLiteral("GUID"), m_guidEdit);
+    formLayout->addWidget(m_identityGroup);
 
-  m_dimsGroup = new QGroupBox(tr("Dimensions (parameters)"), m_formHost);
-  auto* dim_form = new QFormLayout(m_dimsGroup);
-  m_lengthSpin = make_dim_spin(m_dimsGroup, true);
-  m_widthSpin = make_dim_spin(m_dimsGroup, true);
-  m_heightSpin = make_dim_spin(m_dimsGroup, true);
-  m_radiusSpin = make_dim_spin(m_dimsGroup, true);
-  m_lengthRowLabel = new QLabel(tr("Length (X)"), m_dimsGroup);
-  m_widthRowLabel = new QLabel(tr("Width (Z)"), m_dimsGroup);
-  m_heightRowLabel = new QLabel(tr("Height (Y)"), m_dimsGroup);
-  m_radiusRowLabel = new QLabel(tr("Radius"), m_dimsGroup);
-  dim_form->addRow(m_lengthRowLabel, m_lengthSpin);
-  dim_form->addRow(m_widthRowLabel, m_widthSpin);
-  dim_form->addRow(m_heightRowLabel, m_heightSpin);
-  dim_form->addRow(m_radiusRowLabel, m_radiusSpin);
-  m_dimsHint = new QLabel(m_dimsGroup);
-  m_dimsHint->setStyleSheet(QStringLiteral("color:#888;"));
-  dim_form->addRow(m_dimsHint);
-  form_layout->addWidget(m_dimsGroup);
-  form_layout->addStretch(1);
+    m_paramsGroup = new QGroupBox(tr("Dimensions (parameters)"), m_formHost);
+    auto* paramsLayout = new QVBoxLayout(m_paramsGroup);
+    m_paramsForm = new QFormLayout();
+    paramsLayout->addLayout(m_paramsForm);
+    m_hintLabel = new QLabel(m_paramsGroup);
+    m_hintLabel->setStyleSheet(QStringLiteral("color:#888;"));
+    m_hintLabel->setWordWrap(true);
+    paramsLayout->addWidget(m_hintLabel);
+    formLayout->addWidget(m_paramsGroup);
+    formLayout->addStretch(1);
 
-  root->addWidget(m_formHost, 1);
+    root->addWidget(m_formHost, 1);
 
-  QObject::connect(m_lengthSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                   this, [this](double)
-  {
-                       on_dim_edited(); 
-                   });
-  QObject::connect(m_widthSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                   this, [this](double)
-  {
-                       on_dim_edited(); 
-                   });
-  QObject::connect(m_heightSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                   this, [this](double)
-  {
-                       on_dim_edited(); 
-                   });
-  QObject::connect(m_radiusSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                   this, [this](double)
-  {
-                       on_dim_edited(); 
-                   });
-
-  clear();
+    clear();
 }
 
 void PropertyPanel::retranslate_ui()
 {
-  m_emptyLabel->setText(tr("No selection"));
-  m_identityGroup->setTitle(tr("Object"));
-  m_nameRowLabel->setText(tr("Name"));
-  m_typeRowLabel->setText(tr("Type"));
-  m_dimsGroup->setTitle(tr("Dimensions (parameters)"));
-  m_lengthRowLabel->setText(tr("Length (X)"));
-  m_widthRowLabel->setText(tr("Width (Z)"));
-  m_heightRowLabel->setText(tr("Height (Y)"));
-  m_radiusRowLabel->setText(tr("Radius"));
-  refresh_dim_hint();
-}
-
-void PropertyPanel::refresh_dim_hint()
-{
-  if (m_boxParamsVisible || m_sphereParamsVisible)
-{
-    m_dimsHint->setText(
-        tr("Parameter-driven · edits regenerate the model"));
-  } else if (m_booleanOp.has_value())
-  {
-    switch (*m_booleanOp)
-  {
-      case boolean::BooleanOp::Union:
-        m_dimsHint->setText(tr("Operation: Union (Fuse)"));
-        break;
-      case boolean::BooleanOp::Subtract:
-        m_dimsHint->setText(tr("Operation: Subtract (Cut)"));
-        break;
-      case boolean::BooleanOp::Intersect:
-        m_dimsHint->setText(tr("Operation: Intersect (Common)"));
-        break;
+    m_emptyLabel->setText(tr("No selection"));
+    m_identityGroup->setTitle(tr("Object"));
+    m_nameRowLabel->setText(tr("Name"));
+    m_typeRowLabel->setText(tr("Type"));
+    if (m_sheet.GroupTitle.empty())
+    {
+        m_paramsGroup->setTitle(tr("Dimensions (parameters)"));
     }
-  } else if (m_formHost->isVisible())
-  {
-    m_dimsHint->setText(tr("No editable parameters"));
-  }
-  else
-  {
-    m_dimsHint->clear();
-  }
+    else
+    {
+        m_paramsGroup->setTitle(TrSource(m_sheet.GroupTitle));
+    }
+    if (m_sheet.Hint.empty())
+    {
+        m_hintLabel->clear();
+    }
+    else
+    {
+        m_hintLabel->setText(TrSource(m_sheet.Hint));
+    }
+    const std::size_t n =
+        std::min(m_fieldRows.size(), m_sheet.Fields.size());
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (m_fieldRows[i].Label)
+        {
+            m_fieldRows[i].Label->setText(TrSource(m_sheet.Fields[i].Label));
+        }
+    }
 }
 
 void PropertyPanel::changeEvent(QEvent* event)
 {
-  if (event->type() == QEvent::LanguageChange)
-{
-    retranslate_ui();
-  }
-  QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange)
+    {
+        retranslate_ui();
+    }
+    QWidget::changeEvent(event);
 }
 
-void PropertyPanel::block_dim_signals(bool block)
+void PropertyPanel::SetEnabled(bool enabled)
 {
-  m_lengthSpin->blockSignals(block);
-  m_widthSpin->blockSignals(block);
-  m_heightSpin->blockSignals(block);
-  m_radiusSpin->blockSignals(block);
+    m_emptyLabel->setVisible(!enabled);
+    m_formHost->setVisible(enabled);
 }
 
-void PropertyPanel::set_box_mode(bool on)
+void PropertyPanel::ClearParamRows()
 {
-  m_lengthRowLabel->setVisible(on);
-  m_widthRowLabel->setVisible(on);
-  m_heightRowLabel->setVisible(on);
-  m_lengthSpin->setVisible(on);
-  m_widthSpin->setVisible(on);
-  m_heightSpin->setVisible(on);
-  m_lengthSpin->setEnabled(on);
-  m_widthSpin->setEnabled(on);
-  m_heightSpin->setEnabled(on);
+    while (m_paramsForm->rowCount() > 0)
+    {
+        m_paramsForm->removeRow(0);
+    }
+    m_fieldRows.clear();
 }
 
-void PropertyPanel::set_sphere_mode(bool on)
+QWidget* PropertyPanel::BuildFieldRow(const PropertyField& field)
 {
-  m_radiusRowLabel->setVisible(on);
-  m_radiusSpin->setVisible(on);
-  m_radiusSpin->setEnabled(on);
+    auto* spin = new QDoubleSpinBox(m_paramsGroup);
+    const bool sliderSpin = field.Widget == PropertyWidget::SliderSpin;
+    spin->setDecimals(sliderSpin ? 2 : 4);
+    spin->setRange(field.Min, field.Max);
+    spin->setSingleStep(field.Step);
+    spin->setAlignment(Qt::AlignRight);
+    spin->setValue(field.Value);
+
+    const bool readOnly =
+        !m_sheet.Editable || field.Widget == PropertyWidget::ReadOnly;
+    if (readOnly)
+    {
+        spin->setReadOnly(true);
+        spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    }
+
+    QSlider* slider = nullptr;
+    QWidget* cell = spin;
+    if (sliderSpin)
+    {
+        auto* row = new QWidget(m_paramsGroup);
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        slider = new QSlider(Qt::Horizontal, row);
+        const int sliderMin = SliderFromValue(field.Min);
+        const int sliderMax = SliderFromValue(field.Max);
+        slider->setRange(std::max(1, sliderMin), std::max(sliderMin, sliderMax));
+        slider->setValue(SliderFromValue(field.Value));
+        slider->setEnabled(!readOnly);
+        spin->setMaximumWidth(80);
+        rowLayout->addWidget(slider, 1);
+        rowLayout->addWidget(spin);
+        cell = row;
+    }
+
+    FieldRow widgets;
+    widgets.Id = field.Id;
+    widgets.Spin = spin;
+    widgets.Slider = slider;
+    m_fieldRows.push_back(std::move(widgets));
+    const std::size_t rowIndex = m_fieldRows.size() - 1;
+
+    QObject::connect(spin, qOverload<double>(&QDoubleSpinBox::valueChanged),
+                     this,
+                     [this, rowIndex](double)
+                     {
+                         if (m_updatingUi)
+                         {
+                             return;
+                         }
+                         SyncSliderFromSpin(m_fieldRows[rowIndex]);
+                         OnFieldEdited(m_fieldRows[rowIndex].Id);
+                     });
+    if (slider)
+    {
+        QObject::connect(slider, &QSlider::valueChanged, this,
+                         [this, rowIndex](int)
+                         {
+                             if (m_updatingUi)
+                             {
+                                 return;
+                             }
+                             SyncSpinFromSlider(m_fieldRows[rowIndex]);
+                             OnFieldEdited(m_fieldRows[rowIndex].Id);
+                         });
+    }
+    return cell;
 }
 
-void PropertyPanel::set_enabled(bool enabled)
+void PropertyPanel::SyncSliderFromSpin(FieldRow& row)
 {
-  m_emptyLabel->setVisible(!enabled);
-  m_formHost->setVisible(enabled);
+    if (!row.Slider || !row.Spin)
+    {
+        return;
+    }
+    row.Slider->blockSignals(true);
+    row.Slider->setValue(SliderFromValue(row.Spin->value()));
+    row.Slider->blockSignals(false);
+}
+
+void PropertyPanel::SyncSpinFromSlider(FieldRow& row)
+{
+    if (!row.Slider || !row.Spin)
+    {
+        return;
+    }
+    row.Spin->blockSignals(true);
+    row.Spin->setValue(ValueFromSlider(row.Slider->value()));
+    row.Spin->blockSignals(false);
+}
+
+void PropertyPanel::UpdateParamRowValues(const PropertySheet& sheet)
+{
+    m_sheet = sheet;
+    if (m_sheet.GroupTitle.empty())
+    {
+        m_paramsGroup->setTitle(tr("Dimensions (parameters)"));
+    }
+    else
+    {
+        m_paramsGroup->setTitle(TrSource(m_sheet.GroupTitle));
+    }
+    if (m_sheet.Hint.empty())
+    {
+        m_hintLabel->clear();
+    }
+    else
+    {
+        m_hintLabel->setText(TrSource(m_sheet.Hint));
+    }
+
+    const std::size_t n =
+        std::min(m_fieldRows.size(), m_sheet.Fields.size());
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const PropertyField& field = m_sheet.Fields[i];
+        FieldRow& row = m_fieldRows[i];
+        if (row.Label)
+        {
+            row.Label->setText(TrSource(field.Label));
+        }
+        if (row.Spin)
+        {
+            row.Spin->blockSignals(true);
+            row.Spin->setRange(field.Min, field.Max);
+            row.Spin->setSingleStep(field.Step);
+            row.Spin->setValue(field.Value);
+            row.Spin->blockSignals(false);
+        }
+        if (row.Slider)
+        {
+            row.Slider->blockSignals(true);
+            const int sliderMin = SliderFromValue(field.Min);
+            const int sliderMax = SliderFromValue(field.Max);
+            row.Slider->setRange(std::max(1, sliderMin),
+                                 std::max(sliderMin, sliderMax));
+            row.Slider->setValue(SliderFromValue(field.Value));
+            row.Slider->blockSignals(false);
+        }
+    }
+}
+
+void PropertyPanel::RebuildParamRows(const PropertySheet& sheet)
+{
+    if (!m_fieldRows.empty() && SameFieldSchema(m_sheet, sheet))
+    {
+        m_updatingUi = true;
+        UpdateParamRowValues(sheet);
+        m_updatingUi = false;
+        return;
+    }
+    if (m_inFieldEdit)
+    {
+        QTimer::singleShot(0, this,
+                           [this, sheet]() { RebuildParamRows(sheet); });
+        return;
+    }
+    m_updatingUi = true;
+    m_sheet = sheet;
+    ClearParamRows();
+    if (m_sheet.GroupTitle.empty())
+    {
+        m_paramsGroup->setTitle(tr("Dimensions (parameters)"));
+    }
+    else
+    {
+        m_paramsGroup->setTitle(TrSource(m_sheet.GroupTitle));
+    }
+    for (const PropertyField& field : m_sheet.Fields)
+    {
+        auto* label = new QLabel(TrSource(field.Label), m_paramsGroup);
+        QWidget* cell = BuildFieldRow(field);
+        m_fieldRows.back().Label = label;
+        m_paramsForm->addRow(label, cell);
+    }
+    if (m_sheet.Hint.empty())
+    {
+        m_hintLabel->clear();
+    }
+    else
+    {
+        m_hintLabel->setText(TrSource(m_sheet.Hint));
+    }
+    m_updatingUi = false;
 }
 
 void PropertyPanel::clear()
 {
-  set_enabled(false);
-  m_currentFeature = {};
-  m_boxParamsVisible = false;
-  m_sphereParamsVisible = false;
-  m_booleanOp.reset();
-  m_nameEdit->clear();
-  m_typeEdit->clear();
-  m_guidEdit->clear();
-  block_dim_signals(true);
-  m_lengthSpin->setValue(0.0);
-  m_widthSpin->setValue(0.0);
-  m_heightSpin->setValue(0.0);
-  m_radiusSpin->setValue(0.0);
-  block_dim_signals(false);
-  set_box_mode(false);
-  set_sphere_mode(false);
-  refresh_dim_hint();
-}
-
-void PropertyPanel::show_entity(entt::registry& registry, entt::entity entity)
-{
-  if (entity == entt::null || !registry.valid(entity))
-{
-    clear();
-    return;
-  }
-
-  set_enabled(true);
-
-  if (const auto* name = registry.try_get<ecs::Name>(entity))
-  {
-    m_nameEdit->setText(QString::fromStdString(name->value));
-  }
-  else
-  {
-    m_nameEdit->setText(tr("(unnamed)"));
-  }
-
-  m_currentFeature = {};
-  std::optional<adapter::SceneObject> obj;
-  if (m_adapter)
-  {
-    if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity))
-  {
-      m_currentFeature = feat::FeatureId{fref->feature_guid};
-      obj = m_adapter->object_for_feature(m_currentFeature);
-    } else if (const auto* body = registry.try_get<ecs::BodyRef>(entity))
+    if (m_inFieldEdit)
     {
-      obj = m_adapter->object_for_body(body->guid);
-      if (obj) m_currentFeature = feat::FeatureId{obj->feature_guid};
+        QTimer::singleShot(0, this, [this]() { clear(); });
+        return;
     }
-  }
-
-  const bool is_box = obj && obj->box.has_value();
-  const bool is_sphere = obj && obj->sphere.has_value();
-  const bool is_boolean = obj && obj->boolean_info.has_value();
-  if (is_box)
-  {
-    m_typeEdit->setText(QStringLiteral("BoxFeature"));
-  } else if (is_sphere)
-  {
-    m_typeEdit->setText(QStringLiteral("SphereFeature"));
-  } else if (is_boolean)
-  {
-    m_typeEdit->setText(QStringLiteral("BooleanFeature"));
-  }
-  else
-  {
-    m_typeEdit->setText(registry.all_of<ecs::BodyRef>(entity)
-                            ? QStringLiteral("Body")
-                            : QStringLiteral("Renderable"));
-  }
-
-  if (const auto* body = registry.try_get<ecs::BodyRef>(entity))
-  {
-    m_guidEdit->setText(QString::fromStdString(body->guid.ToString()));
-  }
-  else
-  {
+    SetEnabled(false);
+    m_currentFeature = {};
+    m_sheet = {};
+    m_nameEdit->clear();
+    m_typeEdit->clear();
     m_guidEdit->clear();
-  }
-
-  block_dim_signals(true);
-  set_box_mode(is_box);
-  set_sphere_mode(is_sphere);
-  m_boxParamsVisible = is_box;
-  m_sphereParamsVisible = is_sphere;
-  m_booleanOp.reset();
-  if (is_box)
-  {
-    m_lengthSpin->setValue(obj->box->length);
-    m_widthSpin->setValue(obj->box->width);
-    m_heightSpin->setValue(obj->box->height);
-  } else if (is_sphere)
-  {
-    m_radiusSpin->setValue(obj->sphere->radius);
-  } else if (is_boolean)
-  {
-    m_booleanOp = obj->boolean_info->op;
-  }
-  block_dim_signals(false);
-  refresh_dim_hint();
+    m_updatingUi = true;
+    ClearParamRows();
+    m_updatingUi = false;
+    m_hintLabel->clear();
+    m_paramsGroup->setTitle(tr("Dimensions (parameters)"));
 }
 
-void PropertyPanel::on_dim_edited()
+void PropertyPanel::ShowEntity(entt::registry& registry, entt::entity entity)
 {
-  if (m_updatingUi || !m_adapter || !m_currentFeature.IsValid()) return;
+    if (entity == entt::null || !registry.valid(entity))
+    {
+        clear();
+        return;
+    }
 
-  m_updatingUi = true;
-  if (m_boxParamsVisible)
-  {
-    m_adapter->set_box_params(m_currentFeature,
-                             adapter::BoxParams{.length = m_lengthSpin->value(),
-                                                .width = m_widthSpin->value(),
-                                                .height = m_heightSpin->value()});
-  } else if (m_sphereParamsVisible)
-  {
-    m_adapter->set_sphere_params(
-        m_currentFeature,
-        adapter::SphereParams{.radius = m_radiusSpin->value()});
-  }
-  m_updatingUi = false;
+    SetEnabled(true);
 
-  if (m_onParamsChanged) m_onParamsChanged(m_currentFeature);
+    if (const auto* name = registry.try_get<ecs::Name>(entity))
+    {
+        m_nameEdit->setText(QString::fromStdString(name->value));
+    }
+    else
+    {
+        m_nameEdit->setText(tr("(unnamed)"));
+    }
+
+    m_currentFeature = {};
+    std::optional<adapter::SceneObject> obj;
+    if (m_adapter)
+    {
+        if (const auto* fref = registry.try_get<ecs::FeatureRef>(entity))
+        {
+            m_currentFeature = feat::FeatureId{fref->FeatureGuid};
+            obj = m_adapter->ObjectForFeature(m_currentFeature);
+        }
+        else if (const auto* body = registry.try_get<ecs::BodyRef>(entity))
+        {
+            obj = m_adapter->ObjectForBody(body->guid);
+            if (obj)
+            {
+                m_currentFeature = feat::FeatureId{obj->FeatureGuid};
+            }
+        }
+    }
+
+    if (obj)
+    {
+        m_typeEdit->setText(QString::fromStdString(obj->TypeName));
+    }
+    else
+    {
+        m_typeEdit->setText(registry.all_of<ecs::BodyRef>(entity)
+                                ? QStringLiteral("Body")
+                                : QStringLiteral("Renderable"));
+    }
+
+    if (const auto* body = registry.try_get<ecs::BodyRef>(entity))
+    {
+        m_guidEdit->setText(QString::fromStdString(body->guid.ToString()));
+    }
+    else
+    {
+        m_guidEdit->clear();
+    }
+
+    std::optional<PrimitiveSpec> spec;
+    if (m_adapter && m_currentFeature.IsValid())
+    {
+        spec = m_adapter->SpecFor(m_currentFeature.Guid, {});
+    }
+
+    PropertySheet sheet;
+    if (spec.has_value())
+    {
+        sheet = Describe(*spec);
+    }
+    else if (obj && obj->TypeName == "Boolean" && m_adapter)
+    {
+        if (auto info = m_adapter->BooleanParamsFor(m_currentFeature))
+        {
+            sheet = DescribeBoolean(info->Op);
+        }
+        else
+        {
+            sheet.Hint = "No editable parameters";
+            sheet.Editable = false;
+        }
+    }
+    else
+    {
+        sheet.Hint = "No editable parameters";
+        sheet.Editable = false;
+    }
+    RebuildParamRows(sheet);
+}
+
+void PropertyPanel::OnFieldEdited(std::string_view fieldId)
+{
+    if (m_updatingUi || !m_adapter || !m_currentFeature.IsValid())
+    {
+        return;
+    }
+
+    auto spec = m_adapter->SpecFor(m_currentFeature.Guid, {});
+    if (!spec.has_value())
+    {
+        return;
+    }
+
+    double value = 0.0;
+    bool found = false;
+    for (const FieldRow& row : m_fieldRows)
+    {
+        if (row.Id == fieldId && row.Spin)
+        {
+            value = row.Spin->value();
+            found = true;
+            break;
+        }
+    }
+    if (!found || !Apply(*spec, fieldId, value))
+    {
+        return;
+    }
+
+    m_updatingUi = true;
+    const bool ok = m_adapter->SetPrimitive(m_currentFeature, *spec);
+    m_updatingUi = false;
+    if (!ok)
+    {
+        return;
+    }
+    m_inFieldEdit = true;
+    if (m_onParamsChanged)
+    {
+        m_onParamsChanged(m_currentFeature);
+    }
+    m_inFieldEdit = false;
 }
 
 }  // namespace brep::viewer

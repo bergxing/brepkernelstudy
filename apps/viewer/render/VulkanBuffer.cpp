@@ -73,6 +73,16 @@ void VulkanRenderer::destroy_buffer(GpuBuffer& b)
   b = {};
 }
 
+void VulkanRenderer::WaitGpuIdle()
+{
+  const VkDevice device = m_window ? m_window->device() : VK_NULL_HANDLE;
+  if (!m_dev || device == VK_NULL_HANDLE)
+  {
+    return;
+  }
+  m_dev->vkDeviceWaitIdle(device);
+}
+
 void VulkanRenderer::destroy_texture(GpuTexture& tex)
 {
   const VkDevice device = m_window->device();

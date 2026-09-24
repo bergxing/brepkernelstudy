@@ -1,6 +1,8 @@
 #include "ecs/Systems.h"
 
 #include "commands/Picking.h"
+#include "commands/tools/BezierPreview.h"
+#include "commands/tools/PreviewEdges.h"
 #include "ecs/Components.h"
 #include "VulkanRenderer.h"
 
@@ -245,10 +247,11 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
   auto& cache = render_cache(registry);
   const entt::entity sel = selected_entity(registry);
   const std::size_t sel_count = selected_count(registry);
+  const entt::entity hover = hovered_entity(registry);
   const bool need_rebuild =
       any_component_dirty || count != cache.renderable_count ||
       sel != cache.selection || sel_count != cache.selection_count ||
-      cache.force_rebuild;
+      hover != cache.hover || cache.force_rebuild;
 
   if (need_rebuild)
   {
@@ -257,9 +260,11 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
     cache.selected_tri = {};
     cache.selected_edges = {};
     cache.selected_outline = {};
+    cache.hover_outline = {};
     cache.scene_material = {};
     cache.have_scene = false;
     cache.have_selection = false;
+    cache.have_hover = false;
     bool have_material = false;
 
     for (auto entity : view)
@@ -275,19 +280,55 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
                                 xform.position);
         append_transformed_edges(cache.selected_edges, mesh.edges,
                                  xform.position);
+        if (registry.all_of<BezierCvComponent>(entity))
+        {
+          const auto& cv = registry.get<BezierCvComponent>(entity);
+          EdgeMesh handles;
+          if (cv.Degree == 3 && cv.Cvs.size() >= 4)
+          {
+            for (int s = 0; s < cv.SegmentCount; ++s)
+            {
+              const std::size_t b = static_cast<std::size_t>(3 * s);
+              if (b + 3 >= cv.Cvs.size())
+              {
+                break;
+              }
+              commands::AppendBezierPenHandles(handles, cv.Cvs[b],
+                                               cv.Cvs[b + 1], cv.Cvs[b + 2],
+                                               cv.Cvs[b + 3]);
+            }
+          }
+          else
+          {
+            for (std::size_t i = 1; i < cv.Cvs.size(); ++i)
+            {
+              commands::PushSegment(handles, cv.Cvs[i - 1], cv.Cvs[i]);
+            }
+            for (const Point3d& p : cv.Cvs)
+            {
+              EdgeMesh tip = commands::MakePointMarker(p);
+              handles.Positions.insert(handles.Positions.end(),
+                                       tip.Positions.begin(),
+                                       tip.Positions.end());
+            }
+          }
+          append_transformed_edges(cache.selected_edges, handles,
+                                   xform.position);
+        }
       }
       else
       {
         append_transformed_mesh(cache.scene_tri, mesh.triangles, xform.position);
         append_transformed_edges(cache.scene_edges, mesh.edges, xform.position);
-        if (!have_material)
+        if (!mesh.triangles.Indices.empty())
         {
-          cache.scene_material = mat.material;
-          have_material = true;
-        } else if (cache.scene_material.AlbedoPath.empty() &&
-                   !mat.material.AlbedoPath.empty())
-        {
-          cache.scene_material = mat.material;
+          if (!have_material ||
+              (cache.scene_material.AlbedoPath.empty() &&
+               !mat.material.AlbedoPath.empty()))
+          {
+            cache.scene_material = mat.material;
+            have_material = true;
+          }
         }
       }
 
@@ -298,10 +339,17 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
     if (!have_material)
     {
       for (auto entity : view)
-    {
+      {
+        if (view.get<MeshComponent>(entity).triangles.Indices.empty())
+        {
+          continue;
+        }
         cache.scene_material = view.get<MaterialComponent>(entity).material;
         have_material = true;
-        if (!cache.scene_material.AlbedoPath.empty()) break;
+        if (!cache.scene_material.AlbedoPath.empty())
+        {
+          break;
+        }
       }
     }
 
@@ -313,10 +361,23 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
     {
       cache.selected_outline = cache.selected_edges;
     }
+    if (hover != entt::null && registry.valid(hover) &&
+        registry.all_of<MeshComponent, Transform, RenderableTag>(hover) &&
+        !registry.all_of<SelectedTag>(hover))
+    {
+      const auto& mesh = registry.get<MeshComponent>(hover);
+      const auto& xform = registry.get<Transform>(hover);
+      // Sphere etc. tessellate faces only — derive wire when Edges empty.
+      const EdgeMesh wire =
+          commands::PreviewWire(mesh.edges, mesh.triangles);
+      append_transformed_edges(cache.hover_outline, wire, xform.position);
+      cache.have_hover = !cache.hover_outline.Positions.empty();
+    }
 
     cache.renderable_count = count;
     cache.selection = sel;
     cache.selection_count = sel_count;
+    cache.hover = hover;
     cache.force_rebuild = false;
     ++cache.version;
   }
@@ -330,7 +391,10 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
   else
   {
     renderer.set_meshes(cache.scene_tri, cache.scene_edges);
-    renderer.set_material(cache.scene_material);
+    if (!cache.scene_tri.Indices.empty())
+    {
+      renderer.set_material(cache.scene_material);
+    }
   }
 
   if (!cache.have_selection)
@@ -345,6 +409,15 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
     renderer.set_highlight_edges(cache.selected_outline);
   }
 
+  if (!cache.have_hover)
+  {
+    renderer.clear_hover();
+  }
+  else
+  {
+    renderer.set_hover_edges(cache.hover_outline);
+  }
+
   synced_version = cache.version;
 }
 
@@ -356,6 +429,44 @@ bool consume_camera_dirty(entt::registry& registry)
   return dirty;
 }
 
+namespace
+{
+
+bool entity_world_aabb(const MeshComponent& mesh, const Transform& xform,
+                       Point3d& out_min, Point3d& out_max)
+{
+  bool any = false;
+  auto expand = [&](const Point3d& local)
+  {
+    const Point3d p{local.x() + xform.position.x(),
+                    local.y() + xform.position.y(),
+                    local.z() + xform.position.z()};
+    if (!any)
+    {
+      out_min = out_max = p;
+      any = true;
+      return;
+    }
+    out_min = Point3d{std::min(out_min.x(), p.x()),
+                      std::min(out_min.y(), p.y()),
+                      std::min(out_min.z(), p.z())};
+    out_max = Point3d{std::max(out_max.x(), p.x()),
+                      std::max(out_max.y(), p.y()),
+                      std::max(out_max.z(), p.z())};
+  };
+  for (const auto& v : mesh.triangles.Vertices)
+  {
+    expand(v.Position);
+  }
+  for (const Point3d& p : mesh.edges.Positions)
+  {
+    expand(p);
+  }
+  return any;
+}
+
+}  // namespace
+
 bool scene_aabb(const entt::registry& registry, Point3d& out_min,
                 Point3d& out_max)
 {
@@ -364,27 +475,27 @@ bool scene_aabb(const entt::registry& registry, Point3d& out_min,
                             const RenderableTag>();
   for (auto entity : view)
   {
-    const auto& mesh = view.get<const MeshComponent>(entity);
-    const auto& xform = view.get<const Transform>(entity);
-    for (const auto& v : mesh.triangles.Vertices)
+    Point3d bmin;
+    Point3d bmax;
+    if (!entity_world_aabb(view.get<const MeshComponent>(entity),
+                           view.get<const Transform>(entity), bmin, bmax))
     {
-      const Point3d p{v.Position.x() + xform.position.x(),
-                      v.Position.y() + xform.position.y(),
-                      v.Position.z() + xform.position.z()};
-      if (!any)
-      {
-        out_min = out_max = p;
-        any = true;
-      }
-      else
-      {
-        out_min = Point3d{std::min(out_min.x(), p.x()),
-                          std::min(out_min.y(), p.y()),
-                          std::min(out_min.z(), p.z())};
-        out_max = Point3d{std::max(out_max.x(), p.x()),
-                          std::max(out_max.y(), p.y()),
-                          std::max(out_max.z(), p.z())};
-      }
+      continue;
+    }
+    if (!any)
+    {
+      out_min = bmin;
+      out_max = bmax;
+      any = true;
+    }
+    else
+    {
+      out_min = Point3d{std::min(out_min.x(), bmin.x()),
+                        std::min(out_min.y(), bmin.y()),
+                        std::min(out_min.z(), bmin.z())};
+      out_max = Point3d{std::max(out_max.x(), bmax.x()),
+                        std::max(out_max.y(), bmax.y()),
+                        std::max(out_max.z(), bmax.z())};
     }
   }
   return any;
@@ -420,71 +531,71 @@ void fit_camera_to_scene(const entt::registry& registry, Camera& camera,
   camera.fit_sphere(center, radius, aspect);
 }
 
-entt::entity pick_renderable(entt::registry& registry, const Camera& cam,
-                             int viewport_w, int viewport_h, float sx,
-                             float sy)
-                             {
+std::vector<RayPickHit> PickRenderablesAlongRay(entt::registry& registry,
+                                                const Camera& cam,
+                                                int viewport_w, int viewport_h,
+                                                float sx, float sy)
+{
+  std::vector<RayPickHit> hits;
   Point3d origin;
   Vector3d dir;
-  if (!commands::screen_to_ray(cam, viewport_w, viewport_h, sx, sy, origin,
-                               dir))
+  if (!commands::ScreenToRay(cam, viewport_w, viewport_h, sx, sy, origin, dir))
   {
-    return entt::null;
+    return hits;
   }
 
-  entt::entity best = entt::null;
-  double best_t = std::numeric_limits<double>::infinity();
-
+  constexpr int kEdgePickAperturePx = 12;
   auto view = registry.view<MeshComponent, Transform, RenderableTag>();
   for (auto entity : view)
   {
     const auto& mesh = view.get<MeshComponent>(entity);
     const auto& xform = view.get<Transform>(entity);
-    double t = 0.0;
-    if (!commands::intersect_mesh(origin, dir, mesh.triangles, xform.position,
-                                  t))
+    double tMesh = 0.0;
+    const bool hitMesh = commands::IntersectMesh(
+        origin, dir, mesh.triangles, xform.position, tMesh);
+    double tEdge = 0.0;
+    const bool hitEdge = commands::IntersectEdges(
+        cam, viewport_w, viewport_h, sx, sy, kEdgePickAperturePx, origin, dir,
+        mesh.edges, xform.position, tEdge);
+    if (!hitMesh && !hitEdge)
     {
       continue;
     }
-    if (t < best_t)
+    const double t =
+        hitMesh && (!hitEdge || tMesh <= tEdge) ? tMesh : tEdge;
+    hits.push_back(RayPickHit{entity, t});
+  }
+  std::sort(hits.begin(), hits.end(),
+            [](const RayPickHit& a, const RayPickHit& b)
+            { return a.T < b.T; });
+  return hits;
+}
+
+entt::entity pick_renderable(entt::registry& registry, const Camera& cam,
+                             int viewport_w, int viewport_h, float sx,
+                             float sy)
+{
+  return PickClosestRenderable(registry, cam, viewport_w, viewport_h, sx, sy,
+                               entt::null);
+}
+
+entt::entity PickClosestRenderable(entt::registry& registry, const Camera& cam,
+                                   int viewport_w, int viewport_h, float sx,
+                                   float sy, entt::entity skip)
+{
+  for (const RayPickHit& hit :
+       PickRenderablesAlongRay(registry, cam, viewport_w, viewport_h, sx, sy))
+  {
+    if (hit.Entity != skip)
     {
-      best_t = t;
-      best = entity;
+      return hit.Entity;
     }
   }
-  return best;
+  return entt::null;
 }
 
 namespace
 {
-
-bool entity_world_aabb(const MeshComponent& mesh, const Transform& xform,
-                       Point3d& out_min, Point3d& out_max)
-{
-  if (mesh.triangles.Vertices.empty()) return false;
-  bool any = false;
-  for (const auto& v : mesh.triangles.Vertices)
-  {
-    const Point3d p{v.Position.x() + xform.position.x(),
-                    v.Position.y() + xform.position.y(),
-                    v.Position.z() + xform.position.z()};
-    if (!any)
-    {
-      out_min = out_max = p;
-      any = true;
-    }
-    else
-    {
-      out_min = Point3d{std::min(out_min.x(), p.x()),
-                        std::min(out_min.y(), p.y()),
-                        std::min(out_min.z(), p.z())};
-      out_max = Point3d{std::max(out_max.x(), p.x()),
-                        std::max(out_max.y(), p.y()),
-                        std::max(out_max.z(), p.z())};
-    }
-  }
-  return any;
-}
 
 bool project_aabb_to_screen(const Camera& cam, int viewport_w, int viewport_h,
                             const Point3d& bmin, const Point3d& bmax,
@@ -502,7 +613,7 @@ bool project_aabb_to_screen(const Camera& cam, int viewport_w, int viewport_h,
   {
     float sx = 0.0f;
     float sy = 0.0f;
-    if (!commands::world_to_screen(cam, viewport_w, viewport_h, c, sx, sy))
+    if (!commands::WorldToScreen(cam, viewport_w, viewport_h, c, sx, sy))
     {
       continue;
     }
@@ -595,6 +706,7 @@ void set_selection(entt::registry& registry, entt::entity entity)
 {
   auto& sel = selection(registry);
   clear_selected_tags(registry);
+  sel.Ordered.clear();
 
   if (entity == entt::null || !registry.valid(entity))
   {
@@ -603,6 +715,7 @@ void set_selection(entt::registry& registry, entt::entity entity)
   else
   {
     sel.primary = entity;
+    sel.Ordered.push_back(entity);
     registry.emplace<SelectedTag>(entity);
   }
 
@@ -619,20 +732,17 @@ void toggle_selection(entt::registry& registry, entt::entity entity)
   if (registry.all_of<SelectedTag>(entity))
   {
     registry.remove<SelectedTag>(entity);
+    std::erase(sel.Ordered, entity);
     if (sel.primary == entity)
     {
-      sel.primary = entt::null;
-      auto view = registry.view<SelectedTag>();
-      for (auto e : view)
-      {
-        sel.primary = e;
-        break;
-      }
+      sel.primary = sel.Ordered.empty() ? entt::null : sel.Ordered.back();
     }
   }
   else
-      {
+  {
     registry.emplace<SelectedTag>(entity);
+    std::erase(sel.Ordered, entity);
+    sel.Ordered.push_back(entity);
     sel.primary = entity;
   }
   render_cache(registry).force_rebuild = true;
@@ -645,6 +755,7 @@ void select_entities(entt::registry& registry,
   if (!additive)
   {
     clear_selected_tags(registry);
+    sel.Ordered.clear();
     sel.primary = entt::null;
   }
 
@@ -655,6 +766,8 @@ void select_entities(entt::registry& registry,
     {
       registry.emplace<SelectedTag>(entity);
     }
+    std::erase(sel.Ordered, entity);
+    sel.Ordered.push_back(entity);
     sel.primary = entity;
   }
 
@@ -676,9 +789,64 @@ entt::entity selected_entity(const entt::registry& registry)
   return registry.ctx().get<SelectionState>().primary;
 }
 
+std::vector<entt::entity> SelectedEntitiesOrdered(const entt::registry& registry)
+{
+  std::vector<entt::entity> ordered;
+  if (!registry.ctx().contains<SelectionState>())
+  {
+    return ordered;
+  }
+  for (const entt::entity entity :
+       registry.ctx().get<SelectionState>().Ordered)
+  {
+    if (entity != entt::null && registry.valid(entity) &&
+        registry.all_of<SelectedTag>(entity))
+    {
+      ordered.push_back(entity);
+    }
+  }
+  return ordered;
+}
+
 std::size_t selected_count(const entt::registry& registry)
 {
   return registry.view<SelectedTag>().size();
+}
+
+void set_hover(entt::registry& registry, entt::entity entity)
+{
+  entt::entity next = entity;
+  if (next != entt::null &&
+      (!registry.valid(next) || !registry.all_of<RenderableTag>(next) ||
+       registry.all_of<SelectedTag>(next)))
+  {
+    next = entt::null;
+  }
+  const entt::entity prev = hovered_entity(registry);
+  if (prev == next)
+  {
+    return;
+  }
+  if (prev != entt::null && registry.valid(prev) &&
+      registry.all_of<HoverTag>(prev))
+  {
+    registry.remove<HoverTag>(prev);
+  }
+  if (next != entt::null)
+  {
+    registry.emplace_or_replace<HoverTag>(next);
+  }
+  render_cache(registry).force_rebuild = true;
+}
+
+entt::entity hovered_entity(const entt::registry& registry)
+{
+  auto view = registry.view<HoverTag>();
+  for (auto entity : view)
+  {
+    return entity;
+  }
+  return entt::null;
 }
 
 std::string selection_label(const entt::registry& registry,

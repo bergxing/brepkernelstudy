@@ -14,6 +14,7 @@ alwaysApply: false
 |------|------|------|
 | 类 / 结构体 | PascalCase | `BooleanPipeline`, `Body` |
 | 函数 | PascalCase | `Evaluate`, `RegisterBody` |
+| **ITool 步进** | 嵌套 `enum class Step` | `m_step{Step::PickBase}`（禁止 `int` + 0/1/2） |
 | 变量 / 参数 | camelCase | `bodyCount`, `startIndex` |
 | **类成员变量** | **`m_` + camelCase** | `m_evaluator`, `m_bodyGuid` |
 | struct / DTO 成员 | **PascalCase（强制，无 `m_`）** | `Ok`, `Failed`, `EntityGuid` |

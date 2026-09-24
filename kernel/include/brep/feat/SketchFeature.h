@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace brep::feat
 {
@@ -68,6 +69,11 @@ public:
     static std::unique_ptr<SketchFeature> CreateRectangle(
         param::ParameterStore& store, std::string name, Point2d min,
         Point2d max, brep::Plane frame = brep::Plane::XzYUp());
+
+    /// Closed polyline (>=3 vertices). First point fixed; no constraint solver.
+    static std::unique_ptr<SketchFeature> CreatePolyline(
+        std::string name, const std::vector<Point2d>& points,
+        brep::Plane frame = brep::Plane::XzYUp());
 
 private:
     FeatureId m_id{};

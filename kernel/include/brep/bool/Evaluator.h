@@ -23,16 +23,17 @@ class IBooleanEvaluator
                                                const BooleanContext& ctx) = 0;
 };
 
-/// Phase 2.0.1 skeleton stub (always fails). Prefer
-/// `MakeDefaultBooleanEvaluator` for production (box–box path).
+/// Skeleton stub (always fails). Prefer `MakeDefaultBooleanEvaluator`.
 [[nodiscard]] std::unique_ptr<IBooleanEvaluator> MakeStubBooleanEvaluator();
 
 using BooleanEvaluatorFactory =
     std::function<std::shared_ptr<IBooleanEvaluator>()>;
 
-/// Optional override used by Part / XL load (tests inject a fake until needed).
+/// Optional override used by tests until all call sites use explicit injection.
+/// Prefer constructing Document/Part with a shared evaluator (ADR 0007).
+[[deprecated("Use Document/Part constructor injection or TestContainer override")]]
 void SetBooleanEvaluatorFactory(BooleanEvaluatorFactory factory);
-/// Default: axis-aligned box–box Fuse/Cut/Common; other combos fail soft.
+/// Default: general BooleanPipeline (ADR 0008); no analytic fast paths registered.
 [[nodiscard]] std::shared_ptr<IBooleanEvaluator> MakeDefaultBooleanEvaluator();
 
 }  // namespace brep::boolean

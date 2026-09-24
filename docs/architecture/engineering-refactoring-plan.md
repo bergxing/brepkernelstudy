@@ -1,9 +1,12 @@
 # B-Rep Kernel / XCAD Viewer 工程化重构方案
 
-**状态**：已确认  
+> **2026-08-26：** 本文是 Phase 0～4 的**历史方案**。§1「当前结构」描述的是 2026-08-08 基线（单 exe、umbrella 头），**不要当现状**。  
+> **现行分层总图：** [layering.md](layering.md)。链接 DAG 见 ADR 0003；内核再拆见 ADR 0010；IoC 见 ADR 0007（bootstrap 已落地）。
+
+**状态**：历史（Phase 0～4 大部已落地）  
 **日期**：2026-08-08  
 **范围**：`kernel/`、`apps/viewer/`、根 `CMakeLists.txt`  
-**目标**：在保持功能可用的前提下，将当前「单库 + 大文件 + 宽依赖」结构，重构为**分层、模块化、可增量编译、可测试**的工程布局。
+**目标**：在保持功能可用的前提下，将当时「单库 + 大文件 + 宽依赖」结构，重构为**分层、模块化、可增量编译、可测试**的工程布局。
 
 **已确认决策**  
 1. **Adapter 放在 `apps/viewer/adapter/`** — 仅 Viewer 使用，不建顶层 `adapter/`；未来若有 CLI/headless 再抽公共层。  
@@ -50,7 +53,7 @@ Qt6 / Vulkan / EnTT
 | Viewer 子目录有雏形 | `commands/`、`ecs/`、`i18n/` 职责相对清晰 |
 | 内核概念分层存在 | geometry → topology → model → feat → document |
 | 命令模式已引入 | `CommandManager` / `ITool` 便于扩展交互工具 |
-| 内核有 examples 回归 | `box_demo`、`smoke`、`xl_roundtrip` 等 |
+| 内核有 examples 回归 | `smoke`、`parametric_smoke`、`xl_roundtrip` 等 |
 
 ### 1.3 主要问题
 
@@ -484,7 +487,7 @@ class DocumentService {
 
 - **引入方式**：优先 CMake `FetchContent(googletest)`；或 `third_party/googletest` 子模块（与现有 submodule 策略一致）。
 - **链接**：`GTest::gtest_main` 用于可执行测试；内核/viewer 测试均为独立 `add_executable` + `gtest_discover_tests()`。
-- **与 examples 关系**：保留现有 `box_demo` / `smoke` 等 examples 作 smoke；GoogleTest 覆盖细粒度回归。
+- **与 examples 关系**：保留现有 `smoke` / `parametric_smoke` 等 examples 作 smoke；GoogleTest 覆盖细粒度回归。
 
 ### 6.2 建议目录
 

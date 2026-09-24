@@ -17,31 +17,31 @@ struct CommandContext;
 
 struct PickResult
 {
-  Point3d point{};
-  SnapKind kind{SnapKind::None};
-  bool snapped{false};
-  std::optional<SnapCandidate> candidate;
+    Point3d Point{};
+    SnapKind Kind{SnapKind::None};
+    bool Snapped{false};
+    std::optional<SnapCandidate> Candidate;
 };
 
 /// Lower values win when candidates have the same screen distance.
-[[nodiscard]] int snap_kind_priority(SnapKind kind) noexcept;
+[[nodiscard]] int SnapKindPriority(SnapKind kind) noexcept;
 
 /// Quantize a default y=0 workplane hit to the configured grid spacing.
-[[nodiscard]] std::optional<SnapCandidate> make_grid_candidate(
-    const Point3d& workplane_point, double grid_spacing);
+[[nodiscard]] std::optional<SnapCandidate> MakeGridCandidate(
+    const Point3d& workplanePoint, double gridSpacing);
 
 /// Rank visible candidates by aperture distance, kind priority, then depth.
-[[nodiscard]] std::optional<SnapCandidate> pick_best_candidate(
+[[nodiscard]] std::optional<SnapCandidate> PickBestCandidate(
     const std::vector<SnapCandidate>& candidates, const Camera& camera,
-    int viewport_w, int viewport_h, float sx, float sy, int aperture_px,
-    std::optional<SnapKind> override_kind);
+    int viewportW, int viewportH, float sx, float sy, int aperturePx,
+    std::optional<SnapKind> overrideKind);
 
 class AccuSnap
 {
- public:
-  [[nodiscard]] static PickResult resolve(CommandContext& ctx, float sx,
-                                          float sy);
-  static void clear_feedback(CommandContext& ctx);
+public:
+    [[nodiscard]] static PickResult Resolve(CommandContext& ctx, float sx,
+                                            float sy);
+    static void ClearFeedback(CommandContext& ctx);
 };
 
 }  // namespace brep::viewer::commands

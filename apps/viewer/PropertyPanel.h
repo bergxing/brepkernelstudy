@@ -1,6 +1,6 @@
 #pragma once
 
-#include "adapter/SceneAdapter.h"
+#include "adapter/ISceneService.h"
 #include "ecs/Components.h"
 
 #include "api/Modeling.h"
@@ -10,76 +10,84 @@
 #include <entt/entt.hpp>
 
 #include <functional>
-#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
+class QFormLayout;
 class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QDoubleSpinBox;
 class QEvent;
+class QSlider;
 
 namespace brep::viewer
 {
 
-/// Right-dock properties: box L/W/H or sphere Radius via SceneAdapter.
+/// Right-dock properties: identity + PropertySheet, edits via SetPrimitive.
 class PropertyPanel final : public QWidget
 {
-  Q_OBJECT
- public:
-  explicit PropertyPanel(QWidget* parent = nullptr);
+    Q_OBJECT
 
-  void set_adapter(adapter::SceneAdapter* adapter)
-  {
-      m_adapter = adapter; 
-  }
+public:
+    explicit PropertyPanel(QWidget* parent = nullptr);
 
-  using ParamsChangedFn = std::function<void(brep::feat::FeatureId)>;
-  void set_params_changed_callback(ParamsChangedFn cb)
-  {
-    m_onParamsChanged = std::move(cb);
-  }
+    void SetAdapter(adapter::ISceneService* adapter)
+    {
+        m_adapter = adapter;
+    }
 
-  void clear();
-  void show_entity(entt::registry& registry, entt::entity entity);
-  void retranslate_ui();
+    using ParamsChangedFn = std::function<void(brep::feat::FeatureId)>;
+    void SetParamsChangedCallback(ParamsChangedFn cb)
+    {
+        m_onParamsChanged = std::move(cb);
+    }
 
- protected:
-  void changeEvent(QEvent* event) override;
+    void clear();
+    void ShowEntity(entt::registry& registry, entt::entity entity);
+    void retranslate_ui();
 
- private:
-  void set_enabled(bool enabled);
-  void refresh_dim_hint();
-  void on_dim_edited();
-  void block_dim_signals(bool block);
-  void set_box_mode(bool on);
-  void set_sphere_mode(bool on);
+protected:
+    void changeEvent(QEvent* event) override;
 
-  adapter::SceneAdapter* m_adapter{nullptr};
-  ParamsChangedFn m_onParamsChanged;
-  brep::feat::FeatureId m_currentFeature{};
-  bool m_updatingUi{false};
+private:
+    struct FieldRow
+    {
+        std::string Id;
+        QLabel* Label{nullptr};
+        QDoubleSpinBox* Spin{nullptr};
+        QSlider* Slider{nullptr};
+    };
 
-  QLineEdit* m_nameEdit{nullptr};
-  QLineEdit* m_typeEdit{nullptr};
-  QLineEdit* m_guidEdit{nullptr};
-  QDoubleSpinBox* m_lengthSpin{nullptr};  // X / unused for sphere
-  QDoubleSpinBox* m_widthSpin{nullptr};   // Z
-  QDoubleSpinBox* m_heightSpin{nullptr};  // Y
-  QDoubleSpinBox* m_radiusSpin{nullptr};
-  QLabel* m_emptyLabel{nullptr};
-  QLabel* m_dimsHint{nullptr};
-  QWidget* m_formHost{nullptr};
-  QGroupBox* m_identityGroup{nullptr};
-  QGroupBox* m_dimsGroup{nullptr};
-  QLabel* m_nameRowLabel{nullptr};
-  QLabel* m_typeRowLabel{nullptr};
-  QLabel* m_lengthRowLabel{nullptr};
-  QLabel* m_widthRowLabel{nullptr};
-  QLabel* m_heightRowLabel{nullptr};
-  QLabel* m_radiusRowLabel{nullptr};
-  bool m_boxParamsVisible{false};
-  bool m_sphereParamsVisible{false};
-  std::optional<brep::boolean::BooleanOp> m_booleanOp{};
+    void SetEnabled(bool enabled);
+    void ClearParamRows();
+    void UpdateParamRowValues(const PropertySheet& sheet);
+    void RebuildParamRows(const PropertySheet& sheet);
+    QWidget* BuildFieldRow(const PropertyField& field);
+    void OnFieldEdited(std::string_view fieldId);
+    void SyncSliderFromSpin(FieldRow& row);
+    void SyncSpinFromSlider(FieldRow& row);
+
+    adapter::ISceneService* m_adapter{nullptr};
+    ParamsChangedFn m_onParamsChanged;
+    brep::feat::FeatureId m_currentFeature{};
+    bool m_updatingUi{false};
+    bool m_inFieldEdit{false};
+    PropertySheet m_sheet;
+
+    QLineEdit* m_nameEdit{nullptr};
+    QLineEdit* m_typeEdit{nullptr};
+    QLineEdit* m_guidEdit{nullptr};
+    QLabel* m_emptyLabel{nullptr};
+    QLabel* m_hintLabel{nullptr};
+    QWidget* m_formHost{nullptr};
+    QGroupBox* m_identityGroup{nullptr};
+    QGroupBox* m_paramsGroup{nullptr};
+    QFormLayout* m_paramsForm{nullptr};
+    QLabel* m_nameRowLabel{nullptr};
+    QLabel* m_typeRowLabel{nullptr};
+    std::vector<FieldRow> m_fieldRows;
 };
 
 }  // namespace brep::viewer

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "brep/asm/Assembly.h"
+#include "brep/bool/Evaluator.h"
 #include "brep/IObject.h"
 #include "brep/ObjectRegistry.h"
 #include "brep/Part.h"
@@ -17,9 +18,12 @@ class Document final : public IObject
 {
  public:
   [[nodiscard]] static std::unique_ptr<Document> Create(
-      std::string title = "Untitled");
+      std::string title = "Untitled",
+      std::shared_ptr<boolean::IBooleanEvaluator> evaluator = nullptr);
 
-  explicit Document(std::string title = "Untitled");
+  explicit Document(
+      std::string title = "Untitled",
+      std::shared_ptr<boolean::IBooleanEvaluator> evaluator = nullptr);
 
   [[nodiscard]] ObjectKind Kind() const noexcept override
   {
@@ -84,6 +88,7 @@ class Document final : public IObject
   asm_::Assembly m_assembly;
   std::string m_path;
   bool m_dirty{false};
+  std::shared_ptr<boolean::IBooleanEvaluator> m_booleanEvaluator;
 };
 
 }  // namespace brep

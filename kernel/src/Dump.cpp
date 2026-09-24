@@ -20,7 +20,17 @@ void DumpBody(std::ostream& os, const Body& body)
       os << "Wire";
       break;
   }
-  os << " shells=" << body.Shells.size() << '\n';
+  os << " shells=" << body.Shells.size()
+     << " wire_edges=" << body.WireEdges.size() << '\n';
+
+  for (const Edge* edge : body.WireEdges)
+  {
+    if (!edge)
+    {
+      continue;
+    }
+    os << "  WireEdge id=" << edge->Id << " name=\"" << edge->Name << "\"\n";
+  }
 
   for (const Shell* shell : body.Shells)
   {

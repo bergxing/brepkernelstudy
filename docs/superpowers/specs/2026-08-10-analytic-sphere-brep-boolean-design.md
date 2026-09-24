@@ -25,7 +25,7 @@
 | 布尔目标 | 通用曲面 B-Rep 布尔（自研） |
 | 网格布尔 | 非主路径；仅可选调试 |
 | 外部内核 | 只参考 OCCT 理念；自行实现 |
-| 布尔 UI | 选中两个对象 → 菜单 并 / 减 / 交 |
+| 布尔 UI | 并 / 减 / 交共用差集交互：先命令后选、预选一体再选第二、预选两体立即执行；见 [2026-09-17 两体交互](./2026-09-17-boolean-two-body-interaction.md) |
 | 布尔后操作体 | **抑制（suppress）** 操作体特征；保留结果 |
 
 ---
@@ -549,17 +549,17 @@ docs/superpowers/specs/...                # 本文档 + 短 ADR
 #### T2.0.6 Viewer：双选 + 菜单/工具栏
 
 - [x] 命令：`boolean.union` / `boolean.subtract` / `boolean.intersect`
-- [x] 恰好 2 选；减：主选=目标，次选=工具
-- [x] 菜单 + 工具栏 + `tr` / `xcad_zh_CN.ts`
+- [x] 三操作共用 `BooleanTwoBodyTool`：先点=目标，后点=工具；预选两体立即执行（[2026-09-17 两体交互](./2026-09-17-boolean-two-body-interaction.md)）
+- [x] 菜单 + Ribbon + 视口右键 + `tr` / `xcad_zh_CN.ts`
 - [x] SceneAdapter / 属性：识别 Boolean 类型（可只读显示 op）
 - [x] **验收：** UI 完成盒并/减/交；操作体被抑制（`SceneAdapter.AddBoolean*`）
 
-**主要文件：** `BuiltinCommands.cpp`、`MainWindowMenus.cpp`、`scene_adapter.*`、i18n
+**主要文件：** `BooleanTwoBodyTool.*`、`BooleanExecute.*`、`BuiltinCommands.cpp`、`MainWindowMenus.cpp`、`scene_adapter.*`、i18n
 
 #### T2.0.7 Phase 2.0 验收门禁
 
 - [x] Kernel 盒布尔套件通过
-- [x] Viewer 冒烟：自动化（`SceneAdapter.AddBoolean*`）+ 手工清单（双选 → Fuse/Cut/Common，操作体抑制）
+- [x] Viewer 冒烟：自动化（`SceneAdapter.AddBoolean*`）+ 手工清单（预选两体立即执行，或命令内两点 → Fuse/Cut/Common，操作体抑制）
 - [x] 不依赖 Inner loop（盒结果面均为 Outer；L 形 Cut 为正交多面）
 
 **门禁证据（2026-08-11）：**

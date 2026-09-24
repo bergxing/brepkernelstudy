@@ -6,18 +6,25 @@
 namespace brep::feat
 {
 
-ExtrudeFeature::ExtrudeFeature(FeatureId id, std::string name, FeatureId sketchFeature,
-                               param::ParameterId distance)
-    : m_id(id), m_name(std::move(name)), m_sketchFeature(sketchFeature), m_distance(distance)
-                               {
+ExtrudeFeature::ExtrudeFeature(FeatureId id, std::string name,
+                               FeatureId sketchFeature,
+                               param::ParameterId distance, bool symmetric)
+    : m_id(id),
+      m_name(std::move(name)),
+      m_sketchFeature(sketchFeature),
+      m_distance(distance),
+      m_symmetric(symmetric)
+{
 }
 
-std::unique_ptr<ExtrudeFeature> ExtrudeFeature::Create(param::ParameterStore& store, std::string name,
-                                                       FeatureId sketchFeature, double distance)
+std::unique_ptr<ExtrudeFeature> ExtrudeFeature::Create(
+    param::ParameterStore& store, std::string name, FeatureId sketchFeature,
+    double distance, bool symmetric)
 {
     auto dist = store.Add(name + ".Depth", param::ParamKind::Length, distance);
     FeatureId id{Guid::Generate()};
-    return std::make_unique<ExtrudeFeature>(id, std::move(name), sketchFeature, dist);
+    return std::make_unique<ExtrudeFeature>(id, std::move(name), sketchFeature,
+                                            dist, symmetric);
 }
 
 void ExtrudeFeature::CollectParameters(param::ParameterStore& /*store*/)
@@ -37,6 +44,7 @@ bool ExtrudeFeature::Rebuild(Part& part, param::ParameterStore& params)
     spec.Profile = ops::ExtractProfile(sketchFeat->Sketch());
     spec.Plane = sketchFeat->Sketch().Frame();
     spec.Distance = params.Get(m_distance).value_or(1.0);
+    spec.Symmetric = m_symmetric;
     spec.Name = m_name;
 
     Body* body = part.RebuildExtrudeBody(m_bodyGuid, spec);

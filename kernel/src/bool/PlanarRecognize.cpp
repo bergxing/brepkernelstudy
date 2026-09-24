@@ -2,6 +2,7 @@
 
 #include "brep/bool/BoxRecognize.h"
 #include "brep/Geometry.h"
+#include "brep/internal/Polygon2d.h"
 
 #include <algorithm>
 #include <cmath>
@@ -41,13 +42,7 @@ namespace
 
 [[nodiscard]] double ring_signed_area(const std::vector<Point2d>& ring)
 {
-  double a = 0.0;
-  for (std::size_t i = 0; i < ring.size(); ++i)
-  {
-    const std::size_t j = (i + 1) % ring.size();
-    a += ring[i].u() * ring[j].v() - ring[j].u() * ring[i].v();
-  }
-  return 0.5 * a;
+  return brep::internal::SignedArea2d(ring);
 }
 
 void ensure_ccw(std::vector<Point2d>& ring)

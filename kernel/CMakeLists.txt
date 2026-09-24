@@ -21,9 +21,6 @@ include(${BREP_CMAKE_DIR}/BrepInstall.cmake)
 option(BREP_BUILD_EXAMPLES "Build kernel example programs" ON)
 if(BREP_BUILD_EXAMPLES)
   set(BREP_EXAMPLES_DIR "${BREP_REPO_ROOT}/examples")
-  add_executable(box_demo ${BREP_EXAMPLES_DIR}/BoxDemo.cpp)
-  target_link_libraries(box_demo PRIVATE brep)
-
   add_executable(smoke ${BREP_EXAMPLES_DIR}/smoke.cpp)
   target_link_libraries(smoke PRIVATE brep)
 
@@ -34,7 +31,6 @@ if(BREP_BUILD_EXAMPLES)
   target_link_libraries(xl_roundtrip PRIVATE brep)
 
   enable_testing()
-  add_test(NAME box_demo COMMAND box_demo)
   add_test(NAME smoke COMMAND smoke)
   add_test(NAME parametric_smoke COMMAND parametric_smoke)
   add_test(NAME xl_roundtrip COMMAND xl_roundtrip)

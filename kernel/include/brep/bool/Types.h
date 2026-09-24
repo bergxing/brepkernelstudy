@@ -14,8 +14,7 @@ enum class BooleanOp : std::uint8_t
 
 enum class BooleanEvalMode : std::uint8_t
 {
-  AnalyticPair = 0,
-  General = 1,
+  General = 0,
 };
 
 }  // namespace brep::boolean

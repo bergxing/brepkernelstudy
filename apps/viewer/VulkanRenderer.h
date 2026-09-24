@@ -44,6 +44,16 @@ class VulkanRenderer final : public QVulkanWindowRenderer
   void set_highlight_edges(EdgeMesh edges);
   void clear_highlight();
 
+  /// Preselection outline under the cursor (distinct from selection).
+  void set_hover_edges(EdgeMesh edges);
+  void clear_hover();
+
+  /// Viewport clear + scene wire + hover outline + tool preview colors.
+  void set_viewport_colors(float clearR, float clearG, float clearB,
+                           float wireR, float wireG, float wireB,
+                           float hoverR, float hoverG, float hoverB,
+                           float previewR, float previewG, float previewB);
+
   void initResources() override;
   void initSwapChainResources() override;
   void releaseSwapChainResources() override;
@@ -91,11 +101,13 @@ class VulkanRenderer final : public QVulkanWindowRenderer
   void upload_preview_solid();
   void upload_snap_overlay();
   void upload_highlight();
+  void upload_hover();
   void create_albedo_texture();
   void create_selection_albedo_texture();
   void update_albedo_descriptors();
   void bind_albedo_to_desc(VkDescriptorSet set, const GpuTexture& tex);
   void destroy_texture(GpuTexture& tex);
+  void WaitGpuIdle();
   void upload_colored_edges(const EdgeMesh& edges, float r, float g, float b,
                             GpuBuffer& vb, std::uint32_t& vertex_count);
   void transition_image_layout(VkImage image, VkImageLayout old_layout,
@@ -116,8 +128,13 @@ class VulkanRenderer final : public QVulkanWindowRenderer
   TriangleMesh m_previewSolid;
   EdgeMesh m_snapOverlayEdges;
   EdgeMesh m_highlightEdges;
+  EdgeMesh m_hoverEdges;
   Material m_material{};
   Material m_selectionMaterial{};
+  float m_clearColor[3]{0.12f, 0.13f, 0.15f};
+  float m_wireColor[3]{0.78f, 0.80f, 0.84f};
+  float m_previewColor[3]{1.0f, 0.92f, 0.15f};
+  float m_hoverColor[3]{0.25f, 0.85f, 1.0f};
   bool m_meshesDirty{true};
   bool m_materialDirty{true};
   bool m_selectionMeshesDirty{false};
@@ -125,6 +142,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer
   bool m_previewDirty{false};
   bool m_snapOverlayDirty{false};
   bool m_highlightDirty{false};
+  bool m_hoverDirty{false};
   std::uint64_t m_syncedSceneVersion{0};
 
   GpuBuffer m_triVb{};
@@ -138,6 +156,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer
   GpuBuffer m_previewSolidVb{};
   GpuBuffer m_snapOverlayVb{};
   GpuBuffer m_highlightVb{};
+  GpuBuffer m_hoverVb{};
   GpuBuffer m_ubo{};             // scene MVP + wood albedo
   GpuBuffer m_selectionUbo{};   // same MVP + orange selection albedo
   GpuBuffer m_axisUbo{};        // screen-space gizmo MVP (must be separate!)
@@ -166,6 +185,7 @@ class VulkanRenderer final : public QVulkanWindowRenderer
   std::uint32_t m_previewSolidVertexCount{0};
   std::uint32_t m_snapOverlayVertexCount{0};
   std::uint32_t m_highlightVertexCount{0};
+  std::uint32_t m_hoverVertexCount{0};
 };
 
 }  // namespace brep::viewer

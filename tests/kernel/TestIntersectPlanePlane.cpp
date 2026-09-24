@@ -18,19 +18,19 @@ TEST(IntersectPlanePlane, OrthogonalPlanesYieldLine)
   PlaneSurface xy{Point3d{0, 0, 0}, Vector3d{0, 0, 1}};  // z = 0
   PlaneSurface xz{Point3d{0, 0, 0}, Vector3d{0, 1, 0}};  // y = 0
 
-  const auto result = boolean::intersect_plane_plane(xy, xz);
-  ASSERT_TRUE(result.is_line()) << result.diagnostics;
+  const auto result = boolean::IntersectPlanePlane(xy, xz);
+  ASSERT_TRUE(result.IsLine()) << result.Diagnostics;
   EXPECT_EQ(result.status, boolean::PlanePlaneStatus::Line);
 
   // Direction ≈ ±X
-  EXPECT_NEAR(std::abs(result.direction.x()), 1.0, 1e-9);
-  EXPECT_NEAR(result.direction.y(), 0.0, 1e-9);
-  EXPECT_NEAR(result.direction.z(), 0.0, 1e-9);
-  EXPECT_NEAR(result.direction.norm(), 1.0, 1e-9);
+  EXPECT_NEAR(std::abs(result.Direction.x()), 1.0, 1e-9);
+  EXPECT_NEAR(result.Direction.y(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Direction.z(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Direction.norm(), 1.0, 1e-9);
 
   // Point lies on both planes
-  EXPECT_NEAR(result.point.z(), 0.0, 1e-9);
-  EXPECT_NEAR(result.point.y(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Point.z(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Point.y(), 0.0, 1e-9);
 }
 
 TEST(IntersectPlanePlane, ParallelDistinctNoIntersection)
@@ -38,10 +38,10 @@ TEST(IntersectPlanePlane, ParallelDistinctNoIntersection)
   PlaneSurface a{Point3d{0, 0, 0}, Vector3d{0, 0, 1}};
   PlaneSurface b{Point3d{0, 0, 1}, Vector3d{0, 0, 1}};
 
-  const auto result = boolean::intersect_plane_plane(a, b);
+  const auto result = boolean::IntersectPlanePlane(a, b);
   EXPECT_EQ(result.status, boolean::PlanePlaneStatus::Parallel);
-  EXPECT_FALSE(result.is_line());
-  EXPECT_FALSE(result.diagnostics.empty());
+  EXPECT_FALSE(result.IsLine());
+  EXPECT_FALSE(result.Diagnostics.empty());
 }
 
 TEST(IntersectPlanePlane, CoincidentExact)
@@ -49,9 +49,9 @@ TEST(IntersectPlanePlane, CoincidentExact)
   PlaneSurface a{Point3d{0, 0, 0}, Vector3d{0, 0, 1}};
   PlaneSurface b{Point3d{1, 2, 0}, Vector3d{0, 0, 1}};
 
-  const auto result = boolean::intersect_plane_plane(a, b);
+  const auto result = boolean::IntersectPlanePlane(a, b);
   EXPECT_EQ(result.status, boolean::PlanePlaneStatus::Coincident);
-  EXPECT_FALSE(result.is_line());
+  EXPECT_FALSE(result.IsLine());
 }
 
 TEST(IntersectPlanePlane, CoincidentOppositeNormals)
@@ -59,7 +59,7 @@ TEST(IntersectPlanePlane, CoincidentOppositeNormals)
   PlaneSurface a{Point3d{0, 0, 0}, Vector3d{0, 0, 1}};
   PlaneSurface b{Point3d{0, 0, 0}, Vector3d{0, 0, -1}};
 
-  const auto result = boolean::intersect_plane_plane(a, b);
+  const auto result = boolean::IntersectPlanePlane(a, b);
   EXPECT_EQ(result.status, boolean::PlanePlaneStatus::Coincident);
 }
 
@@ -70,7 +70,7 @@ TEST(IntersectPlanePlane, CoincidentWithinFuzzy)
   PlaneSurface a{Point3d{0, 0, 0}, Vector3d{0, 0, 1}};
   PlaneSurface b{Point3d{0, 0, 0.5e-6}, Vector3d{0, 0, 1}};
 
-  const auto result = boolean::intersect_plane_plane(a, b, ctx);
+  const auto result = boolean::IntersectPlanePlane(a, b, ctx);
   EXPECT_EQ(result.status, boolean::PlanePlaneStatus::Coincident);
 }
 
@@ -81,18 +81,18 @@ TEST(IntersectPlanePlane, BeyondFuzzyIsParallel)
   PlaneSurface a{Point3d{0, 0, 0}, Vector3d{0, 0, 1}};
   PlaneSurface b{Point3d{0, 0, 1e-3}, Vector3d{0, 0, 1}};
 
-  const auto result = boolean::intersect_plane_plane(a, b, ctx);
+  const auto result = boolean::IntersectPlanePlane(a, b, ctx);
   EXPECT_EQ(result.status, boolean::PlanePlaneStatus::Parallel);
 }
 
 TEST(IntersectPlanePlane, OriginNormalOverload)
 {
-  const auto result = boolean::intersect_plane_plane(
+  const auto result = boolean::IntersectPlanePlane(
       Point3d{0, 0, 0}, Vector3d{1, 0, 0}, Point3d{0, 0, 0}, Vector3d{0, 1, 0});
-  ASSERT_TRUE(result.is_line()) << result.diagnostics;
-  EXPECT_NEAR(std::abs(result.direction.z()), 1.0, 1e-9);
-  EXPECT_NEAR(result.point.x(), 0.0, 1e-9);
-  EXPECT_NEAR(result.point.y(), 0.0, 1e-9);
+  ASSERT_TRUE(result.IsLine()) << result.Diagnostics;
+  EXPECT_NEAR(std::abs(result.Direction.z()), 1.0, 1e-9);
+  EXPECT_NEAR(result.Point.x(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Point.y(), 0.0, 1e-9);
 }
 
 }  // namespace

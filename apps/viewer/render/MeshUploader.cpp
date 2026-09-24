@@ -81,22 +81,9 @@ void VulkanRenderer::upload_meshes()
 
   if (!m_edges.Positions.empty())
   {
-    std::vector<float> lines(m_edges.Positions.size() * 3);
-    for (size_t i = 0; i < m_edges.Positions.size(); ++i)
-    {
-      lines[i * 3 + 0] = static_cast<float>(m_edges.Positions[i].x());
-      lines[i * 3 + 1] = static_cast<float>(m_edges.Positions[i].y());
-      lines[i * 3 + 2] = static_cast<float>(m_edges.Positions[i].z());
-    }
-    const VkDeviceSize size = sizeof(float) * lines.size();
-    m_lineVb = create_buffer(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    void* data = nullptr;
-    m_dev->vkMapMemory(m_window->device(), m_lineVb.memory, 0, size, 0, &data);
-    std::memcpy(data, lines.data(), static_cast<size_t>(size));
-    m_dev->vkUnmapMemory(m_window->device(), m_lineVb.memory);
-    m_lineVertexCount = static_cast<uint32_t>(m_edges.Positions.size());
+    // Colored wires (axis pipeline) so theme/invert can change edge color.
+    upload_colored_edges(m_edges, m_wireColor[0], m_wireColor[1], m_wireColor[2],
+                         m_lineVb, m_lineVertexCount);
   }
 
   m_meshesDirty = false;
@@ -222,9 +209,6 @@ void VulkanRenderer::upload_preview_solid()
 
   std::vector<AxisVertexGpu> verts;
   verts.reserve(m_previewSolid.Indices.size());
-  constexpr float kR = 1.0f;
-  constexpr float kG = 0.92f;
-  constexpr float kB = 0.15f;
   constexpr float kA = 0.28f;
   for (std::uint32_t idx : m_previewSolid.Indices)
   {
@@ -234,9 +218,9 @@ void VulkanRenderer::upload_preview_solid()
     g.pos[0] = static_cast<float>(v.Position.x());
     g.pos[1] = static_cast<float>(v.Position.y());
     g.pos[2] = static_cast<float>(v.Position.z());
-    g.color[0] = kR;
-    g.color[1] = kG;
-    g.color[2] = kB;
+    g.color[0] = m_previewColor[0];
+    g.color[1] = m_previewColor[1];
+    g.color[2] = m_previewColor[2];
     g.color[3] = kA;
     verts.push_back(g);
   }
@@ -257,8 +241,8 @@ void VulkanRenderer::upload_preview_solid()
 
 void VulkanRenderer::upload_preview()
 {
-  upload_colored_edges(m_previewEdges, 1.0f, 0.92f, 0.15f, m_previewVb,
-                       m_previewVertexCount);
+  upload_colored_edges(m_previewEdges, m_previewColor[0], m_previewColor[1],
+                       m_previewColor[2], m_previewVb, m_previewVertexCount);
   upload_preview_solid();
   m_previewDirty = false;
 }
@@ -276,6 +260,13 @@ void VulkanRenderer::upload_highlight()
   upload_colored_edges(m_highlightEdges, 1.0f, 0.55f, 0.1f, m_highlightVb,
                        m_highlightVertexCount);
   m_highlightDirty = false;
+}
+
+void VulkanRenderer::upload_hover()
+{
+  upload_colored_edges(m_hoverEdges, m_hoverColor[0], m_hoverColor[1],
+                       m_hoverColor[2], m_hoverVb, m_hoverVertexCount);
+  m_hoverDirty = false;
 }
 
 }  // namespace brep::viewer

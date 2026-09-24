@@ -3,6 +3,10 @@
 #include "Document.h"
 #include "ecs/World.h"
 
+#include "adapter/IDocumentService.h"
+#include "adapter/ISceneService.h"
+#include "adapter/ISceneServiceFactory.h"
+
 #include "api/Mesh.h"
 
 #include <QString>
@@ -69,6 +73,9 @@ struct CommandContext
     ecs::World* World{nullptr};
     DocumentSession* Session{nullptr};
     DocumentHistory* History{nullptr};
+    adapter::IDocumentService* DocumentService{nullptr};
+    adapter::ISceneService* Scene{nullptr};
+    adapter::ISceneServiceFactory* SceneFactory{nullptr};
     QWidget* ParentWidget{nullptr};
     Camera* ViewCamera{nullptr};
     VulkanWindow* Viewport{nullptr};

@@ -6,7 +6,7 @@
 
 **Goal：** 在 **不污染 Kernel 公开 API** 的前提下，用 Hypodermic 统一 Viewer 与子系统测试的依赖装配，并逐步替换全局 factory / 静态命令注册。
 
-**Architecture：** Kernel 暴露接口 + 工厂；`apps/viewer/bootstrap/` 为唯一 Composition Root；按 `IModule` 分模块注册；测试用 `TestContainer` override。
+**Architecture：** Kernel 暴露接口 + 工厂；`apps/viewer/bootstrap/` 为唯一 Composition Root；`ApplicationContext` 进程级持有 Container；按 `IModule` 分模块注册；测试用 `TestContainer` override。
 
 **Tech Stack：** C++20、CMake、Hypodermic（**Git submodule** `third_party/hypodermic`）、Qt6 Viewer、GoogleTest、现有 MinGW preset `cmake-build-mingw-debug`。
 
@@ -27,14 +27,16 @@
 
 ```text
 apps/viewer/main.cpp
-  └─ ViewerApp
-       └─ build_application_container(config)
-            ├─ KernelServicesModule
-            ├─ ViewerAdapterModule
-            ├─ ViewerRuntimeModule
-            └─ ViewerUiModule
-       └─ MainWindow(container, ...)
-            └─ resolve CommandManager, ...
+  └─ run_viewer()
+       └─ ApplicationContext
+            ├─ build_application_container(config)
+            │    ├─ KernelServicesModule
+            │    ├─ ViewerAdapterModule
+            │    ├─ ViewerRuntimeModule
+            │    └─ ViewerUiModule
+            └─ AppConfig
+       └─ MainWindow(app_ctx, ...) / HomeWindow(app_ctx, ...)
+            └─ 预解析或注入 CommandManager、ISceneService factory 等
 ```
 
 ---
@@ -46,18 +48,19 @@ apps/viewer/main.cpp
 | `cmake/Hypodermic.cmake` | 子模块路径 + `Hypodermic::Hypodermic` INTERFACE target |
 | `.gitmodules` | 登记 `third_party/hypodermic` |
 | `third_party/hypodermic` | Hypodermic 源码（git submodule） |
-| `cmake/BrepPlatform.cmake` | 可选 `brep_platform` INTERFACE（聚合 IoC 无关工具） |
-| `apps/viewer/bootstrap/i_module.hpp` | `IModule` 接口 |
-| `apps/viewer/bootstrap/application_container.hpp/.cpp` | Composition Root |
-| `apps/viewer/bootstrap/test_container.hpp/.cpp` | 测试 Container |
-| `apps/viewer/bootstrap/kernel_services_module.hpp/.cpp` | 注册 `IBooleanEvaluator` 等 |
-| `apps/viewer/bootstrap/viewer_adapter_module.hpp/.cpp` | Phase 3：`ISceneService` |
-| `apps/viewer/bootstrap/viewer_runtime_module.hpp/.cpp` | Phase 2：Commands |
-| `apps/viewer/bootstrap/viewer_ui_module.hpp/.cpp` | Phase 2：UI 依赖 |
+| `apps/viewer/bootstrap/IModule.h` | `IModule` 接口 |
+| `apps/viewer/bootstrap/ApplicationContainer.h/.cpp` | Composition Root |
+| `apps/viewer/bootstrap/TestContainer.h/.cpp` | 测试 Container |
+| `apps/viewer/bootstrap/KernelServicesModule.h/.cpp` | 注册 `IBooleanEvaluator` 等 |
+| `apps/viewer/bootstrap/ViewerAdapterModule.h/.cpp` | Phase 3：`ISceneService` factory、`IDocumentService` |
+| `apps/viewer/bootstrap/ViewerRuntimeModule.h/.cpp` | Phase 2：Commands |
+| `apps/viewer/bootstrap/ViewerUiModule.h/.cpp` | Phase 2：UI 依赖 |
+| `apps/viewer/app/ApplicationContext.h` | 进程级 `container` + `AppConfig` |
+| `apps/viewer/CMakeLists.txt` | 新增 **`viewer_bootstrap`（STATIC）**；`viewer_ui` 链接之 |
 | `apps/viewer/adapter/iscene_service.hpp` | Phase 3 接口 |
 | `apps/viewer/adapter/iDocumentService.h` | Phase 3 接口 |
-| `apps/viewer/app/ViewerApp.cpp` | 调用 `build_application_container` |
-| `apps/viewer/MainWindow.cpp` | 接收 Container 或 ServiceLocator 封装 |
+| `apps/viewer/app/ViewerApp.cpp` | 构造 `ApplicationContext`，调用 `build_application_container` |
+| `apps/viewer/MainWindow.cpp` | 接收 `ApplicationContext&` 或预解析服务 |
 | `kernel/include/brep/Part.h` | Phase 1：构造注入 `shared_ptr<IBooleanEvaluator>` |
 | `kernel/src/part.cpp` | 移除 lazy factory、`set_boolean_evaluator` |
 | `kernel/include/brep/Document.h` | `add_part` 传入 evaluator |
@@ -77,8 +80,9 @@ apps/viewer/main.cpp
 - [ ] 添加 submodule：`git submodule add https://github.com/ybainier/Hypodermic.git third_party/hypodermic`
 - [ ] Pin 到稳定 release commit（在实施方案 PR 说明中记录 hash）
 - [ ] `cmake/Hypodermic.cmake`：`add_subdirectory` 或 INTERFACE include + alias `Hypodermic::Hypodermic`
-- [ ] `viewer_runtime` / `viewer_ui` / `brep_viewer` 链接 Hypodermic
-- [ ] `brep_core` 等 kernel target **不** link
+- [ ] 新增 **`viewer_bootstrap`（STATIC）** target（`apps/viewer/bootstrap/*`），**仅**其链接 Hypodermic
+- [ ] `viewer_ui` 链接 `viewer_bootstrap`；`viewer_runtime` / `viewer_adapter` / `brep_core` **不** link Hypodermic
+- [ ] Phase 0 **不**新增 `brep_platform`
 - [ ] README / 克隆说明：`git submodule update --init --recursive`
 
 **`cmake/Hypodermic.cmake` 参考形态：**
@@ -102,10 +106,11 @@ add_subdirectory(third_party/hypodermic EXCLUDE_FROM_ALL)
 
 ### Task 0.3：ViewerApp 接线（不改变 MainWindow 行为）
 
-**Files：** `ViewerApp.cpp`
+**Files：** `ViewerApp.cpp`、`ApplicationContext.h`
 
-- [ ] 启动时 build Container，存入 `ViewerApp` 或 `ApplicationContext`
-- [ ] MainWindow 暂不 resolve；Container 仅持有备用
+- [ ] `run_viewer()` 早期 `ApplicationContext ctx{ build_application_container(config), config }`
+- [ ] `HomeWindow` / `MainWindow` 接收 `ApplicationContext&`（或仅传所需服务）
+- [ ] MainWindow 暂不 resolve 业务服务；Container 仅持有备用
 
 ### Task 0.4：文档与 CI
 
@@ -235,8 +240,9 @@ cmake-build-mingw-debug/bin/viewer_adapter_tests.exe
 
 ### Task 3.2：ViewerAdapterModule
 
-- [ ] 注册 `ISceneService` → `SceneAdapter`（注意 Document 生命周期：transient 或 factory  per document）
-- [ ] 注册 `IDocumentService` → `DocumentService` singleInstance
+- [ ] 注册 `ISceneService` → **per-Document factory**（传入 `Document*`，1:1；**禁止** `.singleInstance()`）
+- [ ] 注册 `IDocumentService` → `DocumentService` **singleInstance**
+- [ ] `World` / `MainWindow` 创建 Document 时通过 factory 取得 `ISceneService`
 
 ### Task 3.3：命令与测试
 
@@ -283,7 +289,7 @@ cmake-build-mingw-debug/bin/viewer_adapter_tests.exe
 | `Part::set_boolean_evaluator` | 1 | 删除 |
 | `set_boolean_evaluator_factory` | 1 | deprecated → TestContainer |
 | `register_builtin_commands()` | 2 | ViewerRuntimeModule |
-| `SceneAdapter scene(doc)` 栈对象 | 3 | `ISceneService` |
+| `SceneAdapter scene(doc)` 栈对象 | 3 | per-Document `ISceneService`（factory） |
 | `DocumentService{}` 临时栈 | 3 | `IDocumentService` |
 | `make_default_boolean_evaluator()` | 保留 | Module 内部调用 |
 
@@ -328,14 +334,9 @@ ctest -C Debug -R "boolean|SceneAdapter|include_boundaries" --output-on-failure
 |---|------|------|
 | D1 | Hypodermic：**Git submodule** → `third_party/hypodermic` | 2026-08-20 |
 | D2 | **Part 构造注入** `shared_ptr<IBooleanEvaluator>`，无 setter 过渡 | 2026-08-20 |
-
-## 待确认（可选）
-
-| # | 问题 | 建议默认 |
-|---|------|----------|
-| Q1 | `SceneAdapter` 是否 per-Document？ | 是；Phase 3 factory 传入 `Document*` |
-| Q2 | Container 存 `ViewerApp` 还是 `ApplicationContext`？ | 独立 `ApplicationContext` struct |
-| Q3 | 是否新增 `brep_platform` static lib？ | Phase 0 否；bootstrap 仅在 viewer |
+| D3 | **`ISceneService` per-Document**：factory 传入 `Document*`；禁止 Application Singleton | 2026-08-24 |
+| D4 | Container 由 **`ApplicationContext`** 持有（进程级） | 2026-08-24 |
+| D5 | Phase 0 **不**建 `brep_platform`；**`viewer_bootstrap`（STATIC）** 仅在 viewer | 2026-08-24 |
 
 ---
 

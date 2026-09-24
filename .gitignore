@@ -10,6 +10,7 @@ cmake-build-*/
 out/
 .vs/
 .idea/
+CMakeUserPresets.json
 *.user
 *.o
 *.obj
@@ -24,6 +25,11 @@ out/
 /_*.bat
 /_*.cpp
 /_*.i
+/_tmpgcc/
+/build_*.txt
+/build_out*.txt
+/ce_err.txt
+/Testing/Temporary/
 compile_commands.json
 .superpowers/
 

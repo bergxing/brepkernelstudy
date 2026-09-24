@@ -1,5 +1,7 @@
 #include "brep/mesh/Cdt.h"
 
+#include "brep/internal/Polygon2d.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -349,25 +351,6 @@ using Edge = std::pair<int, int>;
   return false;
 }
 
-[[nodiscard]] bool point_in_polygon(const Point2d& point,
-                                    const std::vector<Point2d>& polygon)
-{
-  bool inside = false;
-  for (std::size_t i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++)
-  {
-    const Point2d& a = polygon[i];
-    const Point2d& b = polygon[j];
-    if ((a.v() > point.v()) != (b.v() > point.v()) &&
-        point.u() < (b.u() - a.u()) * (point.v() - a.v()) /
-                            (b.v() - a.v()) +
-                        a.u())
-                            {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
 }  // namespace
 
 CdtResult triangulate_constrained(
@@ -575,7 +558,7 @@ CdtResult triangulate_polygon_with_holes(
             const Point2d& c = result.Vertices[triangle.v[2]].Uv;
             const Point2d centroid{(a.u() + b.u() + c.u()) / 3.0,
                                    (a.v() + b.v() + c.v()) / 3.0};
-            if (!point_in_polygon(centroid, outer_ccw))
+            if (!brep::internal::PointInPolygon2d(centroid, outer_ccw))
             {
               return true;
             }
@@ -583,7 +566,7 @@ CdtResult triangulate_polygon_with_holes(
                 holes_cw.begin(), holes_cw.end(),
                 [&](const std::vector<Point2d>& hole)
                 {
-                  return point_in_polygon(centroid, hole);
+                  return brep::internal::PointInPolygon2d(centroid, hole);
                 });
           }),
       result.Triangles.end());

@@ -1,10 +1,17 @@
 #include "MainWindow.h"
 
 #include "api/Core.h"
+#include "bootstrap/KernelServices.h"
+#include "bootstrap/DocumentScope.h"
+#include "bootstrap/ViewerAdapterServices.h"
+#include "bootstrap/ViewerRuntimeServices.h"
 #include "commands/CommandRegistry.h"
 #include "ecs/Components.h"
 #include "ecs/Systems.h"
 #include "i18n/LanguageManager.h"
+#include "ui/RibbonSetup.h"
+
+#include "SARibbonBar.h"
 
 #include <QApplication>
 #include <QMdiArea>
@@ -20,14 +27,34 @@
 namespace brep::viewer
 {
 
-MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent), m_commandManager(m_commands)
+MainWindow::MainWindow(ApplicationContext& appContext, QWidget* parent)
+    : SARibbonMainWindow(parent,
+                         SARibbonMainWindowStyleFlag::UseRibbonMenuBar |
+                             SARibbonMainWindowStyleFlag::UseNativeFrame),
+      m_appContext(&appContext),
+      m_commandRegistry(
+          bootstrap::ResolveCommandRegistry(appContext.container)),
+      m_commandManager(m_commandRegistry)
 {
   resize(1100, 720);
 
-  commands::register_builtin_commands(m_commands);
+  const auto evaluator = bootstrap::ResolveBooleanEvaluator(appContext.container);
+  m_document.SetBooleanEvaluator(evaluator);
+
+  m_commandContextFactory.SetWorld(&m_world);
+  m_commandContextFactory.SetSession(&m_document);
+  m_commandContextFactory.SetHistory(&m_commandManager.history());
+  m_commandContextFactory.SetDocumentService(
+      &bootstrap::ResolveDocumentService(appContext.container));
+  m_commandContextFactory.SetSceneFactory(
+      &bootstrap::ResolveSceneServiceFactory(appContext.container));
+  m_commandContextFactory.SetSnapSettings(&m_snapSettings);
+  m_commandContextFactory.SetSnapSession(&m_snapSession);
+
   QSettings settings;
   m_snapSettings = commands::load_snap_settings(settings);
+  m_viewerTheme = LoadViewerTheme(settings);
+  ApplyQtTheme(*qApp, m_viewerTheme.Mode);
 
   m_vulkanInstance = std::make_unique<QVulkanInstance>();
   m_vulkanInstance->setApiVersion(QVersionNumber(1, 2, 0));
@@ -41,6 +68,7 @@ MainWindow::MainWindow(QWidget* parent)
   }
 
   m_document.new_blank_document(m_world);
+  rebind_document_scope();
   BREP_INFO("ECS scene ready: blank Document + Part + camera");
 
   m_mdiArea = new QMdiArea(this);
@@ -77,10 +105,11 @@ MainWindow::MainWindow(QWidget* parent)
   m_viewCube->hide();
 
   setup_cursor_tip();
+  setup_action_catalog();
   setup_menus();
-  setup_toolbar();
-  setup_view_toolbar();
+  setup_ribbon();
   setup_property_dock();
+  apply_viewer_theme();
   retranslate_ui();
   refresh_window_title();
   refresh_edit_actions();
@@ -147,6 +176,57 @@ MainWindow::~MainWindow()
   BREP_INFO("MainWindow::~MainWindow: reset QVulkanInstance");
   m_vulkanInstance.reset();
   BREP_INFO("MainWindow::~MainWindow end");
+}
+
+void MainWindow::rebind_document_scope()
+{
+  if (!m_appContext || !m_appContext->container)
+  {
+    return;
+  }
+  brep::Document* doc = m_world.Document();
+  if (!doc)
+  {
+    return;
+  }
+  if (!m_documentScope)
+  {
+    m_documentScope =
+        bootstrap::DocumentScope::Create(m_appContext->container, doc);
+  }
+  else
+  {
+    m_documentScope->Rebind(doc);
+  }
+  if (!m_documentScope)
+  {
+    return;
+  }
+  m_commandContextFactory.SetSceneService(&m_documentScope->scene());
+  sync_view_document_bindings();
+}
+
+void MainWindow::sync_view_document_bindings()
+{
+  if (!m_documentScope)
+  {
+    return;
+  }
+  adapter::ISceneService* scene = &m_documentScope->scene();
+  adapter::ISceneServiceFactory* factory = nullptr;
+  if (m_appContext && m_appContext->container)
+  {
+    factory = &bootstrap::ResolveSceneServiceFactory(m_appContext->container);
+  }
+  for (auto* window : m_viewWindows)
+  {
+    if (!window)
+    {
+      continue;
+    }
+    window->set_scene_service(scene);
+    window->set_scene_factory(factory);
+  }
 }
 
 }  // namespace brep::viewer

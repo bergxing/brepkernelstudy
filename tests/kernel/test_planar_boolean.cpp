@@ -1,5 +1,6 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include "brep/bool/Boolean.h"
 #include "brep/ops/Profile.h"
@@ -22,7 +23,7 @@ TEST(PlanarBoolean, LExtrudeSubtractBoxValidates)
   spec.Name = "L";
   spec.distance = 2.0;
   spec.plane = Plane::xz_y_up();
-  // L-profile in UV (X,Z): not an AABB â†’ prism path, not MakeBox.
+  // L-profile in UV (X,Z): not an AABB â†?prism path, not MakeBox.
   spec.profile.outer = {
       Point2d{0, 0},
       Point2d{3, 0},

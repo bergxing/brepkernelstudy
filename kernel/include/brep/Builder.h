@@ -1,33 +1,12 @@
 #pragma once
 
-#include "brep/Model.h"
+// Deprecated umbrella for BoxSpec / SphereSpec. Prefer:
+//   #include "brep/feat/PrimitiveSpecs.h"  (kernel)
+//   #include "api/Modeling.h"              (viewer / examples)
+#if defined(_MSC_VER)
+#pragma message("brep/Builder.h is deprecated; include api/Modeling.h or brep/feat/PrimitiveSpecs.h")
+#elif defined(__GNUC__) || defined(__clang__)
+#warning "brep/Builder.h is deprecated; include api/Modeling.h or brep/feat/PrimitiveSpecs.h"
+#endif
 
-namespace brep
-{
-
-struct BoxSpec
-{
-  Point3d Min{0, 0, 0};
-  Point3d Max{1, 1, 1};
-  double Tolerance{1e-7};
-  std::string Name{"box"};
-};
-
-/// Build an axis-aligned solid box as a manifold B-Rep:
-/// 1 Body -> 1 closed Shell -> 6 Faces, each with one outer Loop of 4 CoEdges.
-Body* MakeBox(Model& model, const BoxSpec& spec = {});
-
-struct SphereSpec
-{
-  Point3d Center{0, 0, 0};
-  double Radius{1.0};
-  int Slices{16};  // unused by analytic topology (compat / debug)
-  int Stacks{12};  // unused by analytic topology (compat / debug)
-  double Tolerance{1e-7};
-  std::string Name{"sphere"};
-};
-
-/// Analytic solid sphere: dual poles + meridional seam + one SphereSurface face.
-Body* MakeSphere(Model& model, const SphereSpec& spec = {});
-
-}  // namespace brep
+#include "brep/feat/PrimitiveSpecs.h"

@@ -14,7 +14,7 @@
 #endif
 
 #include "brep/asm/Assembly.h"
-#include "brep/Builder.h"
+#include "brep/feat/PrimitiveSpecs.h"
 #include "brep/Document.h"
 #include "brep/Dump.h"
 #include "brep/feat/BoxFeature.h"

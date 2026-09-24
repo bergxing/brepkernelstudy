@@ -1,5 +1,7 @@
 #include "brep/bool/Classify.h"
 
+#include "brep/internal/Polygon2d.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -8,23 +10,7 @@ namespace brep::boolean
 namespace
 {
 
-[[nodiscard]] bool point_in_ring_2d(const Point2d& p,
-                                    const std::vector<Point2d>& ring)
-{
-  if (ring.size() < 3) return false;
-  // Even-odd ray cast along +u.
-  bool inside = false;
-  for (std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++)
-  {
-    const Point2d& a = ring[j];
-    const Point2d& b = ring[i];
-    const bool cross_v =
-        ((a.v() > p.v()) != (b.v() > p.v())) &&
-        (p.u() < (b.u() - a.u()) * (p.v() - a.v()) / (b.v() - a.v() + 0.0) + a.u());
-    if (cross_v) inside = !inside;
-  }
-  return inside;
-}
+using brep::internal::PointInPolygon2d;
 
 [[nodiscard]] double dist_to_segment_2d(const Point2d& p, const Point2d& a,
                                         const Point2d& b)
@@ -103,10 +89,10 @@ SolidClass ClassifyPointInPrism(const PlanarPrismSpec& prism, const Point3d& p,
   const bool on_cap =
       std::abs(height - h0) <= eps || std::abs(height - h1) <= eps;
 
-  if (!point_in_ring_2d(uv, prism.Outer)) return SolidClass::Out;
+  if (!PointInPolygon2d(uv, prism.Outer)) return SolidClass::Out;
   for (const auto& hole : prism.Holes)
   {
-    if (point_in_ring_2d(uv, hole)) return SolidClass::Out;
+    if (PointInPolygon2d(uv, hole)) return SolidClass::Out;
   }
 
   if (on_cap) return SolidClass::On;

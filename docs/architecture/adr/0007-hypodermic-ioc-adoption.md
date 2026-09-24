@@ -1,7 +1,8 @@
 # ADR 0007: 引入 Hypodermic 作为 Viewer 层 IoC 容器
 
-**状态**：已接受（文档阶段；代码未落地）  
+**状态**：已接受（`apps/viewer/bootstrap/` 与 `viewer_bootstrap` STATIC **已落地**；内核仍不链接 Hypodermic）  
 **日期**：2026-08-20  
+**修订**：2026-08-26 — 与 [layering.md](../layering.md) §5 对齐：Composition Root 只注册工厂级内核服务，不把 `brep_bool` 内部类型粘进 Application 单例。  
 **前置**：[ADR 0006](0006-boolean-pipeline-architecture.md)、[engineering-refactoring-plan.md](../engineering-refactoring-plan.md)、[api-module-owners.md](../api-module-owners.md)
 
 ## 背景
@@ -24,6 +25,9 @@ ADR 0006 已引入 `CompositeBooleanEvaluator` + `BooleanPipeline` + `AnalyticFa
 6. **Hypodermic 以 Git 子模块引入**：路径 `third_party/hypodermic`，与现有 `third_party/eigen`、`entt` 等策略一致；**不使用** FetchContent 拉取。
 7. **`Part` 构造注入**：`IBooleanEvaluator`（及后续内核服务）通过 `Part` 构造函数传入；**不采用** setter 过渡方案。
 8. **渐进迁移**：分 Phase 0～5 实施，每阶段可独立合并；不要求 Big Bang 重写。
+9. **`ISceneService` per-Document**：`SceneAdapter`（接口化后为 `ISceneService`）与 `Document` **1:1**；Phase 3 通过 **factory** 传入 `Document*`，**禁止** Application Singleton。
+10. **`ApplicationContext` 持有 Container**：进程级 `std::shared_ptr<Hypodermic::Container>` 存入独立 `ApplicationContext` struct；**不**塞进 `ViewerApp` 或 `MainWindow`。
+11. **Bootstrap 仅在 Viewer、STATIC 链接**：Phase 0 **不**新增 `brep_platform` 或 bootstrap SHARED DLL；`apps/viewer/bootstrap/` 编为 CMake target **`viewer_bootstrap`（STATIC）**，由 `viewer_ui` 链接；与 ADR 0003 大模块 SHARED 边界分离（bootstrap 非可替换产品层）。
 
 ## 理由
 
@@ -33,14 +37,17 @@ ADR 0006 已引入 `CompositeBooleanEvaluator` + `BooleanPipeline` + `AnalyticFa
 - Kernel 保持纯净，符合 ADR 0002 分级 API 与 `check_include_boundaries.py` 约束。
 - **Git 子模块** pin 固定 commit/tag，离线/CI 可复现，与 monorepo 现有 `third_party/*` 治理一致。
 - **构造注入**使 `Part` 依赖在创建时即明确，避免 lazy init 与半初始化状态。
+- **per-Document Scene** 避免多文档/多窗口时 adapter 串数据；与当前「栈上 `SceneAdapter(doc)`」语义一致，仅改为可注入。
+- **`ApplicationContext`** 使 Container 生命周期与进程绑定，UI 窗口可开闭而不影响装配根。
+- **STATIC bootstrap** 不增加运行时 DLL 与链接环风险；Phase 5 动态插件与 Composition Root 分离（见需求 NG3）。
 
 ## 后果
 
 - **做**：新增 `docs/superpowers/specs/2026-08-20-ioc-hypodermic-requirements.md`（需求）、`docs/superpowers/plans/2026-08-20-ioc-hypodermic-implementation.md`（实施方案）、`docs/architecture/ioc-governance.md`（治理规范）。
-- **后续做**：`cmake/Hypodermic.cmake`（子模块路径）、`git submodule` 登记、`apps/viewer/bootstrap/`、接口化 `ISceneService` / `IDocumentService`。
+- **后续做**：`cmake/Hypodermic.cmake`（子模块路径）、`git submodule` 登记、`apps/viewer/bootstrap/`（`viewer_bootstrap` STATIC）、`ApplicationContext`、接口化 `ISceneService` / `IDocumentService`。
 - **不做（本 ADR）**：Kernel 内嵌 Hypodermic；全局 Service Locator；Document 级子容器（Phase 4 可选）。
 
 ## 修订触发
 
 - Hypodermic 维护停滞或 C++20 兼容问题 → 评估回退轻量 Registry 或 Fruit。
-- 若 CLI / 无头批处理成为一等公民 → 增加独立 Composition Root（共享 `platform/` 模块定义）。
+- 若 CLI / 无头批处理成为一等公民 → 增加独立 Composition Root，**静态链接** 同一 `viewer_bootstrap`（或抽出的等价 STATIC target），仍不将 bootstrap 升为 SHARED DLL。

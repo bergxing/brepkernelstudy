@@ -29,7 +29,6 @@ METHODS = [
     ("remove_feature", "RemoveFeature"),
     ("undo_feature", "UndoFeature"),
     ("redo_feature", "RedoFeature"),
-    ("box_spec_for", "BoxSpecFor"),
     ("add_boolean", "AddBoolean"),
     ("add_sphere", "AddSphere"),
     ("add_box", "AddBox"),

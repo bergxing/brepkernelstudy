@@ -1,8 +1,10 @@
 # ADR 0006: 布尔运算通用 Pipeline 架构
 
-**状态**：已接受  
+**状态**：已接受（**部分修订** — 见 [ADR 0008](0008-boolean-general-pipeline-only.md)）  
 **日期**：2026-08-14  
 **前置**：[ADR 0005](0005-boolean-backend-self-hosted.md)、[2026-08-10 布尔设计](../../superpowers/specs/2026-08-10-analytic-sphere-brep-boolean-design.md) §B3、[2026-08-14 Pipeline 规格](../../superpowers/specs/2026-08-14-boolean-pipeline-design.md)
+
+> **2026-08-24 修订：** [ADR 0008](0008-boolean-general-pipeline-only.md) 废止本文「AnalyticPair 特解可选」策略；`IBooleanEvaluator` 仅保留通用 Pipeline。特解源码待 M4 删除。
 
 ## 背景
 
@@ -38,5 +40,5 @@ Phase 2～3 以 **AnalyticPair 特解**（盒–盒、球–盒角点、球–�
 
 ## 修订触发
 
-- 通用 Pipeline 稳定后，评估是否将部分 AnalyticPair 标记为 deprecated；
+- ~~通用 Pipeline 稳定后，评估是否将部分 AnalyticPair 标记为 deprecated~~ → 已由 [ADR 0008](0008-boolean-general-pipeline-only.md) 决定 **全部移除**；
 - 若引入 OCCT 后端，实现为另一 `IBooleanEvaluator`，不修改 Pipeline 阶段契约。

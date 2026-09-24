@@ -1,7 +1,7 @@
 #pragma once
 
-#include "brep/Builder.h"
 #include "brep/feat/Feature.h"
+#include "brep/feat/PrimitiveSpecs.h"
 #include "brep/Math.h"
 
 #include <memory>
@@ -80,6 +80,11 @@ public:
     }
 
     [[nodiscard]] BoxSpec ToSpec(const param::ParameterStore& params) const;
+    [[nodiscard]] std::optional<PrimitiveSpec> ToPrimitiveSpec(
+        const param::ParameterStore& params) const override
+    {
+        return ToSpec(params);
+    }
 
     static std::unique_ptr<BoxFeature> Create(param::ParameterStore& store,
                                               const BoxSpec& spec);

@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 
-#include "adapter/SceneAdapter.h"
+#include "adapter/ISceneService.h"
 #include "api/Core.h"
 #include "api/Modeling.h"
 #include "commands/DocumentHistory.h"
@@ -9,8 +9,7 @@
 #include "PropertyPanel.h"
 
 #include <QDockWidget>
-#include <QMenuBar>
-#include <QToolBar>
+#include <QMenu>
 
 namespace brep::viewer
 {
@@ -26,21 +25,27 @@ void MainWindow::setup_property_dock()
   m_propertyDock->setMinimumWidth(240);
   addDockWidget(Qt::RightDockWidgetArea, m_propertyDock);
 
-  m_sceneAdapter.set_document(m_world.document());
-  m_propertyPanel->set_adapter(&m_sceneAdapter);
-  m_propertyPanel->set_params_changed_callback(
+  if (m_documentScope)
+  {
+    m_propertyPanel->SetAdapter(&m_documentScope->scene());
+  }
+  m_propertyPanel->SetParamsChangedCallback(
       [this](brep::feat::FeatureId /*id*/)
       {
-        m_sceneAdapter.set_document(m_world.document());
-        brep::Part* part = m_sceneAdapter.main_part();
+        if (!m_documentScope)
+        {
+          return;
+        }
+        adapter::ISceneService& scene = m_documentScope->scene();
+        brep::Part* part = scene.MainPart();
         if (!part) return;
         const Material material = wood_albedo_path().isEmpty()
                                       ? Material{}
                                       : MakeWoodMaterial(
                                             wood_albedo_path().toStdString());
-        m_world.sync_part_bodies(*part, material);
+        m_world.SyncPartBodies(*part, material);
         request_all_views_update();
-        m_document.mark_dirty();
+        m_document.MarkDirty();
         refresh_window_title();
 
         auto* history = &m_commandManager.history();
@@ -49,13 +54,17 @@ void MainWindow::setup_property_dock()
             .label = QStringLiteral("编辑参数"),
             .undo =
                 [this, wood] {
-                  m_sceneAdapter.set_document(m_world.document());
-                  m_sceneAdapter.undo_feature();
-                  if (auto* p = m_sceneAdapter.main_part())
+                  if (!m_documentScope)
+                  {
+                    return;
+                  }
+                  adapter::ISceneService& scene = m_documentScope->scene();
+                  scene.UndoFeature();
+                  if (auto* p = scene.MainPart())
                   {
                     Material mat =
                         wood.empty() ? Material{} : MakeWoodMaterial(wood);
-                    m_world.sync_part_bodies(*p, std::move(mat));
+                    m_world.SyncPartBodies(*p, std::move(mat));
                   }
                   request_all_views_update();
                   update_property_panel(
@@ -64,13 +73,17 @@ void MainWindow::setup_property_dock()
                 },
             .redo =
                 [this, wood] {
-                  m_sceneAdapter.set_document(m_world.document());
-                  m_sceneAdapter.redo_feature();
-                  if (auto* p = m_sceneAdapter.main_part())
+                  if (!m_documentScope)
+                  {
+                    return;
+                  }
+                  adapter::ISceneService& scene = m_documentScope->scene();
+                  scene.RedoFeature();
+                  if (auto* p = scene.MainPart())
                   {
                     Material mat =
                         wood.empty() ? Material{} : MakeWoodMaterial(wood);
-                    m_world.sync_part_bodies(*p, std::move(mat));
+                    m_world.SyncPartBodies(*p, std::move(mat));
                   }
                   request_all_views_update();
                   update_property_panel(
@@ -82,21 +95,27 @@ void MainWindow::setup_property_dock()
         update_property_panel(ecs::selected_entity(m_world.registry()));
       });
 
-  auto* view_menu = menuBar()->addMenu(tr("&View"));
+  auto* view_menu = new QMenu(tr("&View"), this);
   view_menu->setObjectName(QStringLiteral("menu_view"));
   view_menu->addAction(m_propertyDock->toggleViewAction());
-  if (m_viewToolbar)
+  if (auto* file_menu = findChild<QMenu*>(QStringLiteral("menu_file")))
   {
-    view_menu->addAction(m_viewToolbar->toggleViewAction());
+    file_menu->addSeparator();
+    file_menu->addMenu(view_menu);
   }
 }
 
 void MainWindow::update_property_panel(entt::entity entity)
 {
-  if (!m_propertyPanel) return;
-  m_sceneAdapter.set_document(m_world.document());
-  m_propertyPanel->set_adapter(&m_sceneAdapter);
-  m_propertyPanel->show_entity(m_world.registry(), entity);
+  if (!m_propertyPanel)
+  {
+    return;
+  }
+  if (m_documentScope)
+  {
+    m_propertyPanel->SetAdapter(&m_documentScope->scene());
+  }
+  m_propertyPanel->ShowEntity(m_world.registry(), entity);
 }
 
 }  // namespace brep::viewer

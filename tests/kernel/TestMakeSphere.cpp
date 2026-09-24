@@ -1,5 +1,6 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 #include "api/Persistence.h"
 #include "brep/Validate.h"
 
@@ -68,7 +69,7 @@ TEST(MakeSphere, AnalyticTopologyAndValidate)
   EXPECT_NEAR((seam->curve->eval(seam->t0) - south).norm(), 0.0, 1e-9);
   EXPECT_NEAR((seam->curve->eval(seam->t1) - north).norm(), 0.0, 1e-9);
 
-  // Mid-seam should sit on the sphere at uâ‰ˆ0 (equator +X for default circle).
+  // Mid-seam should sit on the sphere at uâ‰? (equator +X for default circle).
   const Point3d mid =
       seam->curve->eval(0.5 * (seam->t0 + seam->t1));
   EXPECT_NEAR((mid - center).norm(), radius, 1e-9);

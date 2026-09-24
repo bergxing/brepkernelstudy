@@ -93,6 +93,7 @@ void VulkanRenderer::releaseResources()
   destroy_buffer(m_previewSolidVb);
   destroy_buffer(m_snapOverlayVb);
   destroy_buffer(m_highlightVb);
+  destroy_buffer(m_hoverVb);
   destroy_buffer(m_ubo);
   destroy_buffer(m_selectionUbo);
   destroy_buffer(m_axisUbo);
@@ -102,6 +103,7 @@ void VulkanRenderer::releaseResources()
   m_previewSolidVertexCount = 0;
   m_snapOverlayVertexCount = 0;
   m_highlightVertexCount = 0;
+  m_hoverVertexCount = 0;
   m_selIndexCount = 0;
   m_selLineVertexCount = 0;
   m_selectionDescSet = VK_NULL_HANDLE;
@@ -158,6 +160,15 @@ void VulkanRenderer::startNextFrame()
     m_window->frameReady();
     m_window->requestUpdate();
     return;
+  }
+
+  // In-flight frames still reference current GPU buffers/images. Wait before
+  // destroy+recreate so a scene change cannot free live Vulkan objects.
+  if (m_meshesDirty || m_materialDirty || m_selectionMeshesDirty ||
+      m_selectionMaterialDirty || m_previewDirty || m_snapOverlayDirty ||
+      m_highlightDirty || m_hoverDirty)
+  {
+    WaitGpuIdle();
   }
 
   if (m_meshesDirty)
@@ -244,6 +255,19 @@ void VulkanRenderer::startNextFrame()
     }
   }
 
+  if (m_hoverDirty)
+  {
+    try
+    {
+      upload_hover();
+    }
+    catch (const std::exception& ex)
+    {
+      BREP_ERROR("upload_hover failed: {}", ex.what());
+      m_hoverDirty = false;
+    }
+  }
+
   const QSize sz = m_window->swapChainImageSize();
   const Camera& cam = m_window->camera();
   const float aspect =
@@ -299,9 +323,9 @@ void VulkanRenderer::startNextFrame()
   }
 
   VkClearValue clears[3]{};
-  clears[0].color = {{0.12f, 0.13f, 0.15f, 1.0f}};
+  clears[0].color = {{m_clearColor[0], m_clearColor[1], m_clearColor[2], 1.0f}};
   clears[1].depthStencil = {1.0f, 0};
-  clears[2].color = {{0.12f, 0.13f, 0.15f, 1.0f}};
+  clears[2].color = {{m_clearColor[0], m_clearColor[1], m_clearColor[2], 1.0f}};
 
   VkRenderPassBeginInfo rp{};
   rp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -339,9 +363,9 @@ void VulkanRenderer::startNextFrame()
     m_dev->vkCmdDrawIndexed(cmd, m_indexCount, 1, 0, 0, 0);
   }
 
-  if (m_lineVertexCount > 0 && m_linePipeline)
+  if (m_lineVertexCount > 0 && m_axisPipeline && m_lineVb.buffer)
   {
-    m_dev->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_linePipeline);
+    m_dev->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_axisPipeline);
     VkDeviceSize offset = 0;
     m_dev->vkCmdBindVertexBuffers(cmd, 0, 1, &m_lineVb.buffer, &offset);
     m_dev->vkCmdDraw(cmd, m_lineVertexCount, 1, 0, 0);
@@ -379,7 +403,14 @@ void VulkanRenderer::startNextFrame()
                                   nullptr);
   }
 
-  // Selection outline (orange), then tool preview fill + wire (yellow).
+  // Hover outline (cyan), then selection outline (orange), then tool preview.
+  if (m_hoverVertexCount > 0 && m_axisPipeline && m_hoverVb.buffer)
+  {
+    m_dev->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_axisPipeline);
+    VkDeviceSize offset = 0;
+    m_dev->vkCmdBindVertexBuffers(cmd, 0, 1, &m_hoverVb.buffer, &offset);
+    m_dev->vkCmdDraw(cmd, m_hoverVertexCount, 1, 0, 0);
+  }
   if (m_highlightVertexCount > 0 && m_axisPipeline && m_highlightVb.buffer)
   {
     m_dev->vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_axisPipeline);

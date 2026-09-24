@@ -12,7 +12,7 @@ class ExtrudeFeature final : public IFeature
 {
 public:
     ExtrudeFeature(FeatureId id, std::string name, FeatureId sketchFeature,
-                   param::ParameterId distance);
+                   param::ParameterId distance, bool symmetric = false);
 
     [[nodiscard]] FeatureId Id() const override
     {
@@ -66,13 +66,19 @@ public:
 
     static std::unique_ptr<ExtrudeFeature> Create(
         param::ParameterStore& store, std::string name,
-        FeatureId sketchFeature, double distance);
+        FeatureId sketchFeature, double distance, bool symmetric = false);
+
+    [[nodiscard]] bool Symmetric() const noexcept
+    {
+        return m_symmetric;
+    }
 
 private:
     FeatureId m_id{};
     std::string m_name;
     FeatureId m_sketchFeature{};
     param::ParameterId m_distance{};
+    bool m_symmetric{false};
     Guid m_bodyGuid{};
     FeatureStatus m_status{FeatureStatus::Dirty};
     bool m_suppressed{false};

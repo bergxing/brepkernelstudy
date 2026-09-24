@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace brep::viewer::ecs
 {
@@ -60,11 +61,26 @@ struct BodyRef
 /// Links a renderable to a parametric feature (optional).
 struct FeatureRef
 {
-  brep::Guid feature_guid{};
+  brep::Guid FeatureGuid{};
+};
+
+/// Bézier CVs for selection overlay / grip edit.
+struct BezierCvComponent
+{
+  std::vector<Point3d> Cvs;
+  std::vector<double> Weights;
+  int Degree{3};
+  int SegmentCount{1};
+  std::vector<std::uint8_t> Corner;
 };
 
 /// Tag: currently selected renderable (supports multi-select).
 struct SelectedTag
+{
+};
+
+/// Tag: renderable under the cursor (preselection).
+struct HoverTag
 {
 };
 
@@ -73,6 +89,8 @@ struct SelectionState
 {
   /// Last entity clicked / toggled (property panel focus).
   entt::entity primary{entt::null};
+  /// Click / toggle order; first entry is the boolean subtract target.
+  std::vector<entt::entity> Ordered;
 };
 
 /// Shared CPU-side scene bake for multi-viewport upload.
@@ -81,6 +99,7 @@ struct RenderCache
   std::size_t renderable_count{0};
   entt::entity selection{entt::null};
   std::size_t selection_count{0};
+  entt::entity hover{entt::null};
   bool force_rebuild{false};
   std::uint64_t version{0};
 
@@ -93,6 +112,9 @@ struct RenderCache
   EdgeMesh selected_edges;
   EdgeMesh selected_outline;
   bool have_selection{false};
+
+  EdgeMesh hover_outline;
+  bool have_hover{false};
 };
 
 /// Transient input state (stored in registry context, not on an entity).

@@ -14,6 +14,45 @@ ValidationReport ValidateBody(const Body& body)
   ValidationReport report;
   BREP_INFO("ValidateBody '{}'", body.Name);
 
+  if (body.Type == BodyType::Wire)
+  {
+    const std::string where = body.Name.empty() ? "Body" : body.Name;
+    if (body.WireEdges.size() < 1)
+    {
+      report.Error(where, "wire has no edges");
+      BREP_ERROR("ValidateBody '{}': wire has no edges", body.Name);
+      return report;
+    }
+    for (const Edge* edge : body.WireEdges)
+    {
+      if (!edge)
+      {
+        report.Error(where, "null wire edge");
+        continue;
+      }
+      const std::string en = edge->Name.empty() ? "Edge" : edge->Name;
+      if (!edge->Curve)
+      {
+        report.Error(en, "missing curve geometry");
+      }
+      if (!edge->V0 || !edge->V1)
+      {
+        report.Error(en, "missing endpoint vertices");
+      }
+    }
+    if (report.Ok())
+    {
+      BREP_INFO("ValidateBody '{}': OK (wire, {} edges)", body.Name,
+                body.WireEdges.size());
+    }
+    else
+    {
+      BREP_ERROR("ValidateBody '{}': FAILED (wire, {} issues)", body.Name,
+                 report.Issues.size());
+    }
+    return report;
+  }
+
   if (body.Shells.empty())
   {
     report.Error(body.Name.empty() ? "Body" : body.Name, "no shells");

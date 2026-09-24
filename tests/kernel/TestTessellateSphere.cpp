@@ -1,6 +1,7 @@
 #include "api/Core.h"
 #include "api/Mesh.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include <gtest/gtest.h>
 
@@ -40,7 +41,7 @@ TEST(TessellateSphere, DefaultMeshScaleAndNormals)
   ASSERT_FALSE(mesh.indices.empty());
   EXPECT_EQ(mesh.indices.size() % 3, 0u);
 
-  // Default angular 15Â° â†’ nu â‰¥ 24; linear 0.02R â†’ nv â‰¥ 12 (clamped to min).
+  // Default angular 15Â° â†?nu â‰?24; linear 0.02R â†?nv â‰?12 (clamped to min).
   // Pole quads contribute one triangle after skipping degenerates.
   const std::size_t tri_count = mesh.indices.size() / 3;
   EXPECT_GE(tri_count, static_cast<std::size_t>(24 * 12));

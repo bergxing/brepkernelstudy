@@ -20,8 +20,26 @@ void VulkanRenderer::set_meshes(TriangleMesh triangles, EdgeMesh edges)
   m_meshesDirty = true;
 }
 
+namespace
+{
+
+[[nodiscard]] bool SameAlbedo(const Material& a, const Material& b) noexcept
+{
+  return a.AlbedoPath == b.AlbedoPath && a.UvScale == b.UvScale &&
+         a.AlbedoColor[0] == b.AlbedoColor[0] &&
+         a.AlbedoColor[1] == b.AlbedoColor[1] &&
+         a.AlbedoColor[2] == b.AlbedoColor[2];
+}
+
+}  // namespace
+
 void VulkanRenderer::set_material(Material material)
 {
+  if (m_albedo.image != VK_NULL_HANDLE && SameAlbedo(m_material, material))
+  {
+    m_material = std::move(material);
+    return;
+  }
   m_material = std::move(material);
   m_materialDirty = true;
 }
@@ -29,11 +47,17 @@ void VulkanRenderer::set_material(Material material)
 void VulkanRenderer::set_selection_mesh(TriangleMesh triangles, EdgeMesh edges,
                                         Material material)
 {
+  const bool materialChanged =
+      m_selectionAlbedo.image == VK_NULL_HANDLE ||
+      !SameAlbedo(m_selectionMaterial, material);
   m_selectionTriangles = std::move(triangles);
   m_selectionEdges = std::move(edges);
   m_selectionMaterial = std::move(material);
   m_selectionMeshesDirty = true;
-  m_selectionMaterialDirty = true;
+  if (materialChanged)
+  {
+    m_selectionMaterialDirty = true;
+  }
 }
 
 void VulkanRenderer::clear_selection_mesh()
@@ -99,11 +123,51 @@ void VulkanRenderer::set_highlight_edges(EdgeMesh edges)
 void VulkanRenderer::clear_highlight()
 {
   if (m_highlightEdges.Positions.empty() && m_highlightVertexCount == 0)
-{
+  {
     return;
   }
   m_highlightEdges = {};
   m_highlightDirty = true;
+}
+
+void VulkanRenderer::set_hover_edges(EdgeMesh edges)
+{
+  m_hoverEdges = std::move(edges);
+  m_hoverDirty = true;
+}
+
+void VulkanRenderer::clear_hover()
+{
+  if (m_hoverEdges.Positions.empty() && m_hoverVertexCount == 0)
+  {
+    return;
+  }
+  m_hoverEdges = {};
+  m_hoverDirty = true;
+}
+
+void VulkanRenderer::set_viewport_colors(float clearR, float clearG, float clearB,
+                                        float wireR, float wireG, float wireB,
+                                        float hoverR, float hoverG, float hoverB,
+                                        float previewR, float previewG,
+                                        float previewB)
+{
+  m_clearColor[0] = clearR;
+  m_clearColor[1] = clearG;
+  m_clearColor[2] = clearB;
+  m_wireColor[0] = wireR;
+  m_wireColor[1] = wireG;
+  m_wireColor[2] = wireB;
+  m_hoverColor[0] = hoverR;
+  m_hoverColor[1] = hoverG;
+  m_hoverColor[2] = hoverB;
+  m_previewColor[0] = previewR;
+  m_previewColor[1] = previewG;
+  m_previewColor[2] = previewB;
+  m_meshesDirty = true;
+  m_selectionMeshesDirty = true;
+  m_hoverDirty = true;
+  m_previewDirty = true;
 }
 
 }  // namespace brep::viewer

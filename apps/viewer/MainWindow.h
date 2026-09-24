@@ -1,17 +1,22 @@
 #pragma once
 
-#include "adapter/SceneAdapter.h"
+#include "app/ApplicationContext.h"
+#include "bootstrap/DocumentScope.h"
+#include "commands/CommandContextFactory.h"
 #include "commands/CommandManager.h"
 #include "commands/CommandRegistry.h"
 #include "commands/snap/SnapSettings.h"
+#include "ui/ActionCatalog.h"
+#include "ui/ViewerTheme.h"
 #include "Document.h"
 #include "ecs/World.h"
 #include "PropertyPanel.h"
 #include "ViewCube.h"
 #include "VulkanWindow.h"
 
+#include "SARibbonMainWindow.h"
+
 #include <QHash>
-#include <QMainWindow>
 #include <QVulkanInstance>
 
 #include <memory>
@@ -25,16 +30,17 @@ class QLabel;
 class QMdiArea;
 class QMdiSubWindow;
 class QMenu;
-class QToolBar;
+class SARibbonActionsManager;
 
 namespace brep::viewer
 {
 
-class MainWindow final : public QMainWindow
+class MainWindow final : public SARibbonMainWindow
 {
   Q_OBJECT
  public:
-  explicit MainWindow(QWidget* parent = nullptr);
+  explicit MainWindow(ApplicationContext& appContext,
+                      QWidget* parent = nullptr);
   ~MainWindow() override;
 
   /// Load a `.xl` document into the workspace and show its content.
@@ -59,6 +65,8 @@ class MainWindow final : public QMainWindow
   void on_tile_views();
   void on_cascade_views();
   void on_close_active_view();
+  void on_customize_ribbon();
+  void on_reset_ribbon();
 
  private:
   VulkanWindow* create_view_window(char standard_view,
@@ -71,12 +79,15 @@ class MainWindow final : public QMainWindow
   void wire_vulkan_window(VulkanWindow* window);
   void request_all_views_update();
   void ensure_minimum_view();
+  void setup_action_catalog();
   void setup_menus();
   void setup_window_menu();
   void setup_language_menu(QMenu* tools_menu);
-  void setup_toolbar();
-  void setup_view_toolbar();
+  void setup_ribbon();
+  void rebuild_ribbon_default();
   void show_snap_settings();
+  void show_theme_settings();
+  void apply_viewer_theme();
   void set_snap_enabled(bool enabled);
   void save_snap_settings();
   void sync_snap_action();
@@ -101,6 +112,8 @@ class MainWindow final : public QMainWindow
   /// Returns false if the user cancelled closing (keep the window open).
   [[nodiscard]] bool confirm_close_or_save();
   [[nodiscard]] commands::CommandContext make_command_context();
+  void rebind_document_scope();
+  void sync_view_document_bindings();
   [[nodiscard]] QString wood_albedo_path() const;
   bool handle_tool_mouse(QEvent* event);
   void show_viewport_context_menu(VulkanWindow* window, float x, float y);
@@ -115,11 +128,14 @@ class MainWindow final : public QMainWindow
                                             float& out_x, float& out_y) const;
 
   DocumentSession m_document;
+  ApplicationContext* m_appContext{nullptr};
   ecs::World m_world;
-  adapter::SceneAdapter m_sceneAdapter;
-  commands::CommandRegistry m_commands;
+  std::unique_ptr<bootstrap::DocumentScope> m_documentScope;
+  commands::CommandRegistry& m_commandRegistry;
   commands::CommandManager m_commandManager;
+  commands::CommandContextFactory m_commandContextFactory;
   commands::SnapSettings m_snapSettings;
+  ViewerTheme m_viewerTheme;
   commands::SnapSession m_snapSession;
   std::unique_ptr<QVulkanInstance> m_vulkanInstance;
   QMdiArea* m_mdiArea{nullptr};
@@ -128,10 +144,10 @@ class MainWindow final : public QMainWindow
   bool m_suppressEnsureView{false};
   ViewCubeWidget* m_viewCube{nullptr};
   QLabel* m_cursorTip{nullptr};
-  QToolBar* m_toolbar{nullptr};
-  QToolBar* m_viewToolbar{nullptr};
   QDockWidget* m_propertyDock{nullptr};
   PropertyPanel* m_propertyPanel{nullptr};
+  ActionCatalog* m_actions{nullptr};
+  SARibbonActionsManager* m_ribbonActions{nullptr};
   QAction* m_actUndo{nullptr};
   QAction* m_actRedo{nullptr};
   QAction* m_actOrtho{nullptr};

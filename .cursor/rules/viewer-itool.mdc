@@ -1,0 +1,33 @@
+---
+description: Viewer ITool 多步状态用 enum class，禁止 int 魔法数字
+globs: apps/viewer/commands/tools/**/*.{h,cpp}
+alwaysApply: false
+---
+
+# ITool 步进状态
+
+交互工具的多步流程用嵌套 `enum class Step` + `m_step`，禁止 `int m_step` 配 `0/1/2` 注释。
+
+每个工具自己的 `Step`（步骤不同就不要共用）。成员默认值写成枚举常量。比较、赋值、`switch` 都用枚举。日志需要整数时再 `static_cast<int>(m_step)`。
+
+```cpp
+class CopyTool final : public ITool
+{
+private:
+    enum class Step
+    {
+        SelectObjects,
+        PickBase,
+        PickPlace,
+    };
+    Step m_step{Step::SelectObjects};
+};
+```
+
+```cpp
+// ❌
+int m_step{0};  // 0: select, 1: base, 2: place
+if (m_step == 1) { ... }
+```
+
+工具类里的函数（含匿名命名空间辅助函数）一律 **PascalCase**。点标记 / 线段预览用 `PreviewEdges.h`，不要在各 Tool 里再复制一份。

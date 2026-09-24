@@ -41,15 +41,15 @@ TEST(Cdt, UnconstrainedSquareTwoTriangles)
       {0, 0}, {1, 0}, {1, 1}, {0, 1},
   };
   const auto r = triangulate_constrained(pts, {});
-  ASSERT_TRUE(r.ok) << r.diagnostics;
-  EXPECT_EQ(r.triangles.size(), 2u);
+  ASSERT_TRUE(r.Ok) << r.Diagnostics;
+  EXPECT_EQ(r.Triangles.size(), 2u);
   // All vertices referenced in range
-  for (const auto& t : r.triangles)
+  for (const auto& t : r.Triangles)
   {
     for (int k = 0; k < 3; ++k)
   {
       EXPECT_GE(t.v[k], 0);
-      EXPECT_LT(t.v[k], static_cast<int>(r.vertices.size()));
+      EXPECT_LT(t.v[k], static_cast<int>(r.Vertices.size()));
     }
   }
 }
@@ -64,16 +64,16 @@ TEST(Cdt, SquareWithHoleKeepsBoundaryAndDropsInterior)
   };
   const auto r =
       brep::mesh::triangulate_polygon_with_holes(outer, {hole});
-  ASSERT_TRUE(r.ok) << r.diagnostics;
-  ASSERT_FALSE(r.triangles.empty());
+  ASSERT_TRUE(r.Ok) << r.Diagnostics;
+  ASSERT_FALSE(r.Triangles.empty());
 
   const auto tri_contains = [&](const Point2d& point)
   {
-    for (const auto& triangle : r.triangles)
+    for (const auto& triangle : r.Triangles)
   {
-      const Point2d& a = r.vertices[triangle.v[0]].uv;
-      const Point2d& b = r.vertices[triangle.v[1]].uv;
-      const Point2d& c = r.vertices[triangle.v[2]].uv;
+      const Point2d& a = r.Vertices[triangle.v[0]].Uv;
+      const Point2d& b = r.Vertices[triangle.v[1]].Uv;
+      const Point2d& c = r.Vertices[triangle.v[2]].Uv;
       if (point_in_triangle(point, a, b, c))
       {
         return true;

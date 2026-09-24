@@ -41,4 +41,8 @@ struct FaceRegion
 [[nodiscard]] std::vector<Point3d> SampleEdgeXyz(
     const CoEdge& ce, const TessellationOptions& opts);
 
+/// Sample a bare edge (Sense=Forward). Used for Wire bodies without CoEdges.
+[[nodiscard]] std::vector<Point3d> SampleEdgeXyz(
+    const Edge& edge, const TessellationOptions& opts);
+
 }  // namespace brep::mesh

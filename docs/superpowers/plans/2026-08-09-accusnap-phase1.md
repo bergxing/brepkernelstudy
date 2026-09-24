@@ -427,7 +427,7 @@ git commit -m "Add AccuSnap settings UI, override keys, grid snap, and QSettings
 
 ```powershell
 $env:PATH = "C:/Qt6/Tools/mingw1310_64/bin;C:/Qt6/6.8.3/mingw_64/bin;E:/brepkernelstudy/cmake-build-mingw-debug/bin;" + $env:PATH
-ctest --test-dir E:/brepkernelstudy/cmake-build-mingw-debug -R "brep_test_math|brep_test_snap|box_demo|smoke|parametric_smoke|xl_roundtrip" --output-on-failure
+ctest --test-dir E:/brepkernelstudy/cmake-build-mingw-debug -R "brep_test_math|brep_test_snap|smoke|parametric_smoke|xl_roundtrip" --output-on-failure
 ```
 
 Expected: listed tests PASS (ignore pre-existing `*_NOT_BUILT` placeholders if still present).

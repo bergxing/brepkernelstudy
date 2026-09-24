@@ -50,7 +50,16 @@ void VulkanRenderer::create_albedo_texture()
                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
   void* data = nullptr;
   m_dev->vkMapMemory(m_window->device(), staging.memory, 0, image_size, 0, &data);
-  std::memcpy(data, image.constBits(), static_cast<size_t>(image_size));
+  const int srcStride = image.bytesPerLine();
+  const int dstStride = int(width) * 4;
+  auto* dst = static_cast<std::uint8_t*>(data);
+  const auto* src = image.constBits();
+  for (uint32_t y = 0; y < height; ++y)
+  {
+    std::memcpy(dst + static_cast<std::size_t>(y) * dstStride,
+                src + static_cast<std::size_t>(y) * srcStride,
+                static_cast<std::size_t>(dstStride));
+  }
   m_dev->vkUnmapMemory(m_window->device(), staging.memory);
 
   const VkDevice device = m_window->device();

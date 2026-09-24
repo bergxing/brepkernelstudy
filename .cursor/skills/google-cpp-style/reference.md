@@ -7,6 +7,7 @@
 | 元素 | 风格 |
 |------|------|
 | 类 / struct 类型 / 函数 | PascalCase |
+| ITool 步进 | 嵌套 `enum class Step`（禁止 `int m_step`） |
 | 变量 / 参数 | camelCase |
 | **类成员变量** | **`m_` + camelCase** |
 | struct / DTO 成员 | PascalCase |

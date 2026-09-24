@@ -1,6 +1,7 @@
 #include "commands/tools/CreateSphereTool.h"
+#include "commands/tools/PreviewEdges.h"
 
-#include "adapter/SceneAdapter.h"
+#include "adapter/ISceneServiceFactory.h"
 #include "commands/DocumentHistory.h"
 #include "commands/snap/Accusnap.h"
 
@@ -19,30 +20,12 @@ namespace brep::viewer::commands
 namespace
 {
 
-QString tr_sphere(const char* source)
+QString TrSphere(const char* source)
 {
-  return QCoreApplication::translate("CreateSphereTool", source);
+    return QCoreApplication::translate("CreateSphereTool", source);
 }
 
-void push_seg(EdgeMesh& mesh, const Point3d& a, const Point3d& b)
-{
-  mesh.Positions.push_back(a);
-  mesh.Positions.push_back(b);
-}
-
-EdgeMesh make_point_marker(const Point3d& p, double s = 0.12)
-{
-  EdgeMesh mesh;
-  push_seg(mesh, Point3d{p.x() - s, p.y(), p.z()},
-           Point3d{p.x() + s, p.y(), p.z()});
-  push_seg(mesh, Point3d{p.x(), p.y(), p.z() - s},
-           Point3d{p.x(), p.y(), p.z() + s});
-  push_seg(mesh, Point3d{p.x(), p.y() - s, p.z()},
-           Point3d{p.x(), p.y() + s, p.z()});
-  return mesh;
-}
-
-EdgeMesh make_sphere_wire(const Point3d& c, double r, int seg = 32)
+EdgeMesh MakeSphereWire(const Point3d& c, double r, int seg = 32)
 {
   EdgeMesh mesh;
   auto ring = [&](char axis)
@@ -67,7 +50,7 @@ EdgeMesh make_sphere_wire(const Point3d& c, double r, int seg = 32)
         a = Point3d{c.x() + r * std::cos(t0), c.y() + r * std::sin(t0), c.z()};
         b = Point3d{c.x() + r * std::cos(t1), c.y() + r * std::sin(t1), c.z()};
       }
-      push_seg(mesh, a, b);
+      PushSegment(mesh, a, b);
     }
   };
   ring('x');
@@ -76,85 +59,135 @@ EdgeMesh make_sphere_wire(const Point3d& c, double r, int seg = 32)
   return mesh;
 }
 
-/// Preview solid uses the same analytic body + deflection tessellation as commit.
-TriangleMesh make_sphere_solid(const Point3d& center, double r)
+void PushTriangle(TriangleMesh& mesh, const Point3d& a, const Point3d& b,
+              const Point3d& c)
 {
-  if (!(r > 0.0)) return {};
-  Model model;
-  Body* body = MakeSphere(model, SphereSpec{.Center = center, .Radius = r,
-                                             .Name = "preview"});
-  if (!body) return {};
-  return TessellateBody(*body, TessellationOptions::ForRadius(r));
+  const Vector3d n = (b - a).cross(c - a);
+  const Vector3d nn = n.norm() > 1e-12 ? n.normalized() : Vector3d{0.0, 1.0, 0.0};
+  const std::uint32_t base = static_cast<std::uint32_t>(mesh.Vertices.size());
+  mesh.Vertices.push_back(MeshVertex{a, nn, {}});
+  mesh.Vertices.push_back(MeshVertex{b, nn, {}});
+  mesh.Vertices.push_back(MeshVertex{c, nn, {}});
+  mesh.Indices.push_back(base);
+  mesh.Indices.push_back(base + 1);
+  mesh.Indices.push_back(base + 2);
+}
+
+/// Preview solid mesh (procedural UV sphere — no kernel builder).
+TriangleMesh MakeSphereSolid(const Point3d& center, double r, int stacks = 16,
+                               int slices = 32)
+{
+  TriangleMesh mesh;
+  if (!(r > 0.0)) return mesh;
+
+  auto vertex = [&](double phi, double theta) -> Point3d {
+    const double sin_phi = std::sin(phi);
+    return Point3d{center.x() + r * sin_phi * std::cos(theta),
+                   center.y() + r * std::cos(phi),
+                   center.z() + r * sin_phi * std::sin(theta)};
+  };
+
+  for (int i = 0; i < stacks; ++i)
+  {
+    const double phi0 = std::numbers::pi * static_cast<double>(i) / stacks;
+    const double phi1 = std::numbers::pi * static_cast<double>(i + 1) / stacks;
+    for (int j = 0; j < slices; ++j)
+    {
+      const double t0 = 2.0 * std::numbers::pi * static_cast<double>(j) / slices;
+      const double t1 =
+          2.0 * std::numbers::pi * static_cast<double>(j + 1) / slices;
+      const Point3d a = vertex(phi0, t0);
+      const Point3d b = vertex(phi0, t1);
+      const Point3d c = vertex(phi1, t1);
+      const Point3d d = vertex(phi1, t0);
+      if (i > 0)
+      {
+        PushTriangle(mesh, a, b, c);
+      }
+      if (i < stacks - 1)
+      {
+        PushTriangle(mesh, a, c, d);
+      }
+    }
+  }
+  return mesh;
 }
 
 }  // namespace
 
-QString CreateSphereTool::prompt() const
+QString CreateSphereTool::Prompt() const
 {
-  if (m_step == 0)
+  if (m_step == Step::Center)
 {
-    return tr_sphere("Create sphere: pick center on a surface or ground (ESC cancel)");
+    return TrSphere("Create sphere: pick center on a surface or ground (ESC cancel)");
   }
-  return tr_sphere("Create sphere: pick radius point (ESC cancel)");
+  return TrSphere("Create sphere: pick radius point (ESC cancel)");
 }
 
-void CreateSphereTool::on_start(CommandContext& ctx)
+void CreateSphereTool::OnStart(CommandContext& ctx)
 {
-  m_step = 0;
+  m_step = Step::Center;
   m_finished = false;
   m_result = CommandResult::Cancelled();
-  if (ctx.SnapSessionRef) ctx.SnapSessionRef->last_point.reset();
-  clear_preview(ctx);
-  if (ctx.ReportStatus) ctx.ReportStatus(prompt());
+  if (ctx.SnapSessionRef) ctx.SnapSessionRef->LastPoint.reset();
+  ClearPreview(ctx);
+  if (ctx.ReportStatus) ctx.ReportStatus(Prompt());
 }
 
-bool CreateSphereTool::pick_point(CommandContext& ctx, float x, float y,
+bool CreateSphereTool::PickPoint(CommandContext& ctx, float x, float y,
                                   Point3d& hit) const
 {
-  const PickResult result = AccuSnap::resolve(ctx, x, y);
-  if (result.kind == SnapKind::None) return false;
-  hit = result.point;
+  const PickResult result = AccuSnap::Resolve(ctx, x, y);
+  if (result.Kind == SnapKind::None) return false;
+  hit = result.Point;
   return true;
 }
 
-void CreateSphereTool::clear_preview(CommandContext& ctx)
+void CreateSphereTool::ClearPreview(CommandContext& ctx)
 {
   if (ctx.ClearPreview) ctx.ClearPreview();
 }
 
-void CreateSphereTool::update_preview(CommandContext& ctx, float x, float y)
+void CreateSphereTool::UpdatePreview(CommandContext& ctx, float x, float y)
 {
-  if (m_step != 1) return;
+  if (m_step != Step::Radius) return;
   Point3d hit;
-  if (!pick_point(ctx, x, y, hit)) return;
+  if (!PickPoint(ctx, x, y, hit)) return;
   const double radius = (hit - m_center).norm();
   if (radius < 1e-4) return;
 
-  EdgeMesh wire = make_sphere_wire(m_center, radius);
-  const EdgeMesh marker = make_point_marker(m_center);
+  EdgeMesh wire = MakeSphereWire(m_center, radius);
+  const EdgeMesh marker = MakePointMarker(m_center);
   wire.Positions.insert(wire.Positions.end(), marker.Positions.begin(),
                         marker.Positions.end());
-  TriangleMesh solid = make_sphere_solid(m_center, radius);
+  TriangleMesh solid = MakeSphereSolid(m_center, radius);
   if (ctx.SetPreview) ctx.SetPreview(std::move(wire), std::move(solid));
   else if (ctx.SetPreviewEdges) ctx.SetPreviewEdges(std::move(wire));
   if (ctx.RequestRedraw) ctx.RequestRedraw();
 }
 
-void CreateSphereTool::commit_sphere(CommandContext& ctx, double radius)
+void CreateSphereTool::CommitSphere(CommandContext& ctx, double radius)
 {
-  clear_preview(ctx);
-  if (!ctx.World || !ctx.World->document())
+  ClearPreview(ctx);
+  if (!ctx.World || !ctx.World->Document())
   {
-    m_result = CommandResult::Failed(tr_sphere("No active document"));
+    m_result = CommandResult::Failed(TrSphere("No active document"));
     m_finished = true;
     return;
   }
 
-  adapter::SceneAdapter scene(ctx.World->document());
-  Part* part = scene.main_part();
+  if (!ctx.Scene)
+  {
+    m_result = CommandResult::Failed(TrSphere("No main part"));
+    m_finished = true;
+    return;
+  }
+
+  adapter::ISceneService& scene = *ctx.Scene;
+  Part* part = scene.MainPart();
   if (!part)
   {
-    m_result = CommandResult::Failed(tr_sphere("No main part"));
+    m_result = CommandResult::Failed(TrSphere("No main part"));
     m_finished = true;
     return;
   }
@@ -164,32 +197,32 @@ void CreateSphereTool::commit_sphere(CommandContext& ctx, double radius)
   spec.Radius = radius;
   spec.Name = "sphere";
 
-  Body* body = scene.add_sphere(spec);
+  Body* body = scene.AddPrimitive(spec);
   if (!body)
   {
-    m_result = CommandResult::Failed(tr_sphere("Failed to create sphere"));
+    m_result = CommandResult::Failed(TrSphere("Failed to create sphere"));
     m_finished = true;
     return;
   }
 
   const feat::FeatureId fid =
-      scene.feature_id_for(Guid{}, body->Guid).value_or(feat::FeatureId{});
+      scene.FeatureIdFor(Guid{}, body->Guid).value_or(feat::FeatureId{});
   if (fid.IsValid())
   {
-    scene.record_append_sphere(fid, spec);
+    scene.RecordAppendPrimitive(fid, spec);
   }
   const Guid feature_guid = fid.Guid;
 
   Material material = ctx.WoodAlbedoPath.empty()
                           ? Material{}
                           : MakeWoodMaterial(ctx.WoodAlbedoPath);
-  auto mesh = scene.mesh_for_body(body->Guid);
-  ctx.World->create_body_renderable(body->Name, body->Guid,
-                                    std::move(mesh.faces),
-                                    std::move(mesh.edges), material, Point3d{},
+  auto mesh = scene.MeshForBody(body->Guid);
+  ctx.World->CreateBodyRenderable(body->Name, body->Guid,
+                                    std::move(mesh.Faces),
+                                    std::move(mesh.Edges), material, Point3d{},
                                     feature_guid);
   if (ctx.RequestRedraw) ctx.RequestRedraw();
-  if (ctx.Session) ctx.Session->mark_dirty();
+  if (ctx.Session) ctx.Session->MarkDirty();
 
   const Guid guid = body->Guid;
   const std::string wood = ctx.WoodAlbedoPath;
@@ -199,30 +232,34 @@ void CreateSphereTool::commit_sphere(CommandContext& ctx, double radius)
   if (ctx.History)
   {
     ctx.History->push(DocumentHistory::Entry{
-        .label = tr_sphere("Create sphere"),
+        .label = TrSphere("Create sphere"),
         .undo =
-            [world, part_ptr, wood, session = ctx.Session,
-             redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
+            [world, part_ptr, wood, factory = ctx.SceneFactory,
+             session = ctx.Session, redraw = ctx.RequestRedraw,
+             refresh = ctx.RefreshUi] {
               if (!world || !part_ptr) return;
-              adapter::SceneAdapter scene_u(world->document());
-              scene_u.undo_feature();
+              adapter::WithScene(
+                  factory, world->Document(),
+                  [](adapter::ISceneService& scene) { scene.UndoFeature(); });
               Material material =
                   wood.empty() ? Material{} : MakeWoodMaterial(wood);
-              world->sync_part_bodies(*part_ptr, std::move(material));
-              if (session) session->mark_dirty();
+              world->SyncPartBodies(*part_ptr, std::move(material));
+              if (session) session->MarkDirty();
               if (redraw) redraw();
               if (refresh) refresh();
             },
         .redo =
-            [world, part_ptr, wood, session = ctx.Session,
-             redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
+            [world, part_ptr, wood, factory = ctx.SceneFactory,
+             session = ctx.Session, redraw = ctx.RequestRedraw,
+             refresh = ctx.RefreshUi] {
               if (!world || !part_ptr) return;
-              adapter::SceneAdapter scene_r(world->document());
-              scene_r.redo_feature();
+              adapter::WithScene(
+                  factory, world->Document(),
+                  [](adapter::ISceneService& scene) { scene.RedoFeature(); });
               Material material =
                   wood.empty() ? Material{} : MakeWoodMaterial(wood);
-              world->sync_part_bodies(*part_ptr, std::move(material));
-              if (session) session->mark_dirty();
+              world->SyncPartBodies(*part_ptr, std::move(material));
+              if (session) session->MarkDirty();
               if (redraw) redraw();
               if (refresh) refresh();
             },
@@ -230,38 +267,38 @@ void CreateSphereTool::commit_sphere(CommandContext& ctx, double radius)
   }
 
   m_result = CommandResult::Ok(
-      tr_sphere("Created sphere %1")
+      TrSphere("Created sphere %1")
           .arg(QString::fromStdString(guid.ToString())));
   m_finished = true;
   if (ctx.RefreshUi) ctx.RefreshUi();
 }
 
-bool CreateSphereTool::on_mouse_press(CommandContext& ctx, float x, float y,
+bool CreateSphereTool::OnMousePress(CommandContext& ctx, float x, float y,
                                       int button)
 {
   if (button != Qt::LeftButton) return false;
 
   Point3d hit;
-  if (!pick_point(ctx, x, y, hit))
+  if (!PickPoint(ctx, x, y, hit))
   {
     if (ctx.ReportStatus)
   {
       ctx.ReportStatus(
-          tr_sphere("Missed surface/ground — try another angle"));
+          TrSphere("Missed surface/ground — try another angle"));
     }
     return true;
   }
-  if (m_step == 0)
+  if (m_step == Step::Center)
   {
     m_center = hit;
-    if (ctx.SnapSessionRef) ctx.SnapSessionRef->last_point = hit;
-    m_step = 1;
+    if (ctx.SnapSessionRef) ctx.SnapSessionRef->LastPoint = hit;
+    m_step = Step::Radius;
     if (ctx.SetPreviewEdges)
     {
-      ctx.SetPreviewEdges(make_point_marker(m_center));
+      ctx.SetPreviewEdges(MakePointMarker(m_center));
     }
     if (ctx.RequestRedraw) ctx.RequestRedraw();
-    if (ctx.ReportStatus) ctx.ReportStatus(prompt());
+    if (ctx.ReportStatus) ctx.ReportStatus(Prompt());
     return true;
   }
 
@@ -270,32 +307,32 @@ bool CreateSphereTool::on_mouse_press(CommandContext& ctx, float x, float y,
   {
     if (ctx.ReportStatus)
   {
-      ctx.ReportStatus(tr_sphere("Radius too small — pick farther"));
+      ctx.ReportStatus(TrSphere("Radius too small — pick farther"));
     }
     return true;
   }
-  if (ctx.SnapSessionRef) ctx.SnapSessionRef->last_point = hit;
-  commit_sphere(ctx, radius);
+  if (ctx.SnapSessionRef) ctx.SnapSessionRef->LastPoint = hit;
+  CommitSphere(ctx, radius);
   return true;
 }
 
-void CreateSphereTool::on_mouse_move(CommandContext& ctx, float x, float y)
+void CreateSphereTool::OnMouseMove(CommandContext& ctx, float x, float y)
 {
-  if (m_step == 0)
+  if (m_step == Step::Center)
 {
     Point3d hover;
-    (void)pick_point(ctx, x, y, hover);
-  } else if (m_step == 1)
+    (void)PickPoint(ctx, x, y, hover);
+  } else if (m_step == Step::Radius)
   {
-    update_preview(ctx, x, y);
+    UpdatePreview(ctx, x, y);
   }
 }
 
-void CreateSphereTool::on_cancel(CommandContext& ctx)
+void CreateSphereTool::OnCancel(CommandContext& ctx)
 {
-  clear_preview(ctx);
+  ClearPreview(ctx);
   m_finished = true;
-  m_result = CommandResult::Cancelled(tr_sphere("Cancelled create sphere"));
+  m_result = CommandResult::Cancelled(TrSphere("Cancelled create sphere"));
   if (ctx.ReportStatus) ctx.ReportStatus(m_result.Message);
 }
 

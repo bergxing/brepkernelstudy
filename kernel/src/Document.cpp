@@ -5,12 +5,18 @@
 namespace brep
 {
 
-std::unique_ptr<Document> Document::Create(std::string title)
+std::unique_ptr<Document> Document::Create(
+    std::string title,
+    std::shared_ptr<boolean::IBooleanEvaluator> evaluator)
 {
-  return std::make_unique<Document>(std::move(title));
+  return std::make_unique<Document>(std::move(title), std::move(evaluator));
 }
 
-Document::Document(std::string title) : IObject(std::move(title))
+Document::Document(std::string title,
+                   std::shared_ptr<boolean::IBooleanEvaluator> evaluator)
+    : IObject(std::move(title)),
+      m_booleanEvaluator(evaluator ? std::move(evaluator)
+                                   : boolean::MakeDefaultBooleanEvaluator())
 {
   m_registry.Add(*this);
   BREP_INFO("Document created name='{}' guid={}", Name, Guid.ToString());
@@ -18,7 +24,8 @@ Document::Document(std::string title) : IObject(std::move(title))
 
 Part& Document::AddPart(std::string part_name)
 {
-  auto part = std::make_unique<Part>(std::move(part_name));
+  auto part =
+      std::make_unique<Part>(m_booleanEvaluator, std::move(part_name));
   part->SetDocument(this);
   m_registry.Add(*part);
   Part& ref = *part;

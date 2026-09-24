@@ -1,10 +1,12 @@
 #include "api/Core.h"
 #include "api/Mesh.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 #include "brep/bool/Boolean.h"
 #include "brep/io/XlDocument.h"
 #include "brep/Part.h"
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <cmath>
 #include <array>
 #include <numbers>
@@ -294,6 +296,55 @@ void expect_far_from_corner_covers(const TriangleMesh& mesh,
   EXPECT_EQ(misses, 0u) << "far-from-union sphere samples had " << misses
                         << " uncovered points";
 }
+void expect_sphere_triangles_outside_deleted_octant(
+    const TriangleMesh& mesh, const Point3d& center, double radius)
+{
+  std::size_t intrudingTriangles = 0;
+  std::size_t reversedTriangles = 0;
+  double maxEdgeLength = 0.0;
+  for (std::size_t i = 0; i + 2 < mesh.Indices.size(); i += 3)
+  {
+    const MeshVertex& a = mesh.Vertices[mesh.Indices[i]];
+    const MeshVertex& b = mesh.Vertices[mesh.Indices[i + 1]];
+    const MeshVertex& c = mesh.Vertices[mesh.Indices[i + 2]];
+    const auto onSphere = [&](const MeshVertex& vertex)
+    {
+      const Vector3d radial = vertex.Position - center;
+      return std::abs(radial.norm() - radius) <= 1e-6 &&
+             radial.normalized().dot(vertex.Normal) > 0.999;
+    };
+    if (!onSphere(a) || !onSphere(b) || !onSphere(c))
+    {
+      continue;
+    }
+    maxEdgeLength = std::max(
+        maxEdgeLength,
+        std::max({a.Position.distance_to(b.Position),
+                  b.Position.distance_to(c.Position),
+                  c.Position.distance_to(a.Position)}));
+    const Vector3d area =
+        (b.Position - a.Position).cross(c.Position - a.Position);
+    if (area.dot(a.Position - center) <= 0.0)
+    {
+      ++reversedTriangles;
+    }
+    const Vector3d centroid =
+        ((a.Position - center) + (b.Position - center) +
+         (c.Position - center)) /
+        3.0;
+    const double margin = radius * 1e-4;
+    if (centroid.x() < -margin && centroid.y() < -margin &&
+        centroid.z() < -margin)
+    {
+      ++intrudingTriangles;
+    }
+  }
+  EXPECT_EQ(intrudingTriangles, 0u)
+      << "sphere triangles intrude into the box-clipped octant";
+  EXPECT_EQ(reversedTriangles, 0u) << "sphere triangles face inward";
+  EXPECT_LT(maxEdgeLength, radius * 0.5)
+      << "sphere triangle spans the periodic seam or trim";
+}
 TEST(TessellateCornerUnion, UntitledXlSecondCornerHasNoHoles)
 {
   // Geometry from untitled.xl bool_sphere_box_Union (fa1a0d73�?.
@@ -319,6 +370,7 @@ TEST(TessellateCornerUnion, UntitledXlSecondCornerHasNoHoles)
   expect_complement_outside_deleted_covers(mesh, center, radius);
   expect_deleted_octant_wedge_covers(mesh, center, radius);
   expect_far_from_corner_covers(mesh, center, radius);
+  expect_sphere_triangles_outside_deleted_octant(mesh, center, radius);
 }
 TEST(TessellateCornerUnion, UntitledXlUnionGuidHasNoSphereHoles)
 {
@@ -332,12 +384,15 @@ TEST(TessellateCornerUnion, UntitledXlUnionGuidHasNoSphereHoles)
   ASSERT_NE(part, nullptr);
   Body* body = nullptr;
   for (const char* guid_text :
-       {"b724e248-7ccf-4a47-bad4-fce095d049c4",
+       {"39c02fc2-200c-47a4-8789-3aae346f19b7",
+        "b724e248-7ccf-4a47-bad4-fce095d049c4",
         "323f39af-72eb-45ff-b146-939a47ad7271",
         "179ec7f0-4f06-474c-aa0d-83a1738b4cc8",
         "954e3b4a-2c31-416e-b12c-63ef7bd11e3a",
         "96c98914-d3f9-47bb-a056-e63da9c5a273",
-        "fa1a0d73-a710-43b3-9d78-1d268d49d69d"})
+        "fa1a0d73-a710-43b3-9d78-1d268d49d69d",
+        "9b3eabec-89b6-4cd0-889d-21a058cc954f",
+        "c2b5935e-78a5-4284-95d5-10424ccc50d4"})
         {
     body = part->FindBody(Guid::FromString(guid_text));
     if (body) break;
@@ -382,6 +437,7 @@ TEST(TessellateCornerUnion, UntitledXlUnionGuidHasNoSphereHoles)
   expect_complement_outside_deleted_covers(mesh, center, radius);
   expect_deleted_octant_wedge_covers(mesh, center, radius);
   expect_far_from_corner_covers(mesh, center, radius);
+  expect_sphere_triangles_outside_deleted_octant(mesh, center, radius);
 }
 }  // namespace
 }  // namespace brep

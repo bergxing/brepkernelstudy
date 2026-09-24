@@ -227,6 +227,14 @@ std::vector<SnapCandidate> QuerySnapCandidates(
     std::unordered_set<Vertex*> vertices;
     std::size_t FaceCount = 0;
 
+    if (body->Type == BodyType::Wire)
+    {
+      for (Edge* edge : body->WireEdges)
+      {
+        if (edge) edges.insert(edge);
+      }
+    }
+
     for (Shell* shell : body->Shells)
     {
       if (!shell) continue;

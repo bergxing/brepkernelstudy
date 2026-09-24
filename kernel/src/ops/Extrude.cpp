@@ -1,6 +1,7 @@
 #include "brep/ops/Profile.h"
 
-#include "brep/Builder.h"
+#include "brep/build/PrimitiveBuild.h"
+#include "brep/internal/Polygon2d.h"
 #include "brep/Log.h"
 
 #include <algorithm>
@@ -12,6 +13,22 @@ namespace brep::ops
 {
 namespace
 {
+
+void NormalizeProfileWinding(Profile2d& profile)
+{
+  if (profile.Outer.size() >= 3 &&
+      brep::internal::SignedArea2d(profile.Outer) < 0.0)
+  {
+    std::reverse(profile.Outer.begin(), profile.Outer.end());
+  }
+  for (std::vector<Point2d>& hole : profile.Holes)
+  {
+    if (hole.size() >= 3 && brep::internal::SignedArea2d(hole) > 0.0)
+    {
+      std::reverse(hole.begin(), hole.end());
+    }
+  }
+}
 
 bool is_axis_aligned_rect(const Profile2d& profile, double& min_u, double& max_u,
                           double& min_v, double& max_v)
@@ -228,7 +245,8 @@ Body* extrude_polygon(Model& model, const ExtrudeSpec& spec)
         const Vector3d u =
             (ring.bottom_v[j]->Position() - ring.bottom_v[i]->Position())
                 .normalized();
-        const Vector3d v = spec.Plane.Normal;
+        // CCW outer: outward = planeNormal × edgeTangent = u × (-normal).
+        const Vector3d v = -spec.Plane.Normal;
         add_quad_face(model, shell, ring.bottom_e[i], Orientation::Forward,
                       ring.vert_e[j], Orientation::Forward, ring.top_e[i],
                       Orientation::Reversed, ring.vert_e[i],
@@ -339,11 +357,14 @@ Body* Extrude(Model& model, const ExtrudeSpec& spec)
     return nullptr;
   }
 
+  ExtrudeSpec normalized = spec;
+  NormalizeProfileWinding(normalized.Profile);
+
   // Holes require prism path (box builder has no Inner loops).
-  if (spec.Profile.Holes.empty())
+  if (normalized.Profile.Holes.empty())
   {
     double min_u = 0, max_u = 0, min_v = 0, max_v = 0;
-    if (is_axis_aligned_rect(spec.Profile, min_u, max_u, min_v, max_v))
+    if (is_axis_aligned_rect(normalized.Profile, min_u, max_u, min_v, max_v))
     {
       const Plane& pl = spec.Plane;
       const bool y_up =
@@ -359,14 +380,14 @@ Body* Extrude(Model& model, const ExtrudeSpec& spec)
         BoxSpec box;
         box.Min = Point3d{min_u, miny, min_v};
         box.Max = Point3d{max_u, maxy, max_v};
-        box.Name = spec.Name;
-        box.Tolerance = spec.Tolerance;
+        box.Name = normalized.Name;
+        box.Tolerance = normalized.Tolerance;
         return MakeBox(model, box);
       }
     }
   }
 
-  return extrude_polygon(model, spec);
+  return extrude_polygon(model, normalized);
 }
 
 }  // namespace brep::ops

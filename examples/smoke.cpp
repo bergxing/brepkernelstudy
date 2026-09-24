@@ -1,7 +1,6 @@
 #include <iostream>
 
-#include "brep/Log.h"
-#include "brep/Math.h"
+#include "api/Core.h"
 
 int main()
 {

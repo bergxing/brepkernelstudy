@@ -1,8 +1,10 @@
 #pragma once
 
+#include "brep/feat/PrimitiveSpecs.h"
 #include "brep/Guid.h"
 #include "brep/param/Parameter.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -61,6 +63,16 @@ public:
     virtual void SetBodyGuid(Guid g) = 0;
 
     [[nodiscard]] virtual std::string DisplayName() const = 0;
+
+    /// Reconstructable primitive payload, or nullopt for Boolean / Extrude /
+    /// Sketch / etc. New primitive types override this; Viewer copy uses
+    /// ISceneService::SpecFor, not per-type adapter methods.
+    [[nodiscard]] virtual std::optional<PrimitiveSpec> ToPrimitiveSpec(
+        const param::ParameterStore& params) const
+    {
+        (void)params;
+        return std::nullopt;
+    }
 };
 
 }  // namespace brep::feat

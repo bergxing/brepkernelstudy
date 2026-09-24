@@ -3,6 +3,7 @@
 #include "brep/solve2d/Solver.h"
 
 #include <cmath>
+#include <vector>
 
 namespace brep::feat
 {
@@ -56,6 +57,32 @@ std::unique_ptr<SketchFeature> SketchFeature::CreateRectangle(param::ParameterSt
     sk.AddConstraint(
         sketch::Constraint{{}, sketch::ConstraintKind::Vertical, p10, p11, {}, 0.0});
 
+    FeatureId id{Guid::Generate()};
+    return std::make_unique<SketchFeature>(id, std::move(name), std::move(sk));
+}
+
+std::unique_ptr<SketchFeature> SketchFeature::CreatePolyline(
+    std::string name, const std::vector<Point2d>& points, brep::Plane frame)
+{
+    if (points.size() < 3)
+    {
+        return nullptr;
+    }
+    sketch::Sketch sk;
+    sk.SetFrame(std::move(frame));
+    std::vector<sketch::SketchEntityId> ids;
+    ids.reserve(points.size());
+    for (const Point2d& p : points)
+    {
+        ids.push_back(sk.AddPoint(p));
+    }
+    sk.AddConstraint(sketch::Constraint{{}, sketch::ConstraintKind::Fixed, ids[0],
+                                          {}, {}, 0.0});
+    for (std::size_t i = 0; i < ids.size(); ++i)
+    {
+        const std::size_t j = (i + 1) % ids.size();
+        sk.AddLine(ids[i], ids[j]);
+    }
     FeatureId id{Guid::Generate()};
     return std::make_unique<SketchFeature>(id, std::move(name), std::move(sk));
 }

@@ -18,15 +18,15 @@ TEST(IntersectPlaneSphere, EquatorialPlaneYieldsUnitCircle)
   PlaneSurface xy{Point3d{0, 0, 0}, Vector3d{0, 0, 1}};
   SphereSurface sphere{Point3d{0, 0, 0}, 1.0};
 
-  const auto result = boolean::intersect_plane_sphere(xy, sphere);
-  ASSERT_TRUE(result.is_circle()) << result.diagnostics;
+  const auto result = boolean::IntersectPlaneSphere(xy, sphere);
+  ASSERT_TRUE(result.IsCircle()) << result.Diagnostics;
   EXPECT_EQ(result.status, boolean::PlaneSphereStatus::Circle);
-  EXPECT_NEAR(result.radius, 1.0, 1e-9);
-  EXPECT_NEAR(result.center.x(), 0.0, 1e-9);
-  EXPECT_NEAR(result.center.y(), 0.0, 1e-9);
-  EXPECT_NEAR(result.center.z(), 0.0, 1e-9);
-  EXPECT_NEAR(std::abs(result.normal.z()), 1.0, 1e-9);
-  EXPECT_NEAR(result.normal.norm(), 1.0, 1e-9);
+  EXPECT_NEAR(result.Radius, 1.0, 1e-9);
+  EXPECT_NEAR(result.Center.x(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Center.y(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Center.z(), 0.0, 1e-9);
+  EXPECT_NEAR(std::abs(result.Normal.z()), 1.0, 1e-9);
+  EXPECT_NEAR(result.Normal.norm(), 1.0, 1e-9);
 }
 
 TEST(IntersectPlaneSphere, OffsetPlaneSmallerCircle)
@@ -34,10 +34,10 @@ TEST(IntersectPlaneSphere, OffsetPlaneSmallerCircle)
   PlaneSurface z05{Point3d{0, 0, 0.5}, Vector3d{0, 0, 1}};
   SphereSurface sphere{Point3d{0, 0, 0}, 1.0};
 
-  const auto result = boolean::intersect_plane_sphere(z05, sphere);
-  ASSERT_TRUE(result.is_circle()) << result.diagnostics;
-  EXPECT_NEAR(result.center.z(), 0.5, 1e-9);
-  EXPECT_NEAR(result.radius, std::sqrt(1.0 - 0.25), 1e-9);
+  const auto result = boolean::IntersectPlaneSphere(z05, sphere);
+  ASSERT_TRUE(result.IsCircle()) << result.Diagnostics;
+  EXPECT_NEAR(result.Center.z(), 0.5, 1e-9);
+  EXPECT_NEAR(result.Radius, std::sqrt(1.0 - 0.25), 1e-9);
 }
 
 TEST(IntersectPlaneSphere, TangentYieldsPoint)
@@ -45,13 +45,13 @@ TEST(IntersectPlaneSphere, TangentYieldsPoint)
   PlaneSurface z1{Point3d{0, 0, 1}, Vector3d{0, 0, 1}};
   SphereSurface sphere{Point3d{0, 0, 0}, 1.0};
 
-  const auto result = boolean::intersect_plane_sphere(z1, sphere);
+  const auto result = boolean::IntersectPlaneSphere(z1, sphere);
   EXPECT_EQ(result.status, boolean::PlaneSphereStatus::Point);
-  EXPECT_FALSE(result.is_circle());
-  EXPECT_NEAR(result.center.x(), 0.0, 1e-9);
-  EXPECT_NEAR(result.center.y(), 0.0, 1e-9);
-  EXPECT_NEAR(result.center.z(), 1.0, 1e-9);
-  EXPECT_NEAR(result.radius, 0.0, 1e-9);
+  EXPECT_FALSE(result.IsCircle());
+  EXPECT_NEAR(result.Center.x(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Center.y(), 0.0, 1e-9);
+  EXPECT_NEAR(result.Center.z(), 1.0, 1e-9);
+  EXPECT_NEAR(result.Radius, 0.0, 1e-9);
 }
 
 TEST(IntersectPlaneSphere, MissYieldsEmpty)
@@ -59,9 +59,22 @@ TEST(IntersectPlaneSphere, MissYieldsEmpty)
   PlaneSurface z2{Point3d{0, 0, 2}, Vector3d{0, 0, 1}};
   SphereSurface sphere{Point3d{0, 0, 0}, 1.0};
 
-  const auto result = boolean::intersect_plane_sphere(z2, sphere);
+  const auto result = boolean::IntersectPlaneSphere(z2, sphere);
   EXPECT_EQ(result.status, boolean::PlaneSphereStatus::Empty);
-  EXPECT_FALSE(result.diagnostics.empty());
+  EXPECT_FALSE(result.Diagnostics.empty());
+}
+
+TEST(IntersectPlaneSphere, NearTangentBoxFaceIsPoint)
+{
+  const double radius = 0.499843;
+  const Point3d center{4.03792, 0.999687, 7.01871};
+  PlaneSurface zmin{Point3d{center.x(), center.y(), 6.51887},
+                    Vector3d{0, 0, -1}};
+  SphereSurface sphere{center, radius};
+
+  const auto result = boolean::IntersectPlaneSphere(zmin, sphere);
+  EXPECT_EQ(result.status, boolean::PlaneSphereStatus::Point)
+      << result.Diagnostics << " r=" << result.Radius;
 }
 
 TEST(IntersectPlaneSphere, TangentWithinFuzzy)
@@ -71,17 +84,17 @@ TEST(IntersectPlaneSphere, TangentWithinFuzzy)
   PlaneSurface z{Point3d{0, 0, 1.0 + 0.5e-6}, Vector3d{0, 0, 1}};
   SphereSurface sphere{Point3d{0, 0, 0}, 1.0};
 
-  const auto result = boolean::intersect_plane_sphere(z, sphere, ctx);
+  const auto result = boolean::IntersectPlaneSphere(z, sphere, ctx);
   EXPECT_EQ(result.status, boolean::PlaneSphereStatus::Point);
 }
 
 TEST(IntersectPlaneSphere, OriginNormalOverload)
 {
   SphereSurface sphere{Point3d{0, 0, 0}, 2.0};
-  const auto result = boolean::intersect_plane_sphere(
-      Point3d{0, 0, 0}, Vector3d{1, 0, 0}, sphere.center(), sphere.radius());
-  ASSERT_TRUE(result.is_circle());
-  EXPECT_NEAR(result.radius, 2.0, 1e-9);
+  const auto result = boolean::IntersectPlaneSphere(
+      Point3d{0, 0, 0}, Vector3d{1, 0, 0}, sphere.Center(), sphere.Radius());
+  ASSERT_TRUE(result.IsCircle());
+  EXPECT_NEAR(result.Radius, 2.0, 1e-9);
 }
 
 }  // namespace

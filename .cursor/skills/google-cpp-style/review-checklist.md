@@ -3,6 +3,7 @@
 ## 命名
 
 - [ ] 类 / struct 类型 / 函数：**PascalCase**
+- [ ] ITool 多步状态：嵌套 `enum class Step` + `m_step`（禁止 `int` 魔法数字）
 - [ ] 变量 / 参数：**camelCase**（无 `m_`）
 - [ ] **类成员变量**：**`m_` + camelCase**（禁止 `m_PascalCase`、`member_`）
 - [ ] struct / DTO 成员：**PascalCase（大驼峰）**（无 `m_`；**禁止** `ok`/`failed`/`message`/`status` 等 snake_case）

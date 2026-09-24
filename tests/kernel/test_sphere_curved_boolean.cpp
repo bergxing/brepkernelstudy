@@ -1,5 +1,6 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include "brep/bool/Boolean.h"
 #include "brep/Validate.h"
@@ -25,7 +26,7 @@ TEST(SphereBoxBoolean, OctantSphereMinusBoxValidates)
       eval->evaluate(boolean::BooleanOp::Subtract, model, *sphere, *box, {});
   EXPECT_TRUE(result.ok()) << result.diagnostics;
   ASSERT_NE(result.body, nullptr);
-  EXPECT_TRUE(ValidateBody(*result.body).Ok()) << "⅞-ball must validate";
+  EXPECT_TRUE(ValidateBody(*result.body).Ok()) << "�?ball must validate";
   ASSERT_FALSE(result.body->shells.empty());
   EXPECT_EQ(result.body->shells[0]->faces.size(), 4u);
 }

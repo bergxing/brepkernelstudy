@@ -1,6 +1,9 @@
 #include "app/ViewerApp.h"
 
+#include "app/ApplicationContext.h"
 #include "assets/AssetCatalog.h"
+#include "bootstrap/AppConfigLoader.h"
+#include "bootstrap/ApplicationContainer.h"
 #include "HomeWindow.h"
 #include "i18n/LanguageManager.h"
 #include "MainWindow.h"
@@ -8,23 +11,27 @@
 
 #include "api/Core.h"
 
+#include "SARibbonBar.h"
+
 #include <QApplication>
 #include <QMessageBox>
 #include <QString>
 
 #include <exception>
+#include <memory>
 
 namespace brep::viewer
 {
 namespace
 {
 
-void open_home_window(QApplication& app);
+void open_home_window(QApplication& app, ApplicationContext& appContext);
 
-void open_workspace(QApplication& app, const QString& path = {})
+void open_workspace(QApplication& app, ApplicationContext& appContext,
+                    const QString& path = {})
 {
   try {
-    auto* workspace = new MainWindow();
+    auto* workspace = new MainWindow(appContext);
     workspace->setAttribute(Qt::WA_DeleteOnClose);
 
     workspace->show();
@@ -35,7 +42,7 @@ void open_workspace(QApplication& app, const QString& path = {})
     if (!path.isEmpty())
     {
       if (!workspace->open_document(path))
-    {
+      {
         BREP_WARN("failed to open document from home: {}",
                   path.toStdString());
       }
@@ -46,11 +53,11 @@ void open_workspace(QApplication& app, const QString& path = {})
     QMessageBox::critical(nullptr, QStringLiteral("XCAD Error"),
                           QString::fromUtf8(ex.what()));
     app.setQuitOnLastWindowClosed(true);
-    open_home_window(app);
+    open_home_window(app, appContext);
   }
 }
 
-void open_home_window(QApplication& app)
+void open_home_window(QApplication& app, ApplicationContext& appContext)
 {
   auto* home = new HomeWindow();
   home->setAttribute(Qt::WA_DeleteOnClose);
@@ -58,22 +65,22 @@ void open_home_window(QApplication& app)
   QObject::connect(home, &HomeWindow::exit_requested, &app, &QApplication::quit);
 
   QObject::connect(
-      home, &HomeWindow::new_document_requested, &app, [home, &app] {
+      home, &HomeWindow::new_document_requested, &app,
+      [home, &app, &appContext] {
         app.setQuitOnLastWindowClosed(false);
         QObject::connect(home, &QObject::destroyed, &app,
-                         [&app] { open_workspace(app); },
+                         [&app, &appContext] { open_workspace(app, appContext); },
                          Qt::QueuedConnection);
         home->close();
       });
 
   QObject::connect(
       home, &HomeWindow::open_document_requested, &app,
-      [home, &app](const QString& path)
-      {
+      [home, &app, &appContext](const QString& path) {
         app.setQuitOnLastWindowClosed(false);
         QObject::connect(
             home, &QObject::destroyed, &app,
-            [path, &app] { open_workspace(app, path); },
+            [path, &app, &appContext] { open_workspace(app, appContext, path); },
             Qt::QueuedConnection);
         home->close();
       });
@@ -88,9 +95,13 @@ void open_home_window(QApplication& app)
 
 int run_viewer(int argc, char* argv[])
 {
-  ::brep::InitLogging("brep_viewer.log", ::brep::LogLevel::Info);
+  ApplicationContext appContext;
+  appContext.config = bootstrap::LoadAppConfig(argc, argv);
+
+  ::brep::InitLogging(appContext.config.logPath.c_str(), ::brep::LogLevel::Info);
   AssetCatalog::ensure_initialized();
 
+  SARibbonBar::initHighDpi();
   QApplication app(argc, argv);
   QApplication::setOrganizationName(QStringLiteral("XCAD"));
   QApplication::setApplicationName(QStringLiteral("XCAD"));
@@ -100,6 +111,8 @@ int run_viewer(int argc, char* argv[])
   languages.load_preference_from_settings();
   languages.apply(languages.preference());
 
+  appContext.container = bootstrap::BuildApplicationContainer(appContext.config);
+
   try {
     auto* splash = new SplashScreen();
     if (!splash->load_artwork())
@@ -107,10 +120,11 @@ int run_viewer(int argc, char* argv[])
       BREP_WARN("splash artwork missing; showing fallback splash");
     }
 
-    QObject::connect(splash, &SplashScreen::finished, &app, [splash, &app] {
-      open_home_window(app);
-      splash->deleteLater();
-    });
+    QObject::connect(splash, &SplashScreen::finished, &app,
+                     [splash, &app, &appContext] {
+                       open_home_window(app, appContext);
+                       splash->deleteLater();
+                     });
 
     splash->show();
     return app.exec();

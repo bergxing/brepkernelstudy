@@ -47,6 +47,7 @@ enum class CurveKind
 {
   Line,
   Circle,
+  Bezier,
   Nurbs,
 };
 

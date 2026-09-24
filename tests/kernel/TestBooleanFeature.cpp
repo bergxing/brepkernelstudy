@@ -1,8 +1,10 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 #include "api/Persistence.h"
 
 #include "brep/bool/Boolean.h"
+#include "brep/bool/Evaluator.h"
 #include "brep/feat/BooleanFeature.h"
 #include "brep/io/BksCache.h"
 
@@ -16,33 +18,36 @@ namespace brep
 namespace
 {
 
-/// Test double: builds a unit box as a stand-in boolean result in `model`.
 class FakeUnionEvaluator final : public boolean::IBooleanEvaluator
 {
  public:
-  boolean::BooleanResult evaluate(boolean::BooleanOp op, Model& model,
-                                  const Body& a, const Body& b,
+  boolean::BooleanResult Evaluate(boolean::BooleanOp op, Model& model, const Body& a,
+                                  const Body& b,
                                   const boolean::BooleanContext&) override
-                                  {
-    last_op = op;
+  {
+    m_lastOp = op;
     boolean::BooleanResult result;
-    result.mode = boolean::BooleanEvalMode::AnalyticPair;
+    result.Mode = boolean::BooleanEvalMode::General;
     BoxSpec spec;
     spec.Min = Point3d{0, 0, 0};
     spec.Max = Point3d{1, 1, 1};
     spec.Name = std::string("bool_") + a.Name + "_" + b.Name;
-    result.body = MakeBox(model, spec);
+    result.OutputBody = MakeBox(model, spec);
     return result;
   }
 
-  boolean::BooleanOp last_op{boolean::BooleanOp::Union};
+  boolean::BooleanOp m_lastOp{boolean::BooleanOp::Union};
 };
+
+std::shared_ptr<boolean::IBooleanEvaluator> MakeFakeUnionEvaluator()
+{
+  return std::make_shared<FakeUnionEvaluator>();
+}
 
 TEST(BooleanFeature, SuppressesOperandsResultVisible)
 {
-  auto doc = Document::Create("bool_feat");
+  auto doc = Document::Create("bool_feat", MakeFakeUnionEvaluator());
   Part& part = doc->AddPart("Main");
-  part.set_boolean_evaluator(std::make_shared<FakeUnionEvaluator>());
 
   Body* a = part.AddBox(BoxSpec{.Min = {0, 0, 0}, .Max = {1, 1, 1}, .Name = "A"});
   Body* b =
@@ -50,103 +55,91 @@ TEST(BooleanFeature, SuppressesOperandsResultVisible)
                            .Name = "B"});
   ASSERT_NE(a, nullptr);
   ASSERT_NE(b, nullptr);
-  const Guid a_guid = a->guid;
-  const Guid b_guid = b->guid;
+  const Guid aGuid = a->Guid;
+  const Guid bGuid = b->Guid;
 
-  auto* fa = part.features().find_by_body(a_guid);
-  auto* fb = part.features().find_by_body(b_guid);
+  auto* fa = part.Features().FindByBody(aGuid);
+  auto* fb = part.Features().FindByBody(bGuid);
   ASSERT_NE(fa, nullptr);
   ASSERT_NE(fb, nullptr);
 
   Body* result =
-      part.add_boolean(boolean::BooleanOp::Union, fa->id(), fb->id(), "Fuse");
+      part.AddBoolean(boolean::BooleanOp::Union, fa->Id(), fb->Id(), "Fuse");
   ASSERT_NE(result, nullptr);
 
-  EXPECT_EQ(part.model().bodies().size(), 1u);
-  EXPECT_EQ(part.find_body(a_guid), nullptr);
-  EXPECT_EQ(part.find_body(b_guid), nullptr);
-  EXPECT_NE(part.find_body(result->guid), nullptr);
+  EXPECT_EQ(part.Model().Bodies().size(), 1u);
+  EXPECT_EQ(part.FindBody(aGuid), nullptr);
+  EXPECT_EQ(part.FindBody(bGuid), nullptr);
+  EXPECT_NE(part.FindBody(result->Guid), nullptr);
 
-  EXPECT_TRUE(part.features().find(fa->id())->suppressed());
-  EXPECT_TRUE(part.features().find(fb->id())->suppressed());
-  EXPECT_FALSE(part.features().find_by_body(result->guid)->suppressed());
-  EXPECT_EQ(part.features().find_by_body(result->guid)->type_name(), "Boolean");
+  EXPECT_TRUE(part.Features().Find(fa->Id())->Suppressed());
+  EXPECT_TRUE(part.Features().Find(fb->Id())->Suppressed());
+  EXPECT_FALSE(part.Features().FindByBody(result->Guid)->Suppressed());
+  EXPECT_EQ(part.Features().FindByBody(result->Guid)->TypeName(), "Boolean");
 }
 
 TEST(BooleanFeature, UndoRedoRestoresOperands)
 {
-  auto doc = Document::Create("bool_undo");
+  auto doc = Document::Create("bool_undo", MakeFakeUnionEvaluator());
   Part& part = doc->AddPart("Main");
-  part.set_boolean_evaluator(std::make_shared<FakeUnionEvaluator>());
 
   Body* a = part.AddBox(BoxSpec{.Min = {0, 0, 0}, .Max = {1, 1, 1}, .Name = "A"});
   Body* b = part.AddBox(BoxSpec{.Min = {1, 0, 0}, .Max = {2, 1, 1}, .Name = "B"});
   ASSERT_NE(a, nullptr);
   ASSERT_NE(b, nullptr);
-  const auto target = part.features().find_by_body(a->guid)->id();
-  const auto tool = part.features().find_by_body(b->guid)->id();
+  const auto target = part.Features().FindByBody(a->Guid)->Id();
+  const auto tool = part.Features().FindByBody(b->Guid)->Id();
 
   Body* result =
-      part.add_boolean(boolean::BooleanOp::Intersect, target, tool, "Common");
+      part.AddBoolean(boolean::BooleanOp::Intersect, target, tool, "Common");
   ASSERT_NE(result, nullptr);
-  EXPECT_EQ(part.model().bodies().size(), 1u);
-  ASSERT_TRUE(part.feature_history().can_undo());
+  EXPECT_EQ(part.Model().Bodies().size(), 1u);
+  ASSERT_TRUE(part.FeatureHistory().CanUndo());
 
-  ASSERT_TRUE(part.feature_history().undo(part));
-  EXPECT_FALSE(part.features().find(target)->suppressed());
-  EXPECT_FALSE(part.features().find(tool)->suppressed());
-  EXPECT_EQ(part.model().bodies().size(), 2u);
-  EXPECT_EQ(part.features().find(target)->type_name(), "Box");
+  ASSERT_TRUE(part.FeatureHistory().Undo(part));
+  EXPECT_FALSE(part.Features().Find(target)->Suppressed());
+  EXPECT_FALSE(part.Features().Find(tool)->Suppressed());
+  EXPECT_EQ(part.Model().Bodies().size(), 2u);
+  EXPECT_EQ(part.Features().Find(target)->TypeName(), "Box");
 
-  ASSERT_TRUE(part.feature_history().can_redo());
-  ASSERT_TRUE(part.feature_history().redo(part));
-  EXPECT_TRUE(part.features().find(target)->suppressed());
-  EXPECT_TRUE(part.features().find(tool)->suppressed());
-  EXPECT_EQ(part.model().bodies().size(), 1u);
-  auto* bool_f = part.features().features().back().get();
-  ASSERT_NE(bool_f, nullptr);
-  EXPECT_EQ(bool_f->type_name(), "Boolean");
-  EXPECT_NE(part.find_body(bool_f->body_guid()), nullptr);
+  ASSERT_TRUE(part.FeatureHistory().CanRedo());
+  ASSERT_TRUE(part.FeatureHistory().Redo(part));
+  EXPECT_TRUE(part.Features().Find(target)->Suppressed());
+  EXPECT_TRUE(part.Features().Find(tool)->Suppressed());
+  EXPECT_EQ(part.Model().Bodies().size(), 1u);
+  auto* boolF = part.Features().Features().back().get();
+  ASSERT_NE(boolF, nullptr);
+  EXPECT_EQ(boolF->TypeName(), "Boolean");
+  EXPECT_NE(part.FindBody(boolF->BodyGuid()), nullptr);
 }
 
 TEST(BooleanFeature, StubEvaluatorFailsWithoutSuppress)
 {
-  auto doc = Document::Create("bool_stub");
+  auto stub = boolean::MakeStubBooleanEvaluator();
+  auto doc = Document::Create(
+      "bool_stub",
+      std::shared_ptr<boolean::IBooleanEvaluator>(stub.release()));
   Part& part = doc->AddPart("Main");
-  part.set_boolean_evaluator(boolean::make_stub_boolean_evaluator());
 
   Body* a = part.AddBox(BoxSpec{.Min = {0, 0, 0}, .Max = {1, 1, 1}, .Name = "A"});
   Body* b = part.AddBox(BoxSpec{.Min = {0, 0, 0}, .Max = {1, 1, 1}, .Name = "B"});
   ASSERT_NE(a, nullptr);
   ASSERT_NE(b, nullptr);
-  const auto target = part.features().find_by_body(a->guid)->id();
-  const auto tool = part.features().find_by_body(b->guid)->id();
+  const auto target = part.Features().FindByBody(a->Guid)->Id();
+  const auto tool = part.Features().FindByBody(b->Guid)->Id();
 
-  Body* result = part.add_boolean(boolean::BooleanOp::Union, target, tool);
+  Body* result = part.AddBoolean(boolean::BooleanOp::Union, target, tool);
   EXPECT_EQ(result, nullptr);
-  EXPECT_EQ(part.model().bodies().size(), 2u);
-  EXPECT_FALSE(part.features().find(target)->suppressed());
-  EXPECT_FALSE(part.features().find(tool)->suppressed());
+  EXPECT_EQ(part.Model().Bodies().size(), 2u);
+  EXPECT_FALSE(part.Features().Find(target)->Suppressed());
+  EXPECT_FALSE(part.Features().Find(tool)->Suppressed());
 }
 
 TEST(BooleanFeature, XlRoundtripPersistsBooleanAndSuppress)
 {
   namespace fs = std::filesystem;
 
-  struct FactoryGuard
-{
-    FactoryGuard()
-{
-      boolean::set_boolean_evaluator_factory(
-          [] { return std::make_shared<FakeUnionEvaluator>(); });
-    }
-    ~FactoryGuard()
-    {
-        boolean::set_boolean_evaluator_factory({}); 
-    }
-  } factory_guard;
-
-  auto doc = Document::Create("bool_xl");
+  auto doc = Document::Create("bool_xl", MakeFakeUnionEvaluator());
   Part& part = doc->AddPart("Main");
 
   Body* a = part.AddBox(BoxSpec{.Min = {0, 0, 0}, .Max = {1, 1, 1}, .Name = "A"});
@@ -154,14 +147,14 @@ TEST(BooleanFeature, XlRoundtripPersistsBooleanAndSuppress)
       part.AddBox(BoxSpec{.Min = {0.5, 0, 0}, .Max = {1.5, 1, 1}, .Name = "B"});
   ASSERT_NE(a, nullptr);
   ASSERT_NE(b, nullptr);
-  const auto target_id = part.features().find_by_body(a->guid)->id();
-  const auto tool_id = part.features().find_by_body(b->guid)->id();
+  const auto targetId = part.Features().FindByBody(a->Guid)->Id();
+  const auto toolId = part.Features().FindByBody(b->Guid)->Id();
 
   Body* result =
-      part.add_boolean(boolean::BooleanOp::Subtract, target_id, tool_id, "Cut");
+      part.AddBoolean(boolean::BooleanOp::Subtract, targetId, toolId, "Cut");
   ASSERT_NE(result, nullptr);
-  const Guid result_guid = result->guid;
-  const auto bool_id = part.features().find_by_body(result_guid)->id();
+  const Guid resultGuid = result->Guid;
+  const auto boolId = part.Features().FindByBody(resultGuid)->Id();
 
   const fs::path path =
       fs::temp_directory_path() / "brep_test_boolean_feature_roundtrip.xl";
@@ -173,25 +166,25 @@ TEST(BooleanFeature, XlRoundtripPersistsBooleanAndSuppress)
 
   Part* p2 = loaded.document->MainPart();
   ASSERT_NE(p2, nullptr);
-  EXPECT_EQ(p2->model().bodies().size(), 1u);
-  EXPECT_NE(p2->find_body(result_guid), nullptr);
+  EXPECT_EQ(p2->Model().Bodies().size(), 1u);
+  EXPECT_NE(p2->FindBody(resultGuid), nullptr);
 
-  auto* target2 = p2->features().find(target_id);
-  auto* tool2 = p2->features().find(tool_id);
-  auto* bool2 = p2->features().find(bool_id);
+  auto* target2 = p2->Features().Find(targetId);
+  auto* tool2 = p2->Features().Find(toolId);
+  auto* bool2 = p2->Features().Find(boolId);
   ASSERT_NE(target2, nullptr);
   ASSERT_NE(tool2, nullptr);
   ASSERT_NE(bool2, nullptr);
-  EXPECT_TRUE(target2->suppressed());
-  EXPECT_TRUE(tool2->suppressed());
-  EXPECT_FALSE(bool2->suppressed());
-  EXPECT_EQ(bool2->type_name(), "Boolean");
-  EXPECT_EQ(bool2->body_guid(), result_guid);
+  EXPECT_TRUE(target2->Suppressed());
+  EXPECT_TRUE(tool2->Suppressed());
+  EXPECT_FALSE(bool2->Suppressed());
+  EXPECT_EQ(bool2->TypeName(), "Boolean");
+  EXPECT_EQ(bool2->BodyGuid(), resultGuid);
 
   const auto& bf = static_cast<const feat::BooleanFeature&>(*bool2);
-  EXPECT_EQ(bf.op(), boolean::BooleanOp::Subtract);
-  EXPECT_EQ(bf.target_feature_id(), target_id);
-  EXPECT_EQ(bf.tool_feature_id(), tool_id);
+  EXPECT_EQ(bf.Op(), boolean::BooleanOp::Subtract);
+  EXPECT_EQ(bf.TargetFeatureId(), targetId);
+  EXPECT_EQ(bf.ToolFeatureId(), toolId);
 
   std::error_code ec;
   fs::remove(path, ec);

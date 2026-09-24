@@ -1,5 +1,6 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include "brep/bool/Boolean.h"
 #include "brep/Validate.h"
@@ -149,7 +150,7 @@ TEST(BoxBoolean, SubtractNoOverlapKeepsTarget)
 TEST(BoxBoolean, RejectsNonCornerSphereBoxUnion)
 {
   Model model;
-  // Sphere center not at a corner and not contained â†’ Union soft-fails.
+  // Sphere center not at a corner and not contained â†?Union soft-fails.
   Body* box = MakeBox(model, BoxSpec{.Min = {0, 0, 0}, .Max = {2, 2, 2}});
   Body* sphere =
       MakeSphere(model, SphereSpec{.Center = {3, 1, 1}, .Radius = 0.5});

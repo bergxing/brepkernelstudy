@@ -4,6 +4,13 @@
 
 #include <QString>
 
+#include <memory>
+
+namespace brep::boolean
+{
+class IBooleanEvaluator;
+}
+
 namespace brep::viewer
 {
 
@@ -24,14 +31,17 @@ class DocumentSession
       return m_dirty; 
   }
 
-  void mark_dirty() noexcept
+  void MarkDirty() noexcept
   {
-      m_dirty = true; 
+      m_dirty = true;
   }
-  void mark_clean() noexcept
+  void MarkClean() noexcept
   {
-      m_dirty = false; 
+      m_dirty = false;
   }
+
+  void SetBooleanEvaluator(
+      std::shared_ptr<brep::boolean::IBooleanEvaluator> evaluator);
 
   /// New blank Document → Part (no geometry).
   void new_blank_document(ecs::World& world);
@@ -52,6 +62,7 @@ class DocumentSession
   QString m_title{QStringLiteral("Untitled")};
   QString m_path;
   bool m_dirty{false};
+  std::shared_ptr<brep::boolean::IBooleanEvaluator> m_booleanEvaluator;
 };
 
 }  // namespace brep::viewer

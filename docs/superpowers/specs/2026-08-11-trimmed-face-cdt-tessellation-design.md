@@ -34,6 +34,7 @@ B-Rep 本身约 7 面（6 平面 + 1 球面），不是「面数暴增」；坏�
 - 不引入第三方剖分库（earcut / poly2tri / Triangle 等）。
 - 不改布尔算法本身；不做 NURBS。
 - 圆柱：预留同一 CDT 管线接口，**实现可第二批**。
+- NURBS 裁剪面：见 [2026-08-24 NURBS 显示设计](./2026-08-24-nurbs-display-viewer-design.md) §5.3（Display-only，与布尔解耦）。
 - 不追求最优网格质量（Steiner 点 / 质量细化可后续加）。
 
 ### 已选方案

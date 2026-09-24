@@ -13,8 +13,11 @@ add_library(brep_feat ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/feat/Regenerator.cpp
   ${BREP_KERNEL_DIR}/src/feat/BoxFeature.cpp
   ${BREP_KERNEL_DIR}/src/feat/SphereFeature.cpp
+  ${BREP_KERNEL_DIR}/src/feat/BezierCurveFeature.cpp
   ${BREP_KERNEL_DIR}/src/feat/NurbsCurveFeature.cpp
+  ${BREP_KERNEL_DIR}/src/feat/PropertySheet.cpp
   ${BREP_KERNEL_DIR}/src/feat/BooleanFeature.cpp
+  ${BREP_KERNEL_DIR}/src/feat/CopiedBodyFeature.cpp
   ${BREP_KERNEL_DIR}/src/feat/FeatureHistory.cpp
   ${BREP_KERNEL_DIR}/src/feat/Context.cpp
   ${BREP_KERNEL_DIR}/src/feat/SketchFeature.cpp
@@ -24,7 +27,7 @@ add_library(brep_feat ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/ops/Extrude.cpp
 )
 brep_kernel_include_dirs(brep_feat)
-target_link_libraries(brep_feat PUBLIC brep_core)
+target_link_libraries(brep_feat PUBLIC brep_core brep_bool)
 set_target_properties(brep_feat PROPERTIES OUTPUT_NAME brep_feat)
 
 if(MSVC)

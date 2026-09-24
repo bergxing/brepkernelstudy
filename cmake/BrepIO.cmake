@@ -10,7 +10,7 @@ add_library(brep_io ${BREP_LIB_TYPE}
   ${BREP_KERNEL_DIR}/src/io/BksCache.cpp
 )
 brep_kernel_include_dirs(brep_io)
-target_link_libraries(brep_io PUBLIC brep_feat brep_asm)
+target_link_libraries(brep_io PUBLIC brep_feat brep_asm brep_mesh)
 set_target_properties(brep_io PROPERTIES OUTPUT_NAME brep_io)
 
 if(MSVC)

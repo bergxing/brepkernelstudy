@@ -1,8 +1,8 @@
 # 布尔通用 Pipeline 设计规格
 
 **日期**：2026-08-14  
-**状态**：草案（P0 骨架已落地）  
-**关联**：[ADR 0006](../../architecture/adr/0006-boolean-pipeline-architecture.md)、[2026-08-10 布尔设计](./2026-08-10-analytic-sphere-brep-boolean-design.md)
+**状态**：P0 骨架已落地；**特解层已由 [ADR 0008](../../architecture/adr/0008-boolean-general-pipeline-only.md) 废止** — 后续以 [2026-08-24 通用 Pipeline 规格](./2026-08-24-boolean-general-pipeline-only-design.md) 为准  
+**关联**：[ADR 0006](../../architecture/adr/0006-boolean-pipeline-architecture.md)、[ADR 0008](../../architecture/adr/0008-boolean-general-pipeline-only.md)、[2026-08-10 布尔设计](./2026-08-10-analytic-sphere-brep-boolean-design.md)
 
 ---
 
@@ -12,7 +12,7 @@
 |------|------|
 | **对称 CSG** | `A−B` 只由操作数顺序决定；Box−Sphere 与 Sphere−Box 同一 Pipeline |
 | **可扩展** | 新曲面 → 注册 `Intersector`；新体类型 → 无需新 `evaluate_*_*` |
-| **特解可选** | AnalyticPair 快路径可插拔，失败或未覆盖时回退 Pipeline |
+| ~~**特解可选**~~ | **已废止（ADR 0008）** — 仅通用 Pipeline |
 | **可观测** | 每 Stage 软失败带 `PipelineStage` + 诊断字符串 |
 | **未来 Split** | Imprint 阶段可复用于「体被曲面裁剪」 |
 
@@ -91,6 +91,8 @@ class IPipelineStage {
 ---
 
 ## 4. AnalyticFastPath
+
+> **已废止（2026-08-24，ADR 0008）：** 以下特解层将在 Pipeline M4 达标后删除。新工作见 [2026-08-24 通用 Pipeline 规格](./2026-08-24-boolean-general-pipeline-only-design.md)。
 
 ```cpp
 class IAnalyticFastPath {

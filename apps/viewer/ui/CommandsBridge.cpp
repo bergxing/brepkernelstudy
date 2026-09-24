@@ -15,13 +15,24 @@ namespace brep::viewer
 commands::CommandContext MainWindow::make_command_context()
 {
   commands::CommandContext ctx;
-  ctx.World = &m_world;
-  ctx.Session = &m_document;
-  ctx.History = &m_commandManager.history();
+  m_commandContextFactory.PopulateBase(ctx);
+
+  auto* vw = active_vulkan_window();
+  if (vw != nullptr)
+  {
+    if (vw->scene_service() != nullptr)
+    {
+      ctx.Scene = vw->scene_service();
+    }
+    if (vw->scene_factory() != nullptr)
+    {
+      ctx.SceneFactory = vw->scene_factory();
+    }
+  }
+
   ctx.ParentWidget = this;
   ctx.WoodAlbedoPath = wood_albedo_path().toStdString();
 
-  auto* vw = active_vulkan_window();
   auto* container = active_viewport_container();
   ctx.Viewport = vw;
   ctx.ViewCamera = vw ? &vw->camera() : nullptr;
@@ -45,6 +56,7 @@ commands::CommandContext MainWindow::make_command_context()
   };
   ctx.RequestRedraw = [this] { request_all_views_update(); };
   ctx.AfterDocumentReset = [this] {
+    rebind_document_scope();
     rebind_view_cube_camera();
     refresh_window_title();
     update_property_panel(entt::null);
@@ -53,6 +65,11 @@ commands::CommandContext MainWindow::make_command_context()
   ctx.RefreshUi = [this] {
     refresh_window_title();
     refresh_edit_actions();
+    if (m_world.registry().ctx().contains<ecs::RenderCache>())
+    {
+      m_world.registry().ctx().get<ecs::RenderCache>().force_rebuild = true;
+    }
+    request_all_views_update();
   };
   ctx.SetPreviewEdges = [this](EdgeMesh edges)
   {
@@ -106,7 +123,7 @@ void MainWindow::sync_tool_ui()
   }
   if (!tool || allow_sel)
   {
-    m_snapSession.active_snap.reset();
+    m_snapSession.ActiveSnap.reset();
     for (auto* window : m_viewWindows)
     {
       if (window) window->clear_snap_overlay();
@@ -164,7 +181,7 @@ void MainWindow::on_run_command()
 
 void MainWindow::on_command_palette()
 {
-  commands::CommandPalette palette(m_commands, this);
+  commands::CommandPalette palette(m_commandRegistry, this);
   if (palette.exec() != QDialog::Accepted) return;
   const QString id = palette.selected_command_id();
   if (!id.isEmpty()) run_command(id.toStdString());

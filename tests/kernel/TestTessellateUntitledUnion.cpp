@@ -1,6 +1,7 @@
 #include "api/Core.h"
 #include "api/Mesh.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include "brep/bool/Boolean.h"
 #include "brep/Validate.h"
@@ -77,7 +78,7 @@ TEST(TessellateUntitledUnion, CornerSphereBoxLooksTrimmed)
       << "box top away from corner should be tessellated";
 
   // Inward octant on the sphere (sx=-1, sy=-1, sz=+1) is interior to the
-  // union â€” must not appear as exterior spherical mesh.
+  // union â€?must not appear as exterior spherical mesh.
   const Point3d center{-1.57147, 0.826297, 4.59474};
   const double r = 0.413149;
   const Vector3d inward_dir = Vector3d{-1, -1, 1}.normalized();

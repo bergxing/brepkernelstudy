@@ -51,8 +51,9 @@ struct ValidationReport
   }
 };
 
-/// Checks coedge cycle closure, partner involution, manifold degree-2 edges,
-/// and vertex–curve endpoint proximity within tolerance.
+/// Checks body integrity. Wire: non-empty WireEdges with Curve/V0/V1.
+/// Solid/Sheet: coedge cycle closure, partner involution, manifold degree-2
+/// edges, and vertex–curve endpoint proximity within tolerance.
 ValidationReport ValidateBody(const Body& body);
 
 }  // namespace brep

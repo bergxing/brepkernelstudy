@@ -5,6 +5,7 @@
 
 
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 
 #include "brep/io/XlDocument.h"
@@ -299,7 +300,7 @@ TEST(TessellateClosedSphere, SeamOuterGridIsWatertight)
   Model model;
 
 
-  const Point3d Center{-1.57147, 0.826297, 4.59474};
+  const Point3d center{-1.57147, 0.826297, 4.59474};
 
 
   const double radius = 0.413149;
@@ -366,6 +367,129 @@ TEST(TessellateClosedSphere, UntitledXlGuidIsWatertightIfPresent)
 
 
   Body* body = part->FindBody(target);
+
+
+  if (!body)
+
+
+  {
+
+
+    GTEST_SKIP() << "target sphere guid not in xl";
+
+
+  }
+
+
+  double radius = 0.0;
+
+
+  Point3d center;
+
+
+  bool have_center = false;
+
+
+  for (Shell* shell : body->Shells)
+
+
+  {
+
+
+    for (Face* face : shell->Faces)
+
+
+    {
+
+
+      if (face && face->Surface &&
+
+
+          face->Surface->Kind() == SurfaceKind::Sphere)
+
+
+          {
+
+
+        if (const auto* s = dynamic_cast<const SphereSurface*>(face->Surface))
+
+
+        {
+
+
+          radius = s->Radius();
+
+
+          center = s->Center();
+
+
+          have_center = true;
+
+
+        }
+
+
+        EXPECT_TRUE(is_analytic_sphere_seam_outer(*face));
+
+
+      }
+
+
+    }
+
+
+  }
+
+
+  ASSERT_TRUE(have_center);
+
+
+  ASSERT_GT(radius, 0.0);
+
+
+  const TriangleMesh mesh = TessellateBody(*body);
+
+
+  expect_closed_sphere_watertight(mesh, center, radius, 528u, 266u);
+
+
+}
+
+
+TEST(TessellateClosedSphere, UntitledXl58577b60IsWatertightIfPresent)
+
+
+{
+
+
+  const char* xl_path = "C:/Users/xingbl/Desktop/untitled.xl";
+
+
+  const auto loaded = io::LoadXl(xl_path);
+
+
+  if (!loaded.Ok())
+
+
+  {
+
+
+    GTEST_SKIP() << "untitled.xl not available: " << loaded.Error;
+
+
+  }
+
+
+  Part* part = loaded.document->MainPart();
+
+
+  ASSERT_NE(part, nullptr);
+
+
+  Body* body = part->FindBody(
+
+
+      Guid::FromString("58577b60-15ca-4427-bad8-19638aba3376"));
 
 
   if (!body)

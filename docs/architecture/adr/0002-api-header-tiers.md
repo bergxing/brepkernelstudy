@@ -2,6 +2,7 @@
 
 **状态**：已接受  
 **日期**：2026-08-09  
+**修订**：2026-08-26 — 增补 `api/Base.h`、`api/Boolean.h`；`Modeling.h` 不再 include `brep/bool/Boolean.h` 伞头。见 [layering.md](../layering.md) §6 与 [api-module-owners.md](../api-module-owners.md)。
 
 ## 背景
 
@@ -9,10 +10,12 @@ Phase 3 后 Viewer 已不再使用 `brep/Brep.h`，但仍直接 include 大量 `
 
 ## 决策
 
-1. 在 `kernel/include/api/` 提供四个聚合头：
-   - `api/Core.h` — 几何 / 拓扑 / 模型 / 身份 / 材质 / 日志
+1. 在 `kernel/include/api/` 提供分级聚合头：
+   - `api/Base.h` — Guid / Log / Math
+   - `api/Core.h` — 含 Base + 几何 / 拓扑 / 模型 / 材质
    - `api/Mesh.h` — 三角化与边提取
-   - `api/Modeling.h` — Document/Part、builder、feat、param、sketch
+   - `api/Boolean.h` — `IBooleanEvaluator` 与工厂（不含 Pipeline 内部类型）
+   - `api/Modeling.h` — Document/Part、feat、param、sketch（经 Boolean.h 导出 evaluator）
    - `api/Persistence.h` — `.xl` / BKS cache IO
 2. `apps/viewer/**`（含 Adapter 与 viewer tests）**只允许** `#include "api/..."`。
 3. `brep/Brep.h` 保留为兼容 umbrella，并带编译期废弃提示 + `[[deprecated]]` 哨兵。

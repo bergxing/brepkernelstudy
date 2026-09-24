@@ -28,7 +28,7 @@ constexpr std::uint32_t kKernelKinds =
 
 void clear_snap_feedback(CommandContext& ctx)
 {
-  if (ctx.SnapSessionRef) ctx.SnapSessionRef->active_snap.reset();
+  if (ctx.SnapSessionRef) ctx.SnapSessionRef->ActiveSnap.reset();
   if (ctx.ClearSnapOverlay) ctx.ClearSnapOverlay();
   if (ctx.RefreshCursorTip) ctx.RefreshCursorTip();
 }
@@ -45,19 +45,19 @@ std::uint32_t effective_kernel_kinds(
   return settings.kinds & kKernelKinds;
 }
 
-PickResult finish_resolve(CommandContext& ctx, PickResult result)
+PickResult FinishResolve(CommandContext& ctx, PickResult result)
 {
-  const bool show_snap = result.snapped && result.kind != SnapKind::Workplane;
+  const bool show_snap = result.Snapped && result.Kind != SnapKind::Workplane;
   if (!show_snap)
   {
     clear_snap_feedback(ctx);
     return result;
   }
 
-  if (ctx.SnapSessionRef) ctx.SnapSessionRef->active_snap = result.kind;
+  if (ctx.SnapSessionRef) ctx.SnapSessionRef->ActiveSnap = result.Kind;
   if (ctx.SetSnapOverlay)
   {
-    ctx.SetSnapOverlay(MakeSnapMarker(result.kind, result.point));
+    ctx.SetSnapOverlay(MakeSnapMarker(result.Kind, result.Point));
   }
   if (ctx.RefreshCursorTip) ctx.RefreshCursorTip();
   return result;
@@ -65,7 +65,7 @@ PickResult finish_resolve(CommandContext& ctx, PickResult result)
 
 }  // namespace
 
-int snap_kind_priority(SnapKind kind) noexcept
+int SnapKindPriority(SnapKind kind) noexcept
 {
   switch (kind)
 {
@@ -91,7 +91,7 @@ int snap_kind_priority(SnapKind kind) noexcept
   return 8;
 }
 
-std::optional<SnapCandidate> make_grid_candidate(
+std::optional<SnapCandidate> MakeGridCandidate(
     const Point3d& workplane_point, double grid_spacing)
 {
   if (!std::isfinite(grid_spacing) || grid_spacing <= 0.0)
@@ -105,7 +105,7 @@ std::optional<SnapCandidate> make_grid_candidate(
   return SnapCandidate{.Kind = SnapKind::Grid, .Point = point};
 }
 
-std::optional<SnapCandidate> pick_best_candidate(
+std::optional<SnapCandidate> PickBestCandidate(
     const std::vector<SnapCandidate>& candidates, const Camera& camera,
     int viewport_w, int viewport_h, float sx, float sy, int aperture_px,
     std::optional<SnapKind> override_kind)
@@ -117,7 +117,7 @@ std::optional<SnapCandidate> pick_best_candidate(
 
   Point3d ray_origin;
   Vector3d ray_direction;
-  if (!screen_to_ray(camera, viewport_w, viewport_h, sx, sy, ray_origin,
+  if (!ScreenToRay(camera, viewport_w, viewport_h, sx, sy, ray_origin,
                      ray_direction))
   {
     return std::nullopt;
@@ -137,7 +137,7 @@ std::optional<SnapCandidate> pick_best_candidate(
 
     float candidate_sx = 0.0f;
     float candidate_sy = 0.0f;
-    if (!world_to_screen(camera, viewport_w, viewport_h, candidate.Point,
+    if (!WorldToScreen(camera, viewport_w, viewport_h, candidate.Point,
                          candidate_sx, candidate_sy))
     {
       continue;
@@ -152,7 +152,7 @@ std::optional<SnapCandidate> pick_best_candidate(
         (candidate.Point - ray_origin).dot(ray_direction);
     if (depth < 0.0) continue;
     const auto score = std::tuple{distance_squared,
-                                  snap_kind_priority(candidate.Kind), depth};
+                                  SnapKindPriority(candidate.Kind), depth};
     if (score < best_score)
     {
       best = &candidate;
@@ -164,24 +164,24 @@ std::optional<SnapCandidate> pick_best_candidate(
   return *best;
 }
 
-PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy)
+PickResult AccuSnap::Resolve(CommandContext& ctx, float sx, float sy)
 {
   const Camera* camera =
       ctx.ViewCamera ? ctx.ViewCamera
-                      : (ctx.World ? ctx.World->main_camera() : nullptr);
-  if (!camera) return finish_resolve(ctx, {});
+                      : (ctx.World ? ctx.World->MainCamera() : nullptr);
+  if (!camera) return FinishResolve(ctx, {});
 
   Point3d ray_origin;
   Vector3d ray_direction;
-  if (!screen_to_ray(*camera, ctx.ViewportWidth, ctx.ViewportHeight, sx, sy,
+  if (!ScreenToRay(*camera, ctx.ViewportWidth, ctx.ViewportHeight, sx, sy,
                      ray_origin, ray_direction))
   {
-    return finish_resolve(ctx, {});
+    return FinishResolve(ctx, {});
   }
 
   Point3d workplane_point;
   const bool have_workplane =
-      intersect_plane_y(ray_origin, ray_direction, 0.0, workplane_point);
+      IntersectPlaneY(ray_origin, ray_direction, 0.0, workplane_point);
 
   const SnapSettings* settings = ctx.SnapSettingsRef;
   SnapSession* session = ctx.SnapSessionRef;
@@ -189,9 +189,9 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy)
       session ? session->hold_override : std::nullopt;
 
   std::vector<SnapCandidate> candidates;
-  if (settings && settings->enabled && ctx.World && ctx.World->document())
+  if (settings && settings->enabled && ctx.World && ctx.World->Document())
   {
-    Part* part = ctx.World->document()->MainPart();
+    Part* part = ctx.World->Document()->MainPart();
     if (part)
     {
       std::vector<Body*> bodies;
@@ -204,7 +204,7 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy)
       SnapQuery query;
       query.Kinds = effective_kernel_kinds(*settings, override_kind);
       if (have_workplane) query.NearPoint = workplane_point;
-      if (session) query.ReferencePoint = session->last_point;
+      if (session) query.ReferencePoint = session->LastPoint;
 
       if (query.Kinds != 0 && !bodies.empty())
       {
@@ -218,7 +218,7 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy)
                    override_kind == std::optional{SnapKind::Grid});
   if (settings && settings->enabled && grid_requested && have_workplane)
   {
-    if (auto grid = make_grid_candidate(workplane_point,
+    if (auto grid = MakeGridCandidate(workplane_point,
                                         settings->grid_spacing))
     {
       candidates.push_back(std::move(*grid));
@@ -227,28 +227,51 @@ PickResult AccuSnap::resolve(CommandContext& ctx, float sx, float sy)
 
   if (settings && settings->enabled)
   {
-    if (auto best = pick_best_candidate(
+    if (auto best = PickBestCandidate(
             candidates, *camera, ctx.ViewportWidth, ctx.ViewportHeight, sx, sy,
             std::max(0, settings->aperture_px), override_kind))
             {
-      return finish_resolve(ctx, {.point = best->Point,
-                                  .kind = best->Kind,
-                                  .snapped = true,
-                                  .candidate = std::move(best)});
+      return FinishResolve(ctx, {.Point = best->Point,
+                                  .Kind = best->Kind,
+                                  .Snapped = true,
+                                   .Candidate = std::move(best)});
     }
   }
 
   if (have_workplane)
   {
-    return finish_resolve(ctx, {.point = workplane_point,
-                                .kind = SnapKind::Workplane,
-                                .snapped = false,
-                                .candidate = std::nullopt});
+    return FinishResolve(ctx, {.Point = workplane_point,
+                                .Kind = SnapKind::Workplane,
+                                .Snapped = false,
+                                 .Candidate = std::nullopt});
   }
-  return finish_resolve(ctx, {});
+
+  // Front/side views: ray is parallel to y=0. Fall back to a view-facing
+  // plane through the last pick (or camera target) so empty-screen clicks
+  // still yield a 3D point (Bezier / free pick).
+  Point3d planePoint = camera->target;
+  if (session && session->LastPoint.has_value())
+  {
+    planePoint = *session->LastPoint;
+  }
+  Vector3d planeNormal = (camera->target - camera->eye()).normalized();
+  if (planeNormal.norm() < 1e-9)
+  {
+    planeNormal = Vector3d{0.0, 0.0, 1.0};
+  }
+  Point3d screenPoint;
+  if (IntersectPlane(ray_origin, ray_direction, planePoint, planeNormal,
+                     screenPoint))
+  {
+    return FinishResolve(ctx, {.Point = screenPoint,
+                                .Kind = SnapKind::Workplane,
+                                .Snapped = false,
+                                 .Candidate = std::nullopt});
+  }
+  return FinishResolve(ctx, {});
 }
 
-void AccuSnap::clear_feedback(CommandContext& ctx)
+void AccuSnap::ClearFeedback(CommandContext& ctx)
 {
   clear_snap_feedback(ctx);
 }

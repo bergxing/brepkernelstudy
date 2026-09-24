@@ -45,6 +45,7 @@ description: >-
 ```
 - [ ] 头文件自包含；IWYU；#pragma once
 - [ ] 类/函数 PascalCase；变量/参数 camelCase
+- [ ] ITool 多步状态用嵌套 `enum class Step`，禁止 `int m_step`
 - [ ] **类成员 `m_` + camelCase**（勿与 struct 字段混淆）
 - [ ] struct / DTO 成员 PascalCase
 - [ ] explicit；override/final

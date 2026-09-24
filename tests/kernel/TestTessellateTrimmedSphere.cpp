@@ -1,6 +1,7 @@
 #include "api/Core.h"
 #include "api/Mesh.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include "brep/bool/Boolean.h"
 #include "brep/Geometry.h"
@@ -45,7 +46,7 @@ TEST(TessellateTrimmedSphere, SevenEighthsOmitsDeletedOctant)
   const TriangleMesh mesh = tessellate_body(*result.body);
   ASSERT_FALSE(mesh.indices.empty());
   EXPECT_LT(mesh.vertices.size(), 300u)
-      << "trimmed â…ž sphere should be lighter than a full default sphere";
+      << "trimmed â…?sphere should be lighter than a full default sphere";
 
   // Point on the unit sphere inside the subtracted box (removed spherical cap).
   const Vector3d deleted_dir =

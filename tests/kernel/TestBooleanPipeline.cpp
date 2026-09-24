@@ -2,6 +2,7 @@
 
 
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 
 #include "brep/bool/Boolean.h"
@@ -13,10 +14,10 @@
 #include "brep/bool/FaceSelector.h"
 
 
-#include "brep/bool/FastPath.h"
-
-
 #include "brep/bool/Pipeline.h"
+
+
+#include "brep/Validate.h"
 
 
 #include <gtest/gtest.h>
@@ -76,55 +77,6 @@ TEST(BooleanPipeline, DefaultStageOrder)
 }
 
 
-TEST(BooleanPipeline, StopsAtImprintForBoxSphere)
-
-
-{
-
-
-  Model model;
-
-
-  Body* box = MakeBox(
-
-
-      model, BoxSpec{.Min = {0, 0, 0}, .Max = {2, 2, 2}, .Name = "B"});
-
-
-  Body* sphere = MakeSphere(
-
-
-      model, SphereSpec{.Center = {1, 1, 1}, .Radius = 0.75, .Name = "S"});
-
-
-  ASSERT_NE(box, nullptr);
-
-
-  ASSERT_NE(sphere, nullptr);
-
-
-  auto pipeline = boolean::MakeDefaultBooleanPipeline();
-
-
-  const auto result = pipeline->Evaluate(boolean::BooleanOp::Subtract, model,
-
-
-                                         *box, *sphere, {});
-
-
-  EXPECT_FALSE(result.Ok());
-
-
-  EXPECT_EQ(result.Mode, boolean::BooleanEvalMode::General);
-
-
-  EXPECT_NE(result.Diagnostics.find("Imprint"), std::string::npos)
-
-
-      << result.Diagnostics;
-
-
-}
 
 
 TEST(FaceSelector, SubtractKeepsAOutAndBIn)
@@ -181,7 +133,7 @@ TEST(FaceSelector, SubtractKeepsAOutAndBIn)
 }
 
 
-TEST(CompositeEvaluator, BoxBoxUsesAnalyticFastPath)
+TEST(CompositeEvaluator, BoxBoxUsesGeneralPipeline)
 
 
 {
@@ -220,10 +172,13 @@ TEST(CompositeEvaluator, BoxBoxUsesAnalyticFastPath)
   EXPECT_TRUE(result.Ok()) << result.Diagnostics;
 
 
+  EXPECT_EQ(result.Mode, boolean::BooleanEvalMode::General);
+
+
 }
 
 
-TEST(CompositeEvaluator, BoxMinusSphereFallsThroughToPipeline)
+TEST(BooleanPipeline, BoxBoxSixStageGeneralPipeline)
 
 
 {
@@ -232,55 +187,57 @@ TEST(CompositeEvaluator, BoxMinusSphereFallsThroughToPipeline)
   Model model;
 
 
-  Body* box = MakeBox(
+  Body* a = MakeBox(
 
 
-      model, BoxSpec{.Min = {0, 0, 0}, .Max = {2, 2, 2}, .Name = "B"});
+      model, BoxSpec{.Min = {0, 0, 0}, .Max = {2, 1, 1}, .Name = "A"});
 
 
-  Body* sphere = MakeSphere(
+  Body* b = MakeBox(
 
 
-      model, SphereSpec{.Center = {1, 1, 1}, .Radius = 0.75, .Name = "S"});
+      model, BoxSpec{.Min = {1, 0, 0}, .Max = {3, 1, 1}, .Name = "B"});
 
 
-  ASSERT_NE(box, nullptr);
+  ASSERT_NE(a, nullptr);
 
 
-  ASSERT_NE(sphere, nullptr);
+  ASSERT_NE(b, nullptr);
 
 
-  auto eval = boolean::MakeDefaultBooleanEvaluator();
+  auto pipeline = boolean::MakeDefaultBooleanPipeline();
+
+
+  boolean::BooleanContext ctx;
 
 
   const auto result =
 
 
-      eval->Evaluate(boolean::BooleanOp::Subtract, model, *box, *sphere, {});
+      pipeline->Evaluate(boolean::BooleanOp::Union, model, *a, *b, ctx);
 
 
-  EXPECT_FALSE(result.Ok());
+  EXPECT_TRUE(result.Ok()) << result.Diagnostics;
 
 
-  EXPECT_NE(result.Diagnostics.find("Imprint"), std::string::npos)
+  EXPECT_EQ(result.Mode, boolean::BooleanEvalMode::General);
 
 
-      << result.Diagnostics;
+  ASSERT_NE(result.OutputBody, nullptr);
+
+
+  EXPECT_TRUE(ValidateBody(*result.OutputBody).Ok());
 
 
 }
 
 
-TEST(FastPathRegistry, SphereBoxSubtractOnlyWhenSphereIsA)
+
+
+TEST(ImprintEngine, SphereBoxSubtractUsesCurvedImprint)
 
 
 {
-
-
-  boolean::AnalyticFastPathRegistry registry =
-
-
-      boolean::MakeDefaultFastPathRegistry();
 
 
   Model model;
@@ -298,43 +255,27 @@ TEST(FastPathRegistry, SphereBoxSubtractOnlyWhenSphereIsA)
   ASSERT_NE(sphere, nullptr);
 
 
-  const boolean::BooleanContext ctx;
+  auto eval = boolean::MakeDefaultBooleanEvaluator();
 
 
-  const boolean::BooleanOp sub = boolean::BooleanOp::Subtract;
+  const auto sphereMinusBox =
+      eval->Evaluate(boolean::BooleanOp::Subtract, model, *sphere, *box, {});
 
 
-  bool sphere_a_handles = false;
+  ASSERT_TRUE(sphereMinusBox.Ok()) << sphereMinusBox.Diagnostics;
+  ASSERT_NE(sphereMinusBox.OutputBody, nullptr);
+  EXPECT_EQ(sphereMinusBox.Mode, boolean::BooleanEvalMode::General);
+  EXPECT_TRUE(ValidateBody(*sphereMinusBox.OutputBody).Ok());
 
 
-  bool box_a_handles = false;
+  const auto boxMinusSphere =
+      eval->Evaluate(boolean::BooleanOp::Subtract, model, *box, *sphere, {});
 
 
-  for (const auto& path : registry.Paths())
-
-
-  {
-
-
-    if (path->Name() != "SphereBox") continue;
-
-
-    sphere_a_handles = path->CanHandle(sub, *sphere, *box, ctx);
-
-
-    box_a_handles = path->CanHandle(sub, *box, *sphere, ctx);
-
-
-    break;
-
-
-  }
-
-
-  EXPECT_TRUE(sphere_a_handles);
-
-
-  EXPECT_FALSE(box_a_handles);
+  ASSERT_TRUE(boxMinusSphere.Ok()) << boxMinusSphere.Diagnostics;
+  ASSERT_NE(boxMinusSphere.OutputBody, nullptr);
+  EXPECT_EQ(boxMinusSphere.Mode, boolean::BooleanEvalMode::General);
+  EXPECT_TRUE(ValidateBody(*boxMinusSphere.OutputBody).Ok());
 
 
 }

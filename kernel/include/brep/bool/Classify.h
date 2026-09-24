@@ -1,7 +1,7 @@
 #pragma once
 
 #include "brep/bool/PlanarRecognize.h"
-#include "brep/Builder.h"
+#include "brep/feat/PrimitiveSpecs.h"
 #include "brep/Math.h"
 
 namespace brep::boolean

@@ -9,27 +9,35 @@ namespace brep::viewer::commands
 {
 
 /// Screen pixel → world ray (Qt y down; matches Camera Vulkan projection).
-bool screen_to_ray(const Camera& cam, int viewport_w, int viewport_h, float sx,
-                   float sy, Point3d& out_origin, Vector3d& out_dir);
+bool ScreenToRay(const Camera& cam, int viewportW, int viewportH, float sx,
+                 float sy, Point3d& outOrigin, Vector3d& outDir);
 
-/// World point → screen pixel (same convention as screen_to_ray).
+/// World point → screen pixel (same convention as ScreenToRay).
 /// Returns false when behind the camera / not projectable.
-bool world_to_screen(const Camera& cam, int viewport_w, int viewport_h,
-                     const Point3d& world, float& out_sx, float& out_sy);
+bool WorldToScreen(const Camera& cam, int viewportW, int viewportH,
+                   const Point3d& world, float& outSx, float& outSy);
 
-/// Intersect ray with plane y = plane_y. Returns false if parallel / behind.
-bool intersect_plane_y(const Point3d& origin, const Vector3d& dir, double plane_y,
-                       Point3d& out_hit);
+/// Intersect ray with plane y = planeY. Returns false if parallel / behind.
+bool IntersectPlaneY(const Point3d& origin, const Vector3d& dir, double planeY,
+                     Point3d& outHit);
 
 /// Intersect ray with a general plane. Returns false if parallel / behind.
-bool intersect_plane(const Point3d& origin, const Vector3d& dir,
-                     const Point3d& plane_point, const Vector3d& plane_normal,
-                     Point3d& out_hit);
+bool IntersectPlane(const Point3d& origin, const Vector3d& dir,
+                    const Point3d& planePoint, const Vector3d& planeNormal,
+                    Point3d& outHit);
 
-/// Closest ray/triangle hit along +dir. `origin_offset` is added to each vertex
+/// Closest ray/triangle hit along +dir. `originOffset` is added to each vertex
 /// (entity Transform.position). Returns false if no hit with t >= 0.
-bool intersect_mesh(const Point3d& origin, const Vector3d& dir,
-                    const TriangleMesh& mesh, const Point3d& origin_offset,
-                    double& out_t);
+bool IntersectMesh(const Point3d& origin, const Vector3d& dir,
+                   const TriangleMesh& mesh, const Point3d& originOffset,
+                   double& outT);
+
+/// Screen-space edge pick for wires (empty triangle mesh). Hits when the
+/// cursor is within `aperturePx` of a segment; `outT` is the ray parameter
+/// to the closest 3D point (same convention as IntersectMesh).
+bool IntersectEdges(const Camera& cam, int viewportW, int viewportH, float sx,
+                    float sy, int aperturePx, const Point3d& rayOrigin,
+                    const Vector3d& rayDir, const EdgeMesh& mesh,
+                    const Point3d& originOffset, double& outT);
 
 }  // namespace brep::viewer::commands

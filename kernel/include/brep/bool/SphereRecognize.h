@@ -1,7 +1,7 @@
 #pragma once
 
 #include "brep/bool/Context.h"
-#include "brep/Builder.h"
+#include "brep/feat/PrimitiveSpecs.h"
 #include "brep/Topology.h"
 
 #include <optional>

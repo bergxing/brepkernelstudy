@@ -61,8 +61,9 @@
 |------|------|--------|
 | FR-1.1 | 提供 `build_application_container(AppConfig)` 构建应用级 Container | P0 |
 | FR-1.2 | 提供 `build_test_container(overrides)` 供测试 override | P0 |
-| FR-1.3 | Container 在 Viewer 进程内 Singleton；Document 不 Singleton | P0 |
+| FR-1.3 | Container 存入 `ApplicationContext`（进程级）；Document / `ISceneService` 不 Singleton | P0 |
 | FR-1.4 | 启动日志输出已注册模块列表（debug 级别） | P2 |
+| FR-1.5 | 提供 `ApplicationContext`（`container` + `AppConfig`）；`run_viewer()` 构造并传递给 UI 层 | P0 |
 
 ### FR-2 模块化注册（IModule）
 
@@ -90,8 +91,9 @@
 | FR-4.1 | `ICommand` 实现由 ViewerRuntimeModule 注册 | P2 |
 | FR-4.2 | `CommandManager` / `CommandRegistry` 由 Container resolve | P2 |
 | FR-4.3 | `CommandContext` 通过工厂注入所需服务（Scene、Document、History） | P2 |
-| FR-4.4 | `ISceneService` 抽象 `SceneAdapter` | P3 |
-| FR-4.5 | `IDocumentService` 抽象 `DocumentService` | P3 |
+| FR-4.4 | `ISceneService` 抽象 `SceneAdapter`；**per-Document** factory（传入 `Document*`），禁止 Application Singleton | P3 |
+| FR-4.5 | `IDocumentService` 抽象 `DocumentService`；Application Singleton | P3 |
+| FR-4.6 | Phase 0：`viewer_bootstrap`（STATIC）位于 `apps/viewer/bootstrap/`；**不**新增 `brep_platform` | P0 |
 
 ### FR-5 测试与 Fake
 
@@ -141,24 +143,20 @@
 ## 7. 系统上下文
 
 ```text
-                    ┌─────────────────────────────────┐
-                    │  brep_viewer (Composition Root) │
-                    │  Hypodermic::Container           │
-                    └───────────────┬─────────────────┘
-                                    │
-         ┌──────────────────────────┼──────────────────────────┐
-         ▼                          ▼                          ▼
-  ViewerUiModule            ViewerRuntimeModule          ViewerAdapterModule
-  MainWindow deps           CommandManager               ISceneService
-                            ICommand[]                   IDocumentService
-         │                          │                          │
-         └──────────────────────────┼──────────────────────────┘
-                                    ▼
-                          KernelServicesModule
-                          IBooleanEvaluator (→ brep_core 工厂)
-                                    │
-                                    ▼
-                          libbrep_core / libbrep_feat (无 Hypodermic)
+apps/viewer/main.cpp → run_viewer()
+  └─ ApplicationContext
+       ├─ shared_ptr<Hypodermic::Container>   // build_application_container
+       └─ AppConfig
+            │
+            ├─ KernelServicesModule → IBooleanEvaluator
+            ├─ ViewerAdapterModule → ISceneService (per-Document), IDocumentService
+            ├─ ViewerRuntimeModule → CommandManager, ICommand[]
+            └─ ViewerUiModule → MainWindow 依赖
+            │
+            ▼
+     libbrep_core / libbrep_feat (无 Hypodermic)
+
+CMake: viewer_bootstrap (STATIC) ← Hypodermic；viewer_ui 链接 viewer_bootstrap
 ```
 
 ---
@@ -176,8 +174,8 @@
 | 接口 | 实现 |
 |------|------|
 | `ICommand` | 各 builtin command |
-| `ISceneService` | `SceneAdapter` |
-| `IDocumentService` | `DocumentService` |
+| `ISceneService` | `SceneAdapter` | **Document-scoped factory**（1:1 with `Document`） |
+| `IDocumentService` | `DocumentService` | Application Singleton |
 
 ### 未来
 
@@ -220,8 +218,9 @@
 
 ### Phase 3 完成
 
-- [ ] Save/Open 命令使用 `IDocumentService`  
-- [ ] `viewer_adapter_tests` 可注入 Fake DocumentService  
+- [ ] Save/Open 命令使用 `IDocumentService`（Application Singleton）
+- [ ] Scene 命令使用 `ISceneService`（per-Document factory，非 Singleton）
+- [ ] `viewer_adapter_tests` 可注入 Fake DocumentService
 
 ---
 
@@ -237,12 +236,15 @@
 
 ---
 
-## 12. 已确认决策（2026-08-20）
+## 12. 已确认决策
 
-| # | 决策 |
-|---|------|
-| D1 | Hypodermic 以 **Git submodule** 引入，路径 `third_party/hypodermic` |
-| D2 | `Part` 采用 **构造注入** `IBooleanEvaluator`，不采用 setter 过渡 |
+| # | 决策 | 日期 |
+|---|------|------|
+| D1 | Hypodermic 以 **Git submodule** 引入，路径 `third_party/hypodermic` | 2026-08-20 |
+| D2 | `Part` 采用 **构造注入** `IBooleanEvaluator`，不采用 setter 过渡 | 2026-08-20 |
+| D3 | **`ISceneService` per-Document**：与 `Document` 1:1；Phase 3 factory 传入 `Document*`；禁止 Application Singleton | 2026-08-24 |
+| D4 | Container 由独立 **`ApplicationContext`** 持有（进程级）；不存入 `ViewerApp` / `MainWindow` | 2026-08-24 |
+| D5 | Phase 0 **不**建 `brep_platform`；`apps/viewer/bootstrap/` → **`viewer_bootstrap`（STATIC）**，由 `viewer_ui` 链接 | 2026-08-24 |
 
 ---
 

@@ -1,6 +1,7 @@
 #include "api/Core.h"
 #include "api/Mesh.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include <gtest/gtest.h>
 

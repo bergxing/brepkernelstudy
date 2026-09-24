@@ -25,7 +25,7 @@ bool KeepA(BooleanOp op, FaceRegion region)
   switch (op)
   {
   case BooleanOp::Union:
-    return region == FaceRegion::Out || region == FaceRegion::On;
+    return region == FaceRegion::Out;
   case BooleanOp::Subtract:
     return region == FaceRegion::Out;
   case BooleanOp::Intersect:

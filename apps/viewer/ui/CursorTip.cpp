@@ -80,11 +80,13 @@ QString MainWindow::resolve_cursor_tip_text(VulkanWindow* window, float x,
   if (m_commandManager.has_active_tool())
   {
     QString prompt = m_commandManager.active_prompt();
+    prompt.remove(QStringLiteral(" (ESC cancel)"));
     prompt.remove(QStringLiteral(" (ESC 取消)"));
-    if (m_snapSession.active_snap)
+    prompt.remove(QStringLiteral("（ESC 取消）"));
+    if (m_snapSession.ActiveSnap)
     {
       const QString snap_name =
-          commands::SnapKindName(*m_snapSession.active_snap);
+          commands::SnapKindName(*m_snapSession.ActiveSnap);
       if (!snap_name.isEmpty())
       {
         if (!prompt.isEmpty()) prompt += QLatin1Char('\n');

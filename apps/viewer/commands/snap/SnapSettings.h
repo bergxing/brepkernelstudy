@@ -26,7 +26,7 @@ void save_snap_settings(QSettings& storage, const SnapSettings& settings);
 
 struct SnapSession
 {
-  std::optional<Point3d> last_point;
+  std::optional<Point3d> LastPoint;
 
   // Reserved for AccuDraw; unused in Phase 1.
   std::optional<Point3d> origin;
@@ -35,7 +35,7 @@ struct SnapSession
   int dynamic_input_mode{0};
 
   std::optional<SnapKind> hold_override;
-  std::optional<SnapKind> active_snap;
+  std::optional<SnapKind> ActiveSnap;
 };
 
 }  // namespace brep::viewer::commands

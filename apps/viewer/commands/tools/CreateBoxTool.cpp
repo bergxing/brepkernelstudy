@@ -1,6 +1,7 @@
 #include "commands/tools/CreateBoxTool.h"
+#include "commands/tools/PreviewEdges.h"
 
-#include "adapter/SceneAdapter.h"
+#include "adapter/ISceneServiceFactory.h"
 #include "commands/DocumentHistory.h"
 #include "commands/Picking.h"
 #include "commands/snap/Accusnap.h"
@@ -9,6 +10,7 @@
 #include "api/Mesh.h"
 #include "api/Modeling.h"
 
+#include <QCoreApplication>
 #include <QMouseEvent>
 
 #include <algorithm>
@@ -19,40 +21,27 @@ namespace brep::viewer::commands
 namespace
 {
 
-void push_seg(EdgeMesh& mesh, const Point3d& a, const Point3d& b)
+QString TrBox(const char* source)
 {
-  mesh.Positions.push_back(a);
-  mesh.Positions.push_back(b);
+    return QCoreApplication::translate("CreateBoxTool", source);
 }
 
-EdgeMesh make_point_marker(const Point3d& p, double s = 0.12)
-{
-  EdgeMesh mesh;
-  push_seg(mesh, Point3d{p.x() - s, p.y(), p.z()},
-           Point3d{p.x() + s, p.y(), p.z()});
-  push_seg(mesh, Point3d{p.x(), p.y(), p.z() - s},
-           Point3d{p.x(), p.y(), p.z() + s});
-  push_seg(mesh, Point3d{p.x(), p.y() - s, p.z()},
-           Point3d{p.x(), p.y() + s, p.z()});
-  return mesh;
-}
-
-EdgeMesh make_rect_wire(double minx, double minz, double maxx, double maxz,
-                        double y)
+EdgeMesh MakeRectWire(double minx, double minz, double maxx, double maxz,
+                      double y)
 {
   EdgeMesh mesh;
   const Point3d p00{minx, y, minz};
   const Point3d p10{maxx, y, minz};
   const Point3d p11{maxx, y, maxz};
   const Point3d p01{minx, y, maxz};
-  push_seg(mesh, p00, p10);
-  push_seg(mesh, p10, p11);
-  push_seg(mesh, p11, p01);
-  push_seg(mesh, p01, p00);
+  PushSegment(mesh, p00, p10);
+  PushSegment(mesh, p10, p11);
+  PushSegment(mesh, p11, p01);
+  PushSegment(mesh, p01, p00);
   return mesh;
 }
 
-EdgeMesh make_box_wire(double minx, double miny, double minz, double maxx,
+EdgeMesh MakeBoxWire(double minx, double miny, double minz, double maxx,
                        double maxy, double maxz)
 {
   EdgeMesh mesh;
@@ -65,24 +54,24 @@ EdgeMesh make_box_wire(double minx, double miny, double minz, double maxx,
   const Point3d p111{maxx, maxy, maxz};
   const Point3d p011{minx, maxy, maxz};
   // bottom
-  push_seg(mesh, p000, p100);
-  push_seg(mesh, p100, p110);
-  push_seg(mesh, p110, p010);
-  push_seg(mesh, p010, p000);
+  PushSegment(mesh, p000, p100);
+  PushSegment(mesh, p100, p110);
+  PushSegment(mesh, p110, p010);
+  PushSegment(mesh, p010, p000);
   // top
-  push_seg(mesh, p001, p101);
-  push_seg(mesh, p101, p111);
-  push_seg(mesh, p111, p011);
-  push_seg(mesh, p011, p001);
+  PushSegment(mesh, p001, p101);
+  PushSegment(mesh, p101, p111);
+  PushSegment(mesh, p111, p011);
+  PushSegment(mesh, p011, p001);
   // verticals
-  push_seg(mesh, p000, p001);
-  push_seg(mesh, p100, p101);
-  push_seg(mesh, p110, p111);
-  push_seg(mesh, p010, p011);
+  PushSegment(mesh, p000, p001);
+  PushSegment(mesh, p100, p101);
+  PushSegment(mesh, p110, p111);
+  PushSegment(mesh, p010, p011);
   return mesh;
 }
 
-void push_tri(TriangleMesh& mesh, const Point3d& a, const Point3d& b,
+void PushTriangle(TriangleMesh& mesh, const Point3d& a, const Point3d& b,
               const Point3d& c, const Vector3d& n)
 {
   const std::uint32_t base = static_cast<std::uint32_t>(mesh.Vertices.size());
@@ -94,7 +83,7 @@ void push_tri(TriangleMesh& mesh, const Point3d& a, const Point3d& b,
   mesh.Indices.push_back(base + 2);
 }
 
-TriangleMesh make_rect_solid(double minx, double minz, double maxx, double maxz,
+TriangleMesh MakeRectSolid(double minx, double minz, double maxx, double maxz,
                              double y)
 {
   TriangleMesh mesh;
@@ -103,12 +92,12 @@ TriangleMesh make_rect_solid(double minx, double minz, double maxx, double maxz,
   const Point3d p11{maxx, y, maxz};
   const Point3d p01{minx, y, maxz};
   const Vector3d n{0.0, 1.0, 0.0};
-  push_tri(mesh, p00, p10, p11, n);
-  push_tri(mesh, p00, p11, p01, n);
+  PushTriangle(mesh, p00, p10, p11, n);
+  PushTriangle(mesh, p00, p11, p01, n);
   return mesh;
 }
 
-TriangleMesh make_box_solid(double minx, double miny, double minz, double maxx,
+TriangleMesh MakeBoxSolid(double minx, double miny, double minz, double maxx,
                             double maxy, double maxz)
 {
   TriangleMesh mesh;
@@ -121,24 +110,24 @@ TriangleMesh make_box_solid(double minx, double miny, double minz, double maxx,
   const Point3d p111{maxx, maxy, maxz};
   const Point3d p011{minx, maxy, maxz};
   // -Y / +Y
-  push_tri(mesh, p000, p100, p110, Vector3d{0.0, -1.0, 0.0});
-  push_tri(mesh, p000, p110, p010, Vector3d{0.0, -1.0, 0.0});
-  push_tri(mesh, p001, p011, p111, Vector3d{0.0, 1.0, 0.0});
-  push_tri(mesh, p001, p111, p101, Vector3d{0.0, 1.0, 0.0});
+  PushTriangle(mesh, p000, p100, p110, Vector3d{0.0, -1.0, 0.0});
+  PushTriangle(mesh, p000, p110, p010, Vector3d{0.0, -1.0, 0.0});
+  PushTriangle(mesh, p001, p011, p111, Vector3d{0.0, 1.0, 0.0});
+  PushTriangle(mesh, p001, p111, p101, Vector3d{0.0, 1.0, 0.0});
   // -Z / +Z
-  push_tri(mesh, p000, p001, p101, Vector3d{0.0, 0.0, -1.0});
-  push_tri(mesh, p000, p101, p100, Vector3d{0.0, 0.0, -1.0});
-  push_tri(mesh, p010, p110, p111, Vector3d{0.0, 0.0, 1.0});
-  push_tri(mesh, p010, p111, p011, Vector3d{0.0, 0.0, 1.0});
+  PushTriangle(mesh, p000, p001, p101, Vector3d{0.0, 0.0, -1.0});
+  PushTriangle(mesh, p000, p101, p100, Vector3d{0.0, 0.0, -1.0});
+  PushTriangle(mesh, p010, p110, p111, Vector3d{0.0, 0.0, 1.0});
+  PushTriangle(mesh, p010, p111, p011, Vector3d{0.0, 0.0, 1.0});
   // -X / +X
-  push_tri(mesh, p000, p010, p011, Vector3d{-1.0, 0.0, 0.0});
-  push_tri(mesh, p000, p011, p001, Vector3d{-1.0, 0.0, 0.0});
-  push_tri(mesh, p100, p101, p111, Vector3d{1.0, 0.0, 0.0});
-  push_tri(mesh, p100, p111, p110, Vector3d{1.0, 0.0, 0.0});
+  PushTriangle(mesh, p000, p010, p011, Vector3d{-1.0, 0.0, 0.0});
+  PushTriangle(mesh, p000, p011, p001, Vector3d{-1.0, 0.0, 0.0});
+  PushTriangle(mesh, p100, p101, p111, Vector3d{1.0, 0.0, 0.0});
+  PushTriangle(mesh, p100, p111, p110, Vector3d{1.0, 0.0, 0.0});
   return mesh;
 }
 
-void base_bounds(const Point3d& a, const Point3d& b, double& minx, double& maxx,
+void BaseBounds(const Point3d& a, const Point3d& b, double& minx, double& maxx,
                  double& minz, double& maxz)
 {
   minx = std::min(a.x(), b.x());
@@ -149,61 +138,63 @@ void base_bounds(const Point3d& a, const Point3d& b, double& minx, double& maxx,
 
 }  // namespace
 
-QString CreateBoxTool::prompt() const
+QString CreateBoxTool::Prompt() const
 {
-  switch (m_step)
-{
-    case 0:
-      return QStringLiteral("创建立方体: 拾取底面第一个角点 (ESC 取消)");
-    case 1:
-      return QStringLiteral("创建立方体: 拾取底面对角点 (ESC 取消)");
-    default:
-      return QStringLiteral("创建立方体: 拾取高度点 (ESC 取消)");
-  }
+    switch (m_step)
+    {
+        case Step::FirstCorner:
+            return TrBox("Create box: pick first bottom corner (ESC cancel)");
+        case Step::OppositeCorner:
+            return TrBox(
+                "Create box: pick opposite bottom corner (ESC cancel)");
+        case Step::Height:
+            return TrBox("Create box: pick height (ESC cancel)");
+    }
+    return {};
 }
 
-void CreateBoxTool::clear_preview(CommandContext& ctx)
+void CreateBoxTool::ClearPreview(CommandContext& ctx)
 {
   if (ctx.ClearPreview) ctx.ClearPreview();
 }
 
-void CreateBoxTool::on_start(CommandContext& ctx)
+void CreateBoxTool::OnStart(CommandContext& ctx)
 {
-  m_step = 0;
+  m_step = Step::FirstCorner;
   m_finished = false;
   m_result = CommandResult::Cancelled();
-  if (ctx.SnapSessionRef) ctx.SnapSessionRef->last_point.reset();
-  clear_preview(ctx);
-  if (ctx.ReportStatus) ctx.ReportStatus(prompt());
+  if (ctx.SnapSessionRef) ctx.SnapSessionRef->LastPoint.reset();
+  ClearPreview(ctx);
+  if (ctx.ReportStatus) ctx.ReportStatus(Prompt());
   BREP_INFO("CreateBoxTool start (3-point: base + height)");
 }
 
-bool CreateBoxTool::pick_ground(CommandContext& ctx, float x, float y,
+bool CreateBoxTool::PickGround(CommandContext& ctx, float x, float y,
                                 Point3d& hit) const
 {
-  const PickResult result = AccuSnap::resolve(ctx, x, y);
-  if (result.kind == SnapKind::None) return false;
-  hit = result.point;
+  const PickResult result = AccuSnap::Resolve(ctx, x, y);
+  if (result.Kind == SnapKind::None) return false;
+  hit = result.Point;
   return true;
 }
 
-bool CreateBoxTool::pick_height(CommandContext& ctx, float x, float y,
+bool CreateBoxTool::PickHeight(CommandContext& ctx, float x, float y,
                                 double& height) const
 {
   Camera* cam = ctx.ViewCamera
                     ? ctx.ViewCamera
-                    : (ctx.World ? ctx.World->main_camera() : nullptr);
+                    : (ctx.World ? ctx.World->MainCamera() : nullptr);
   if (!cam) return false;
 
   Point3d origin;
   Vector3d dir;
-  if (!screen_to_ray(*cam, ctx.ViewportWidth, ctx.ViewportHeight, x, y, origin, dir))
+  if (!ScreenToRay(*cam, ctx.ViewportWidth, ctx.ViewportHeight, x, y, origin, dir))
   {
     return false;
   }
 
   double minx = 0, maxx = 0, minz = 0, maxz = 0;
-  base_bounds(m_cornerA, m_cornerB, minx, maxx, minz, maxz);
+  BaseBounds(m_cornerA, m_cornerB, minx, maxx, minz, maxz);
   const Point3d pivot{(minx + maxx) * 0.5, 0.0, (minz + maxz) * 0.5};
 
   // Vertical plane through base center, facing the camera.
@@ -213,19 +204,19 @@ bool CreateBoxTool::pick_height(CommandContext& ctx, float x, float y,
   n = n.normalized();
 
   Point3d hit;
-  if (!intersect_plane(origin, dir, pivot, n, hit)) return false;
+  if (!IntersectPlane(origin, dir, pivot, n, hit)) return false;
   height = hit.y();
   return true;
 }
 
-void CreateBoxTool::update_preview(CommandContext& ctx, float x, float y)
+void CreateBoxTool::UpdatePreview(CommandContext& ctx, float x, float y)
 {
   if (!ctx.SetPreview && !ctx.SetPreviewEdges)
 {
     BREP_WARN("CreateBoxTool: preview callback is empty");
     return;
   }
-  const auto push_preview = [&](EdgeMesh wire, TriangleMesh solid)
+  const auto pushPreview = [&](EdgeMesh wire, TriangleMesh solid)
   {
     if (ctx.SetPreview)
   {
@@ -237,63 +228,70 @@ void CreateBoxTool::update_preview(CommandContext& ctx, float x, float y)
     }
   };
 
-  if (m_step == 1)
+  if (m_step == Step::OppositeCorner)
   {
     Point3d hit;
-    if (!pick_ground(ctx, x, y, hit))
+    if (!PickGround(ctx, x, y, hit))
     {
       // Keep the first-point marker visible even if the ray misses.
-      push_preview(make_point_marker(m_cornerA), {});
+      pushPreview(MakePointMarker(m_cornerA), {});
       if (ctx.RequestRedraw) ctx.RequestRedraw();
       return;
     }
     double minx = 0, maxx = 0, minz = 0, maxz = 0;
-    base_bounds(m_cornerA, hit, minx, maxx, minz, maxz);
-    EdgeMesh wire = make_rect_wire(minx, minz, maxx, maxz, 0.0);
+    BaseBounds(m_cornerA, hit, minx, maxx, minz, maxz);
+    EdgeMesh wire = MakeRectWire(minx, minz, maxx, maxz, 0.0);
     // Also keep a marker on the first corner.
-    EdgeMesh marker = make_point_marker(m_cornerA);
+    EdgeMesh marker = MakePointMarker(m_cornerA);
     wire.Positions.insert(wire.Positions.end(), marker.Positions.begin(),
                           marker.Positions.end());
-    push_preview(std::move(wire), make_rect_solid(minx, minz, maxx, maxz, 0.0));
+    pushPreview(std::move(wire), MakeRectSolid(minx, minz, maxx, maxz, 0.0));
     if (ctx.RequestRedraw) ctx.RequestRedraw();
     return;
   }
 
-  if (m_step == 2)
+  if (m_step == Step::Height)
   {
     double height = 0.0;
-    if (!pick_height(ctx, x, y, height)) return;
+    if (!PickHeight(ctx, x, y, height)) return;
     if (std::abs(height) < 1e-4) height = (height < 0.0) ? -1e-3 : 1e-3;
     double minx = 0, maxx = 0, minz = 0, maxz = 0;
-    base_bounds(m_cornerA, m_cornerB, minx, maxx, minz, maxz);
+    BaseBounds(m_cornerA, m_cornerB, minx, maxx, minz, maxz);
     const double miny = std::min(0.0, height);
     const double maxy = std::max(0.0, height);
-    push_preview(make_box_wire(minx, miny, minz, maxx, maxy, maxz),
-                 make_box_solid(minx, miny, minz, maxx, maxy, maxz));
+    pushPreview(MakeBoxWire(minx, miny, minz, maxx, maxy, maxz),
+                 MakeBoxSolid(minx, miny, minz, maxx, maxy, maxz));
     if (ctx.RequestRedraw) ctx.RequestRedraw();
   }
 }
 
-void CreateBoxTool::commit_box(CommandContext& ctx, double height)
+void CreateBoxTool::CommitBox(CommandContext& ctx, double height)
 {
   using namespace brep;
-  clear_preview(ctx);
+  ClearPreview(ctx);
 
-  adapter::SceneAdapter scene(ctx.World->document());
-  Part* part = scene.main_part();
+  if (!ctx.Scene)
+  {
+    m_result = CommandResult::Failed(TrBox("No active document"));
+    m_finished = true;
+    return;
+  }
+  adapter::ISceneService& scene = *ctx.Scene;
+  Part* part = scene.MainPart();
   if (!part)
   {
-    m_result = CommandResult::Failed(QStringLiteral("当前没有 Part"));
+    m_result = CommandResult::Failed(TrBox("No main part"));
     m_finished = true;
     return;
   }
 
   double minx = 0, maxx = 0, minz = 0, maxz = 0;
-  base_bounds(m_cornerA, m_cornerB, minx, maxx, minz, maxz);
+  BaseBounds(m_cornerA, m_cornerB, minx, maxx, minz, maxz);
   if (std::abs(maxx - minx) < 1e-4 || std::abs(maxz - minz) < 1e-4 ||
       std::abs(height) < 1e-4)
   {
-    m_result = CommandResult::Failed(QStringLiteral("盒子尺寸过小，请重新拾取"));
+    m_result = CommandResult::Failed(
+        TrBox("Box too small — pick a larger base or height"));
     m_finished = true;
     return;
   }
@@ -311,31 +309,31 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height)
       .Max = Point3d{maxx, maxy, maxz},
       .Name = "box",
   };
-  Body* body = scene.add_box(spec);
+  Body* body = scene.AddPrimitive(spec);
   if (!body)
   {
-    m_result = CommandResult::Failed(QStringLiteral("创建盒子失败（再生错误）"));
+    m_result = CommandResult::Failed(TrBox("Failed to create box"));
     m_finished = true;
     return;
   }
 
   Guid feature_guid{};
-  if (auto obj = scene.object_for_body(body->Guid))
+  if (auto obj = scene.ObjectForBody(body->Guid))
   {
-    feature_guid = obj->feature_guid;
-    scene.record_append_feature(feat::FeatureId{feature_guid}, spec);
+    feature_guid = obj->FeatureGuid;
+    scene.RecordAppendPrimitive(feat::FeatureId{feature_guid}, spec);
   }
 
   Material material = ctx.WoodAlbedoPath.empty()
                           ? Material{}
                           : MakeWoodMaterial(ctx.WoodAlbedoPath);
-  auto mesh = scene.mesh_for_body(body->Guid);
-  ctx.World->create_body_renderable(body->Name, body->Guid,
-                                    std::move(mesh.faces),
-                                    std::move(mesh.edges), material, Point3d{},
+  auto mesh = scene.MeshForBody(body->Guid);
+  ctx.World->CreateBodyRenderable(body->Name, body->Guid,
+                                    std::move(mesh.Faces),
+                                    std::move(mesh.Edges), material, Point3d{},
                                     feature_guid);
   if (ctx.RequestRedraw) ctx.RequestRedraw();
-  if (ctx.Session) ctx.Session->mark_dirty();
+  if (ctx.Session) ctx.Session->MarkDirty();
 
   const Guid guid = body->Guid;
   const std::string wood = ctx.WoodAlbedoPath;
@@ -345,30 +343,34 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height)
   if (ctx.History)
   {
     ctx.History->push(DocumentHistory::Entry{
-        .label = QStringLiteral("创建盒子"),
+        .label = TrBox("Create box"),
         .undo =
-            [world, part_ptr, wood, session = ctx.Session,
-             redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
+            [world, part_ptr, wood, factory = ctx.SceneFactory,
+             session = ctx.Session, redraw = ctx.RequestRedraw,
+             refresh = ctx.RefreshUi] {
               if (!world || !part_ptr) return;
-              adapter::SceneAdapter scene_u(world->document());
-              scene_u.undo_feature();
+              adapter::WithScene(
+                  factory, world->Document(),
+                  [](adapter::ISceneService& scene) { scene.UndoFeature(); });
               Material material =
                   wood.empty() ? Material{} : MakeWoodMaterial(wood);
-              world->sync_part_bodies(*part_ptr, std::move(material));
-              if (session) session->mark_dirty();
+              world->SyncPartBodies(*part_ptr, std::move(material));
+              if (session) session->MarkDirty();
               if (redraw) redraw();
               if (refresh) refresh();
             },
         .redo =
-            [world, part_ptr, wood, session = ctx.Session,
-             redraw = ctx.RequestRedraw, refresh = ctx.RefreshUi] {
+            [world, part_ptr, wood, factory = ctx.SceneFactory,
+             session = ctx.Session, redraw = ctx.RequestRedraw,
+             refresh = ctx.RefreshUi] {
               if (!world || !part_ptr) return;
-              adapter::SceneAdapter scene_r(world->document());
-              scene_r.redo_feature();
+              adapter::WithScene(
+                  factory, world->Document(),
+                  [](adapter::ISceneService& scene) { scene.RedoFeature(); });
               Material material =
                   wood.empty() ? Material{} : MakeWoodMaterial(wood);
-              world->sync_part_bodies(*part_ptr, std::move(material));
-              if (session) session->mark_dirty();
+              world->SyncPartBodies(*part_ptr, std::move(material));
+              if (session) session->MarkDirty();
               if (redraw) redraw();
               if (refresh) refresh();
             },
@@ -376,108 +378,108 @@ void CreateBoxTool::commit_box(CommandContext& ctx, double height)
   }
 
   m_result = CommandResult::Ok(
-      QStringLiteral("已创建盒子 %1")
-          .arg(QString::fromStdString(guid.ToString())));
+      TrBox("Created box %1").arg(QString::fromStdString(guid.ToString())));
   m_finished = true;
   if (ctx.RefreshUi) ctx.RefreshUi();
   BREP_INFO("CreateBoxTool committed guid={}", guid.ToString());
 }
 
-bool CreateBoxTool::on_mouse_press(CommandContext& ctx, float x, float y,
+bool CreateBoxTool::OnMousePress(CommandContext& ctx, float x, float y,
                                    int button)
 {
   if (button != Qt::LeftButton) return false;
 
   BREP_INFO("CreateBoxTool click screen=({:.1f},{:.1f}) step={} viewport={}x{}",
-            x, y, m_step, ctx.ViewportWidth, ctx.ViewportHeight);
+            x, y, static_cast<int>(m_step), ctx.ViewportWidth,
+            ctx.ViewportHeight);
 
-  if (m_step == 0 || m_step == 1)
+  if (m_step == Step::FirstCorner || m_step == Step::OppositeCorner)
   {
     Point3d hit;
-    if (!pick_ground(ctx, x, y, hit))
+    if (!PickGround(ctx, x, y, hit))
     {
       BREP_WARN("CreateBoxTool pick ground failed at screen=({:.1f},{:.1f})", x,
                 y);
       if (ctx.ReportStatus)
       {
-        ctx.ReportStatus(QStringLiteral("未点到地面 (y=0)，请换个角度再试"));
+        ctx.ReportStatus(TrBox("Missed surface/ground — try another angle"));
       }
       return true;
     }
     BREP_INFO("CreateBoxTool picked ground point=({:.4f},{:.4f},{:.4f}) step={}",
-              hit.x(), hit.y(), hit.z(), m_step);
+              hit.x(), hit.y(), hit.z(), static_cast<int>(m_step));
 
-    if (m_step == 0)
+    if (m_step == Step::FirstCorner)
     {
       m_cornerA = hit;
-      if (ctx.SnapSessionRef) ctx.SnapSessionRef->last_point = hit;
-      m_step = 1;
+      if (ctx.SnapSessionRef) ctx.SnapSessionRef->LastPoint = hit;
+      m_step = Step::OppositeCorner;
       // Immediate feedback before the next move arrives.
       if (ctx.SetPreviewEdges)
       {
-        ctx.SetPreviewEdges(make_point_marker(m_cornerA));
+        ctx.SetPreviewEdges(MakePointMarker(m_cornerA));
       }
       if (ctx.RequestRedraw) ctx.RequestRedraw();
-      if (ctx.ReportStatus) ctx.ReportStatus(prompt());
+      if (ctx.ReportStatus) ctx.ReportStatus(Prompt());
       return true;
     }
 
     double minx = 0, maxx = 0, minz = 0, maxz = 0;
-    base_bounds(m_cornerA, hit, minx, maxx, minz, maxz);
+    BaseBounds(m_cornerA, hit, minx, maxx, minz, maxz);
     if (std::abs(maxx - minx) < 1e-4 || std::abs(maxz - minz) < 1e-4)
     {
       BREP_WARN("CreateBoxTool base too small dx={:.6f} dz={:.6f}",
                 maxx - minx, maxz - minz);
       if (ctx.ReportStatus)
       {
-        ctx.ReportStatus(QStringLiteral("底面尺寸过小，请重新指定对角点"));
+        ctx.ReportStatus(TrBox("Base too small — pick farther"));
       }
       return true;
     }
-    if (ctx.SnapSessionRef) ctx.SnapSessionRef->last_point = hit;
+    if (ctx.SnapSessionRef) ctx.SnapSessionRef->LastPoint = hit;
     m_cornerB = hit;
-    m_step = 2;
-    AccuSnap::clear_feedback(ctx);
-    update_preview(ctx, x, y);
-    if (ctx.ReportStatus) ctx.ReportStatus(prompt());
+    m_step = Step::Height;
+    AccuSnap::ClearFeedback(ctx);
+    UpdatePreview(ctx, x, y);
+    if (ctx.ReportStatus) ctx.ReportStatus(Prompt());
     return true;
   }
 
   double height = 0.0;
-  if (!pick_height(ctx, x, y, height))
+  if (!PickHeight(ctx, x, y, height))
   {
     BREP_WARN("CreateBoxTool pick height failed at screen=({:.1f},{:.1f})", x,
               y);
     if (ctx.ReportStatus)
     {
-      ctx.ReportStatus(QStringLiteral("无法拾取高度，请调整视角后再试"));
+      ctx.ReportStatus(TrBox("Could not pick height — try another angle"));
     }
     return true;
   }
   BREP_INFO("CreateBoxTool picked height={:.4f}", height);
-  commit_box(ctx, height);
+  CommitBox(ctx, height);
   return true;
 }
 
-void CreateBoxTool::on_mouse_move(CommandContext& ctx, float x, float y)
+void CreateBoxTool::OnMouseMove(CommandContext& ctx, float x, float y)
 {
-  if (m_step == 0)
+  if (m_step == Step::FirstCorner)
 {
     Point3d hover;
-    (void)pick_ground(ctx, x, y, hover);
-  } else if (m_step == 1 || m_step == 2)
+    (void)PickGround(ctx, x, y, hover);
+  } else if (m_step == Step::OppositeCorner || m_step == Step::Height)
   {
-    update_preview(ctx, x, y);
+    UpdatePreview(ctx, x, y);
   }
 }
 
-void CreateBoxTool::on_cancel(CommandContext& ctx)
+void CreateBoxTool::OnCancel(CommandContext& ctx)
 {
-  clear_preview(ctx);
+  ClearPreview(ctx);
   m_finished = true;
-  m_result = CommandResult::Cancelled(QStringLiteral("已取消创建立方体"));
+  m_result = CommandResult::Cancelled(TrBox("Cancelled create box"));
   if (ctx.ReportStatus) ctx.ReportStatus(m_result.Message);
-  BREP_INFO("CreateBoxTool cancelled at step={}", m_step);
+  BREP_INFO("CreateBoxTool cancelled at step={}", static_cast<int>(m_step));
 }
 
 }  // namespace brep::viewer::commands

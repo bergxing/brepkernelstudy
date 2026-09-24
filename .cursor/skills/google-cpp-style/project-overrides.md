@@ -97,6 +97,8 @@ struct RegenResult
 
 **已落地类型（viewer commands）**：`ICommand::Id()`/`Title()`/`Kind()`/`CanExecute()`/`Execute()`/`MakeTool()`；`ITool::OnStart()`/`OnMousePress()`/`Prompt()`/`IsFinished()`/`Result()` 等；`CommandManager::Run()`/`History()`/`HasActiveTool()`；`CommandRegistry::RegisterCommand()`/`Create()`/`Ids()`；`CommandResult::Ok()`/`Failed()`/`Succeeded()`。
 
+**ITool 多步状态（强制）**：交互工具禁止 `int m_step` + `0/1/2` 魔法数字。用嵌套 `enum class Step`（PascalCase 枚举项）+ 成员 `m_step`。每个工具自己的步骤集合；`switch` / 比较 / 赋值都写枚举。日志要整数时 `static_cast<int>(m_step)`。示例见 `CopyTool` / `MoveTool` / `CreateBoxTool` / `CreateSphereTool`。工具内函数（含匿名命名空间辅助函数）PascalCase；点标记/线段预览用 `apps/viewer/commands/tools/PreviewEdges.h`。
+
 **已落地类型（Topology）**：`Vertex::Position()`；`Edge::Start()`/`End()`/`ParamAt()`；`CoEdge::From()`/`To()`/`GetFace()`；`Loop::ForEachCoedge()`/`CoedgeCount()`/`IsClosed()`；`Face::OuterLoop()`/`OuterLoops()`/`InnerLoops()`/`NormalAt()`；`Shell::FaceCount()`；`Body::Kind()`/`OuterShell()`；图字段见上「批次 26」。
 
 **已落地类型（ObjectRegistry）**：`Add()`/`Remove()`/`Clear()`/`Find()`/`FindAs()`/`Size()`。

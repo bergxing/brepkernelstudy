@@ -12,7 +12,10 @@ set(_brep_install_targets
   brep_eigen
   brep_boost_uuid
   brep_spdlog
+  brep_base
   brep_core
+  brep_mesh
+  brep_bool
   brep_feat
   brep_asm
   brep_io

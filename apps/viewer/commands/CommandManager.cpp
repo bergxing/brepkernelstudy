@@ -1,13 +1,37 @@
 #include "commands/CommandManager.h"
 
+#include "commands/CommandPayload.h"
+
 #include "api/Core.h"
+
+#include <QApplication>
+#include <QWidget>
 
 namespace brep::viewer::commands
 {
-
-CommandManager::CommandManager(CommandRegistry& registry)
-    : m_registry(registry)
+namespace
 {
+
+void CloseActivePopupWidget()
+{
+    if (QWidget* popup = QApplication::activePopupWidget())
+    {
+        BREP_INFO("close popup '{}'", popup->metaObject()->className());
+        popup->close();
+    }
+}
+
+}  // namespace
+
+CommandManager::CommandManager(CommandRegistry& registry, brep::AspectChain chain)
+    : m_registry(registry)
+    , m_chain(std::move(chain))
+{
+}
+
+std::vector<std::string> CommandManager::Names() const
+{
+    return m_chain.Names();
 }
 
 QString CommandManager::active_prompt() const
@@ -16,17 +40,40 @@ QString CommandManager::active_prompt() const
     {
         return {};
     }
-    return m_activeTool->prompt();
+    return m_activeTool->Prompt();
 }
 
 bool CommandManager::active_tool_allows_selection() const noexcept
 {
-    return m_activeTool && m_activeTool->allows_viewport_selection();
+    return m_activeTool && m_activeTool->AllowsViewportSelection();
 }
 
 CommandResult CommandManager::run(std::string_view id, CommandContext& ctx)
 {
     ctx.History = &m_history;
+    if (m_activeTool && m_activeTool->OwnsUndoRedo())
+    {
+        if (id == "edit.undo")
+        {
+            if (!m_activeTool->UndoStep(ctx))
+            {
+                return CommandResult::Failed(
+                    QStringLiteral("\u65e0\u53ef\u64a4\u9500\u6b65\u9aa4"));
+            }
+            finish_tool_if_done(ctx);
+            return CommandResult::Ok();
+        }
+        if (id == "edit.redo")
+        {
+            if (!m_activeTool->RedoStep(ctx))
+            {
+                return CommandResult::Failed(
+                    QStringLiteral("\u65e0\u53ef\u91cd\u505a\u6b65\u9aa4"));
+            }
+            finish_tool_if_done(ctx);
+            return CommandResult::Ok();
+        }
+    }
     auto cmd = m_registry.create(id);
     if (!cmd)
     {
@@ -43,6 +90,10 @@ CommandResult CommandManager::run(std::string_view id, CommandContext& ctx)
     if (cmd->kind() == CommandKind::Interactive)
     {
         cancel_active_tool(ctx);
+        if (m_toolDispatchDepth > 0)
+        {
+            return CommandResult::Ok();
+        }
         m_activeTool = cmd->make_tool(ctx);
         if (!m_activeTool)
         {
@@ -51,31 +102,44 @@ CommandResult CommandManager::run(std::string_view id, CommandContext& ctx)
         }
         m_toolCtxSnapshot = ctx;
         m_toolCtxSnapshot.History = &m_history;
-        m_activeTool->on_start(m_toolCtxSnapshot);
-        if (m_activeTool->is_finished())
-        {
-            const CommandResult r = m_activeTool->result();
-            BREP_INFO("tool finished immediately '{}' status={}",
-                      m_activeTool->id(), int(r.Status));
-            m_activeTool.reset();
-            if (ctx.ReportStatus && !r.Message.isEmpty())
+        brep::AspectEvent startEvent;
+        startEvent.Site = "command.tool.start";
+        startEvent.Subject = m_activeTool->Id();
+        CommandPayload startPayload;
+        startPayload.ReportStatus = m_toolCtxSnapshot.ReportStatus
+                                        ? &m_toolCtxSnapshot.ReportStatus
+                                        : nullptr;
+        startEvent.Payload = &startPayload;
+        m_chain.Invoke(startEvent, [&] {
+            m_activeTool->OnStart(m_toolCtxSnapshot);
+            if (!m_activeTool->IsFinished())
             {
-                ctx.ReportStatus(r.Message);
+                startPayload.Prompt = m_activeTool->Prompt();
             }
+        });
+        if (m_activeTool->IsFinished())
+        {
+            const CommandResult r = m_activeTool->Result();
+            finish_tool_if_done(m_toolCtxSnapshot);
             return r;
         }
-        const QString msg = m_activeTool->prompt();
-        if (ctx.ReportStatus)
-        {
-            ctx.ReportStatus(msg);
-        }
-        BREP_INFO("tool started '{}'", m_activeTool->id());
-        return CommandResult::Ok(msg);
+        return CommandResult::Ok(m_activeTool->Prompt());
     }
 
-    // Instant (and View) commands.
-    BREP_INFO("command execute '{}'", cmd->id());
-    return cmd->execute(ctx);
+    brep::AspectEvent event;
+    event.Site = "command.run";
+    event.Subject = cmd->id();
+    CommandPayload payload;
+    payload.ReportStatus = ctx.ReportStatus ? &ctx.ReportStatus : nullptr;
+    event.Payload = &payload;
+    return m_chain.Invoke(event, [&] {
+        payload.ResultStorage = cmd->execute(ctx);
+        payload.Result = &payload.ResultStorage;
+        payload.DetailUtf8 = payload.ResultStorage.Message.toUtf8();
+        event.Detail = payload.DetailUtf8.constData();
+        event.Failed = payload.ResultStorage.Status == CommandStatus::Failed;
+        return payload.ResultStorage;
+    });
 }
 
 bool CommandManager::cancel_active_tool(CommandContext& ctx)
@@ -84,31 +148,54 @@ bool CommandManager::cancel_active_tool(CommandContext& ctx)
     {
         return false;
     }
-    BREP_INFO("tool cancel '{}'", m_activeTool->id());
-    m_activeTool->on_cancel(ctx);
-    const QString msg =
-        QStringLiteral("\u5df2\u53d6\u6d88: %1")
-            .arg(QString::fromStdString(std::string(m_activeTool->id())));
-    m_activeTool.reset();
-    if (ctx.ReportStatus)
+    CloseActivePopupWidget();
+    brep::AspectEvent event;
+    event.Site = "command.tool.cancel";
+    event.Subject = m_activeTool->Id();
+    CommandPayload payload;
+    payload.ReportStatus = ctx.ReportStatus ? &ctx.ReportStatus : nullptr;
+    event.Payload = &payload;
+    m_chain.Invoke(event, [&] {
+        m_activeTool->OnCancel(ctx);
+        payload.AnnounceCancel = m_activeTool && !m_activeTool->IsFinished() &&
+                                 m_toolDispatchDepth == 0;
+    });
+    if (m_activeTool && m_activeTool->IsFinished())
     {
-        ctx.ReportStatus(msg);
+        finish_tool_if_done(ctx);
+        return true;
     }
+    if (m_toolDispatchDepth > 0)
+    {
+        return true;
+    }
+    m_activeTool.reset();
     return true;
 }
 
 void CommandManager::finish_tool_if_done(CommandContext& ctx)
 {
-    if (!m_activeTool || !m_activeTool->is_finished())
+    if (!m_activeTool || !m_activeTool->IsFinished())
     {
         return;
     }
-    const CommandResult r = m_activeTool->result();
-    BREP_INFO("tool finished '{}' status={}", m_activeTool->id(), int(r.Status));
-    if (ctx.ReportStatus && !r.Message.isEmpty())
+    if (m_toolDispatchDepth > 0)
     {
-        ctx.ReportStatus(r.Message);
+        return;
     }
+    brep::AspectEvent event;
+    event.Site = "command.tool.finish";
+    event.Subject = m_activeTool->Id();
+    CommandPayload payload;
+    payload.ReportStatus = ctx.ReportStatus ? &ctx.ReportStatus : nullptr;
+    event.Payload = &payload;
+    m_chain.Invoke(event, [&] {
+        payload.ResultStorage = m_activeTool->Result();
+        payload.Result = &payload.ResultStorage;
+        payload.DetailUtf8 = payload.ResultStorage.Message.toUtf8();
+        event.Detail = payload.DetailUtf8.constData();
+        event.Failed = payload.ResultStorage.Status == CommandStatus::Failed;
+    });
     m_activeTool.reset();
 }
 
@@ -120,7 +207,9 @@ bool CommandManager::tool_mouse_press(CommandContext& ctx, float x, float y,
         return false;
     }
     ctx.History = &m_history;
-    const bool consumed = m_activeTool->on_mouse_press(ctx, x, y, button);
+    ++m_toolDispatchDepth;
+    const bool consumed = m_activeTool->OnMousePress(ctx, x, y, button);
+    --m_toolDispatchDepth;
     finish_tool_if_done(ctx);
     return consumed;
 }
@@ -132,7 +221,10 @@ void CommandManager::tool_mouse_move(CommandContext& ctx, float x, float y)
         return;
     }
     ctx.History = &m_history;
-    m_activeTool->on_mouse_move(ctx, x, y);
+    ++m_toolDispatchDepth;
+    m_activeTool->OnMouseMove(ctx, x, y);
+    --m_toolDispatchDepth;
+    finish_tool_if_done(ctx);
 }
 
 bool CommandManager::tool_key_press(CommandContext& ctx, int key)
@@ -142,7 +234,25 @@ bool CommandManager::tool_key_press(CommandContext& ctx, int key)
         return false;
     }
     ctx.History = &m_history;
-    const bool consumed = m_activeTool->on_key_press(ctx, key);
+    ++m_toolDispatchDepth;
+    const bool consumed = m_activeTool->OnKeyPress(ctx, key);
+    --m_toolDispatchDepth;
+    finish_tool_if_done(ctx);
+    return consumed;
+}
+
+bool CommandManager::tool_context_menu(CommandContext& ctx, float x, float y)
+{
+    if (!m_activeTool)
+    {
+        return false;
+    }
+    ctx.History = &m_history;
+    BREP_INFO("tool context menu '{}' at ({:.1f},{:.1f})", m_activeTool->Id(),
+              x, y);
+    ++m_toolDispatchDepth;
+    const bool consumed = m_activeTool->OnContextMenu(ctx, x, y);
+    --m_toolDispatchDepth;
     finish_tool_if_done(ctx);
     return consumed;
 }

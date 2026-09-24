@@ -45,6 +45,23 @@ void render_sync(entt::registry& registry, VulkanRenderer& renderer,
                                            const Camera& cam, int viewport_w,
                                            int viewport_h, float sx, float sy);
 
+struct RayPickHit
+{
+    entt::entity Entity{entt::null};
+    double T{0.0};
+};
+
+/// All renderables on the cursor ray, closest first.
+[[nodiscard]] std::vector<RayPickHit> PickRenderablesAlongRay(
+    entt::registry& registry, const Camera& cam, int viewport_w,
+    int viewport_h, float sx, float sy);
+
+/// Closest hit, skipping `skip` so the second subtract pick can go through
+/// the already-selected target.
+[[nodiscard]] entt::entity PickClosestRenderable(
+    entt::registry& registry, const Camera& cam, int viewport_w,
+    int viewport_h, float sx, float sy, entt::entity skip = entt::null);
+
 /// Box pick in screen space. Left→right (x0<=x1): window (fully inside).
 /// Right→left: crossing (screen AABB intersects rect).
 [[nodiscard]] std::vector<entt::entity> pick_renderables_in_rect(
@@ -69,7 +86,13 @@ void select_entities(entt::registry& registry,
                      const std::vector<entt::entity>& entities, bool additive);
 void clear_selection(entt::registry& registry);
 [[nodiscard]] entt::entity selected_entity(const entt::registry& registry);
+[[nodiscard]] std::vector<entt::entity> SelectedEntitiesOrdered(
+    const entt::registry& registry);
 [[nodiscard]] std::size_t selected_count(const entt::registry& registry);
+
+/// Preselection under cursor (cleared with null). Skips selected entities.
+void set_hover(entt::registry& registry, entt::entity entity);
+[[nodiscard]] entt::entity hovered_entity(const entt::registry& registry);
 
 /// Human-readable label for status bar (name + guid when available).
 [[nodiscard]] std::string selection_label(const entt::registry& registry,

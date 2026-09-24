@@ -7,41 +7,47 @@
 namespace brep::viewer::commands
 {
 
-/// Two-point sphere: center (mesh or ground) â†?radius point.
+/// Two-point sphere: center (mesh or ground), then radius point.
 class CreateSphereTool final : public ITool
 {
- public:
-  [[nodiscard]] std::string_view id() const noexcept override
-  {
-    return "part.create_sphere";
-  }
-  [[nodiscard]] QString prompt() const override;
+public:
+    [[nodiscard]] std::string_view Id() const noexcept override
+    {
+        return "part.create_sphere";
+    }
+    [[nodiscard]] QString Prompt() const override;
 
-  void on_start(CommandContext& ctx) override;
-  bool on_mouse_press(CommandContext& ctx, float x, float y, int button) override;
-  void on_mouse_move(CommandContext& ctx, float x, float y) override;
-  void on_cancel(CommandContext& ctx) override;
+    void OnStart(CommandContext& ctx) override;
+    bool OnMousePress(CommandContext& ctx, float x, float y, int button) override;
+    void OnMouseMove(CommandContext& ctx, float x, float y) override;
+    void OnCancel(CommandContext& ctx) override;
 
-  [[nodiscard]] bool is_finished() const noexcept override
-  {
-      return m_finished; 
-  }
-  [[nodiscard]] CommandResult result() const override
-  {
-      return m_result; 
-  }
+    [[nodiscard]] bool IsFinished() const noexcept override
+    {
+        return m_finished;
+    }
+    [[nodiscard]] CommandResult Result() const override
+    {
+        return m_result;
+    }
 
- private:
-  /// Mesh surface first; else y=0 ground.
-  bool pick_point(CommandContext& ctx, float x, float y, Point3d& hit) const;
-  void update_preview(CommandContext& ctx, float x, float y);
-  void clear_preview(CommandContext& ctx);
-  void commit_sphere(CommandContext& ctx, double radius);
+private:
+    enum class Step
+    {
+        Center,
+        Radius,
+    };
 
-  int m_step{0};  // 0: center, 1: radius
-  Point3d m_center{};
-  bool m_finished{false};
-  CommandResult m_result{CommandResult::Cancelled()};
+    /// Mesh surface first; else y=0 ground.
+    bool PickPoint(CommandContext& ctx, float x, float y, Point3d& hit) const;
+    void UpdatePreview(CommandContext& ctx, float x, float y);
+    void ClearPreview(CommandContext& ctx);
+    void CommitSphere(CommandContext& ctx, double radius);
+
+    Step m_step{Step::Center};
+    Point3d m_center{};
+    bool m_finished{false};
+    CommandResult m_result{CommandResult::Cancelled()};
 };
 
 }  // namespace brep::viewer::commands

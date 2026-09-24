@@ -31,7 +31,9 @@ bool Loop::IsClosed() const
 {
   if (!First || !First->Prev) return false;
   CoEdge* c = First;
+  std::size_t guard = 0;
   do {
+    if (++guard > 1024U) return false;
     if (!c->Next || c->Next->Prev != c) return false;
     c = c->Next;
   } while (c != First);

@@ -1,5 +1,6 @@
 #include "api/Core.h"
 #include "api/Modeling.h"
+#include "brep/build/PrimitiveBuild.h"
 
 #include "brep/spatial/Aabb.h"
 #include "brep/spatial/FaceBvh.h"

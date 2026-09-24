@@ -4,8 +4,12 @@
 #include "commands/DocumentHistory.h"
 #include "commands/ITool.h"
 
+#include "api/Base.h"
+
 #include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace brep::viewer::commands
 {
@@ -14,7 +18,10 @@ namespace brep::viewer::commands
 class CommandManager
 {
  public:
-  explicit CommandManager(CommandRegistry& registry);
+  explicit CommandManager(CommandRegistry& registry,
+                          brep::AspectChain chain = {});
+
+  [[nodiscard]] std::vector<std::string> Names() const;
 
   [[nodiscard]] DocumentHistory& history() noexcept
   {
@@ -45,14 +52,17 @@ class CommandManager
   bool tool_mouse_press(CommandContext& ctx, float x, float y, int button);
   void tool_mouse_move(CommandContext& ctx, float x, float y);
   bool tool_key_press(CommandContext& ctx, int key);
+  bool tool_context_menu(CommandContext& ctx, float x, float y);
 
  private:
   void finish_tool_if_done(CommandContext& ctx);
 
   CommandRegistry& m_registry;
+  brep::AspectChain m_chain;
   DocumentHistory m_history;
   std::unique_ptr<ITool> m_activeTool;
   CommandContext m_toolCtxSnapshot{};  // kept for cancel/finish callbacks
+  int m_toolDispatchDepth{0};
 };
 
 }  // namespace brep::viewer::commands

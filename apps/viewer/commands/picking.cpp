@@ -24,7 +24,7 @@ Eigen::Matrix4f to_eigen(const float m[16])
 
 }  // namespace
 
-bool world_to_screen(const Camera& cam, int viewport_w, int viewport_h,
+bool WorldToScreen(const Camera& cam, int viewport_w, int viewport_h,
                      const Point3d& world, float& out_sx, float& out_sy)
 {
   if (viewport_w <= 0 || viewport_h <= 0) return false;
@@ -61,7 +61,7 @@ bool world_to_screen(const Camera& cam, int viewport_w, int viewport_h,
   return true;
 }
 
-bool screen_to_ray(const Camera& cam, int viewport_w, int viewport_h, float sx,
+bool ScreenToRay(const Camera& cam, int viewport_w, int viewport_h, float sx,
                    float sy, Point3d& out_origin, Vector3d& out_dir)
 {
   if (viewport_w <= 0 || viewport_h <= 0) return false;
@@ -108,7 +108,7 @@ bool screen_to_ray(const Camera& cam, int viewport_w, int viewport_h, float sx,
   return true;
 }
 
-bool intersect_plane_y(const Point3d& origin, const Vector3d& dir, double plane_y,
+bool IntersectPlaneY(const Point3d& origin, const Vector3d& dir, double plane_y,
                        Point3d& out_hit)
 {
   if (std::abs(dir.y()) < 1e-9) return false;
@@ -118,7 +118,7 @@ bool intersect_plane_y(const Point3d& origin, const Vector3d& dir, double plane_
   return true;
 }
 
-bool intersect_plane(const Point3d& origin, const Vector3d& dir,
+bool IntersectPlane(const Point3d& origin, const Vector3d& dir,
                      const Point3d& plane_point, const Vector3d& plane_normal,
                      Point3d& out_hit)
                      {
@@ -158,7 +158,7 @@ bool intersect_triangle(const Point3d& origin, const Vector3d& dir,
 
 }  // namespace
 
-bool intersect_mesh(const Point3d& origin, const Vector3d& dir,
+bool IntersectMesh(const Point3d& origin, const Vector3d& dir,
                     const TriangleMesh& mesh, const Point3d& origin_offset,
                     double& out_t)
                     {
@@ -182,6 +182,96 @@ bool intersect_mesh(const Point3d& origin, const Vector3d& dir,
     }
   }
   if (hit) out_t = best;
+  return hit;
+}
+
+bool IntersectEdges(const Camera& cam, int viewport_w, int viewport_h, float sx,
+                    float sy, int aperture_px, const Point3d& ray_origin,
+                    const Vector3d& ray_dir, const EdgeMesh& mesh,
+                    const Point3d& origin_offset, double& out_t)
+{
+  if (viewport_w <= 0 || viewport_h <= 0 || aperture_px < 0)
+  {
+    return false;
+  }
+  const auto& positions = mesh.Positions;
+  if (positions.size() < 2)
+  {
+    return false;
+  }
+
+  const float aperture2 =
+      static_cast<float>(aperture_px) * static_cast<float>(aperture_px);
+  bool hit = false;
+  double best_t = 0.0;
+  float best_dist2 = aperture2;
+
+  const Vector3d offset{origin_offset.x(), origin_offset.y(),
+                        origin_offset.z()};
+  for (std::size_t i = 0; i + 1 < positions.size(); i += 2)
+  {
+    const Point3d wa = positions[i] + offset;
+    const Point3d wb = positions[i + 1] + offset;
+    float sax = 0.0f;
+    float say = 0.0f;
+    float sbx = 0.0f;
+    float sby = 0.0f;
+    if (!WorldToScreen(cam, viewport_w, viewport_h, wa, sax, say) ||
+        !WorldToScreen(cam, viewport_w, viewport_h, wb, sbx, sby))
+    {
+      continue;
+    }
+
+    const float abx = sbx - sax;
+    const float aby = sby - say;
+    const float apx = sx - sax;
+    const float apy = sy - say;
+    const float ab2 = abx * abx + aby * aby;
+    float u = 0.0f;
+    if (ab2 > 1e-12f)
+    {
+      u = (apx * abx + apy * aby) / ab2;
+      if (u < 0.0f)
+      {
+        u = 0.0f;
+      }
+      else if (u > 1.0f)
+      {
+        u = 1.0f;
+      }
+    }
+    const float cx = sax + abx * u;
+    const float cy = say + aby * u;
+    const float dx = sx - cx;
+    const float dy = sy - cy;
+    const float dist2 = dx * dx + dy * dy;
+    if (dist2 > best_dist2 && hit)
+    {
+      continue;
+    }
+    if (dist2 > aperture2)
+    {
+      continue;
+    }
+
+    const Point3d closest = wa + (wb - wa) * double(u);
+    const double t = (closest - ray_origin).dot(ray_dir);
+    if (t < 1e-9)
+    {
+      continue;
+    }
+    if (!hit || dist2 < best_dist2 - 1e-6f ||
+        (std::abs(dist2 - best_dist2) <= 1e-6f && t < best_t))
+    {
+      hit = true;
+      best_dist2 = dist2;
+      best_t = t;
+    }
+  }
+  if (hit)
+  {
+    out_t = best_t;
+  }
   return hit;
 }
 

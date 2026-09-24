@@ -3,6 +3,7 @@
 #include "brep/bool/Broadphase.h"
 #include "brep/bool/Context.h"
 #include "brep/bool/FaceSelector.h"
+#include "brep/bool/IntersectionGraph.h"
 #include "brep/bool/Result.h"
 #include "brep/bool/Types.h"
 #include "brep/Model.h"
@@ -42,11 +43,16 @@ struct PipelineState
   const Body* BodyB{nullptr};
   BooleanContext Ctx{};
   Model* TargetModel{nullptr};
+  Body* WorkingBodyA{nullptr};
+  Body* WorkingBodyB{nullptr};
   std::vector<FacePairCandidate> FacePairs;
   BroadphaseProbe Probe{};
+  IntersectionGraph IntersectionGraph;
   std::vector<FaceClassification> AVsB;
   std::vector<FaceClassification> BVsA;
   FaceSelection Selection{};
+  Body* OutputBody{nullptr};
+  bool NoVolumeOverlap{false};
   PipelineStage LastCompleted{PipelineStage::Preprocess};
 };
 
@@ -58,6 +64,14 @@ class IPipelineStage
   [[nodiscard]] virtual PipelineStage Id() const = 0;
   virtual PipelineStageResult Run(PipelineState& state) = 0;
 };
+
+/// Classify a face against the other operand solid (imprint-aware).
+[[nodiscard]] FaceRegion ClassifyFaceAgainstBody(const Face& face,
+                                                 const Body& solid,
+                                                 const Body& owner,
+                                                 double eps,
+                                                 BooleanOp op,
+                                                 bool fromA = true);
 
 /// General boolean CSG pipeline (ADR 0006).
 class BooleanPipeline

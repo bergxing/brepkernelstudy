@@ -44,6 +44,24 @@ struct RigidTransform
     {
         return Translation + XAxis * p.x() + YAxis * p.y() + ZAxis * p.z();
     }
+
+    /// Rotate/scale a free vector (ignores Translation).
+    [[nodiscard]] Vector3d TransformVector(const Vector3d& v) const
+    {
+        return XAxis * v.x() + YAxis * v.y() + ZAxis * v.z();
+    }
+
+    /// True when the basis is the identity (pure translation).
+    [[nodiscard]] bool IsTranslation(double eps = 1e-9) const
+    {
+        auto near = [eps](const Vector3d& a, const Vector3d& b)
+        {
+            return (a - b).norm() <= eps;
+        };
+        return near(XAxis, Vector3d{1, 0, 0}) &&
+               near(YAxis, Vector3d{0, 1, 0}) &&
+               near(ZAxis, Vector3d{0, 0, 1});
+    }
 };
 
 }  // namespace brep

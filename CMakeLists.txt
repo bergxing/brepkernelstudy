@@ -46,9 +46,34 @@ if(BREP_BUILD_VIEWER)
     message(STATUS "Using Qt prefix: ${_brep_qt_prefix}")
   endif()
 
-  find_package(Qt6 QUIET COMPONENTS Widgets Gui)
+  find_package(Qt6 QUIET COMPONENTS Widgets Gui Svg)
   if(Qt6_FOUND)
     message(STATUS "Qt6 ${Qt6_VERSION} found: building brep_viewer")
+    # SARibbon (static, no frameless) — before apps/viewer so target exists.
+    set(SARIBBON_BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+    set(SARIBBON_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(SARIBBON_USE_FRAMELESS_LIB OFF CACHE BOOL "" FORCE)
+    set(SARIBBON_INSTALL_IN_CURRENT_DIR OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    if(EXISTS "${BREP_REPO_ROOT}/third_party/SARibbon/CMakeLists.txt")
+      add_subdirectory(
+        ${BREP_REPO_ROOT}/third_party/SARibbon
+        ${CMAKE_BINARY_DIR}/_deps/SARibbon
+        EXCLUDE_FROM_ALL
+      )
+      # Vendor Qt6 deprecation noise (e.g. QHoverEvent ctor in SARibbonBar.cpp).
+      if(TARGET SARibbonBar)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+          target_compile_options(SARibbonBar PRIVATE -Wno-deprecated-declarations)
+        elseif(MSVC)
+          target_compile_options(SARibbonBar PRIVATE /wd4996)
+        endif()
+      endif()
+    else()
+      message(FATAL_ERROR
+        "third_party/SARibbon missing. Run:\n"
+        "  git submodule update --init third_party/SARibbon")
+    endif()
     add_subdirectory(apps/viewer)
   else()
     message(WARNING

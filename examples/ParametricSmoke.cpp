@@ -1,4 +1,6 @@
-#include "brep/Brep.h"
+#include "api/Core.h"
+#include "api/Modeling.h"
+#include "brep/asm/Assembly.h"
 
 #include <cmath>
 #include <iostream>
