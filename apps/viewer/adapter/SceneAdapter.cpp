@@ -134,11 +134,6 @@ void SceneAdapter::RecordAppendPrimitive(feat::FeatureId id, PrimitiveSpec undo)
     {
         return;
     }
-    // Nurbs history fields land in Nb3; do not write Bezier or empty AppendFeature.
-    if (std::holds_alternative<NurbsCurveSpec>(undo))
-    {
-        return;
-    }
     feat::FeatureTransaction tx;
     tx.Kind = feat::TxKind::AppendFeature;
     tx.Feature = id;
@@ -165,6 +160,8 @@ void SceneAdapter::RecordAppendPrimitive(feat::FeatureId id, PrimitiveSpec undo)
             {
                 static_assert(std::is_same_v<T, NurbsCurveSpec>,
                               "RecordAppendPrimitive: add PrimitiveSpec arm");
+                tx.FeatureType = "NurbsCurve";
+                tx.Nurbs = std::forward<decltype(spec)>(spec);
             }
         },
         undo);
@@ -385,6 +382,11 @@ bool SceneAdapter::RemoveFeature(feat::FeatureId id)
     {
         const auto& bez = static_cast<const feat::BezierCurveFeature&>(*f);
         tx.Bezier = bez.ToSpec();
+    }
+    else if (tx.FeatureType == "NurbsCurve")
+    {
+        const auto& nurbs = static_cast<const feat::NurbsCurveFeature&>(*f);
+        tx.Nurbs = nurbs.ToSpec();
     }
 
     part->FeatureHistory().ApplyAndRecord(*part, std::move(tx));

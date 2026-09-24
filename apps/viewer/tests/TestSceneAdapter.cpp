@@ -647,6 +647,32 @@ TEST(SceneAdapter, SetPrimitiveNurbsWeightsUndoRedo)
     EXPECT_NEAR(std::get<NurbsCurveSpec>(*undone).Weights[1], 1.0, 1e-9);
 }
 
+TEST(SceneAdapter, AddPrimitiveNurbsCreateUndoRedo)
+{
+    auto doc = SceneAdapter::CreateBlank();
+    SceneAdapter scene(doc.get());
+    NurbsCurveSpec spec{
+        .Cvs = {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}},
+        .Weights = {1.0, 1.0, 1.0, 1.0},
+        .Name = "nurbs",
+    };
+    Body* body = scene.AddPrimitive(spec);
+    ASSERT_NE(body, nullptr);
+    EXPECT_EQ(body->Type, BodyType::Wire);
+    const Guid bodyGuid = body->Guid;
+    auto obj = scene.ObjectForBody(bodyGuid);
+    ASSERT_TRUE(obj.has_value());
+    scene.RecordAppendPrimitive(feat::FeatureId{obj->FeatureGuid}, spec);
+
+    scene.UndoFeature();
+    EXPECT_EQ(scene.MainPart()->FindBody(bodyGuid), nullptr);
+    EXPECT_EQ(scene.MainPart()->Model().Bodies().size(), 0u);
+
+    scene.RedoFeature();
+    ASSERT_EQ(scene.MainPart()->Model().Bodies().size(), 1u);
+    EXPECT_EQ(scene.MainPart()->Model().Bodies()[0]->Type, BodyType::Wire);
+}
+
 TEST(SceneAdapter, AddBooleanSubtractPrimaryIsTarget)
 {
     auto doc = SceneAdapter::CreateBlank();
